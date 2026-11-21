@@ -1,12 +1,9 @@
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
-const AgentService = require('../services/AgentService');
 const AgentNodeService = require('../services/AgentNodeService');
-const AgentEnrollmentService = require('../services/AgentEnrollmentService');
 const { recordAuthEvent } = require('./agentRole');
 const { authFailureCounter } = require('../services/AgentEnrollmentMetrics');
 const { getSecret } = require('../utils/jwt');
-const bcrypt = require('bcryptjs');
 const IpWhitelistService = require('../services/IpWhitelistService');
 const {
   getRedis,
@@ -232,47 +229,45 @@ async function requireNodeRuntime(agent, req, res) {
 }
 
 function agentAuthFailure(agent) {
-  const isAccessToken = agent._tokenKind === 'access';
   if (agent._revoked) {
     return {
-      code: isAccessToken ? 'TOKEN_REVOKED' : 'KEY_REVOKED',
-      message: 'Agent credentials have been revoked',
+      code: 'TOKEN_REVOKED',
+      message: 'Node credentials have been revoked',
     };
   }
   return {
-    code: isAccessToken ? 'TOKEN_EXPIRED' : 'KEY_EXPIRED',
-    message: isAccessToken
-      ? 'Agent access token expired; refresh the node credentials'
-      : `API key expired on ${new Date(agent.api_key_expires_at).toISOString()}`,
-    expiredAt: agent.api_key_expires_at,
+    code: 'TOKEN_EXPIRED',
+    message: 'Node access token expired; refresh the node credentials',
+    expiredAt: agent.api_key_expires_at || undefined,
   };
 }
 
 async function authenticateAgentByApiKey(apiKey, { mock = true, runtimeId = null } = {}) {
   // Mock validation for test keys (unit tests only; never in a deployment).
-  if (mock
-      && process.env.NODE_ENV === 'test'
-      && (apiKey.startsWith('test-') || apiKey === 'mock-agent-key')) {
-    return {
-      id: 1,
-      owner_id: 1,
-      name: 'Test Agent',
-      rateLimitCount: 0,
-      _mock: true,
-    };
+  if (mock && process.env.NODE_ENV === 'test') {
+    if (apiKey === 'agent-key') {
+      return {
+        id: 7,
+        owner_id: 1,
+        name: 'Test Agent',
+        rateLimitCount: 0,
+        _mock: true,
+      };
+    }
+    if (apiKey.startsWith('test-') || apiKey === 'mock-agent-key') {
+      return {
+        id: 1,
+        owner_id: 1,
+        name: 'Test Agent',
+        rateLimitCount: 0,
+        _mock: true,
+      };
+    }
   }
 
-  // Enrollment-issued access tokens use the same X-API-Key header but a
-  // different table and lifecycle. Legacy ak_ keys keep the old path.
+  // Node access tokens use the X-API-Key header.
   if (apiKey.startsWith('at_')) {
-    let result = await AgentNodeService.authenticateAccessToken(apiKey);
-    if (result.status === 'invalid') {
-      // Compatibility for fg-53 agent access tokens during the additive phase.
-      result = await AgentEnrollmentService.authenticateAccessToken(apiKey).catch(() => result);
-      if (result.status === 'ok') {
-        return { ...result.agent, _tokenKind: 'access' };
-      }
-    }
+    const result = await AgentNodeService.authenticateAccessToken(apiKey);
     if (result.status === 'ok') {
       const node = result.node;
       let runtime = null;
@@ -312,48 +307,12 @@ async function authenticateAgentByApiKey(apiKey, { mock = true, runtimeId = null
     return null;
   }
 
-  const agent = await AgentService.getAgentByApiKey(apiKey);
-  if (!agent) {
-    authFailureCounter.inc({ reason: 'invalid' });
-    return null;
-  }
-
-  // Check expiry
-  if (agent.api_key_expires_at && new Date(agent.api_key_expires_at) < new Date()) {
-    authFailureCounter.inc({ reason: 'expired' });
-    return { ...agent, _expired: true };
-  }
-
-  // Verify hash (bcrypt.compare is timing-safe)
-  const valid = await bcrypt.compare(apiKey, agent.api_key_hash);
-  if (!valid) {
-    authFailureCounter.inc({ reason: 'invalid' });
-    return null;
-  }
-
-  return agent;
+  authFailureCounter.inc({ reason: 'invalid' });
+  return null;
 }
 
 exports.authenticateAgentByApiKey = authenticateAgentByApiKey;
 exports.agentAuthFailure = agentAuthFailure;
-
-/**
- * Legacy `/agents/*` routes have no project scope. Node credentials use the
- * dedicated `/agent-nodes/*` surface instead, so fail closed here rather than
- * letting a host token fall through the old agent authorization path.
- */
-exports.rejectNodeCredentials = (req, res, next) => {
-  if (req.agent && req.agent._node) {
-    return res.status(403).json({
-      success: false,
-      error: {
-        code: 'FORBIDDEN',
-        message: 'Node credentials cannot access legacy agent endpoints',
-      },
-    });
-  }
-  return next();
-};
 
 exports.agentAuth = async (req, res, next) => {
   try {

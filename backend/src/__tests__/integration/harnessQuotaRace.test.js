@@ -5,26 +5,31 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const suffix = `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 let ownerId;
 let projectId;
-let agentA;
-let agentB;
+let nodeId;
+let credentialId;
+let modelId;
+let runtimeA;
+let runtimeB;
 let ticketA;
 let ticketB;
 
-async function insertAgent(name) {
+async function insertRuntime(name) {
   const result = await pool.query(
-    'INSERT INTO agents (name, owner_id) VALUES ($1, $2) RETURNING id',
-    [name, ownerId]
+    `INSERT INTO agent_runtimes
+       (node_id, name, role, model_id, status, current_project_id)
+     VALUES ($1, $2, 'worker', $3, 'running', $4) RETURNING id`,
+    [nodeId, name, modelId, projectId]
   );
   return result.rows[0].id;
 }
 
-async function insertTicket(title, agentId) {
+async function insertTicket(title, runtimeId) {
   const result = await pool.query(
     `INSERT INTO tickets
-       (project_id, title, status, owner_id, assigned_agent_id, locked_at)
+       (project_id, title, status, owner_id, assigned_runtime_id, locked_at)
      VALUES ($1, $2, 'in_progress', $3, $4, NOW())
      RETURNING id`,
-    [projectId, title, ownerId, agentId]
+    [projectId, title, ownerId, runtimeId]
   );
   return result.rows[0].id;
 }
@@ -45,10 +50,29 @@ describe('Harness daily quota reservation race (real DB)', () => {
       [`Quota Project ${suffix}`, ownerId]
     );
     projectId = project.rows[0].id;
-    agentA = await insertAgent(`quota-agent-a-${suffix}`);
-    agentB = await insertAgent(`quota-agent-b-${suffix}`);
-    ticketA = await insertTicket(`Quota A ${suffix}`, agentA);
-    ticketB = await insertTicket(`Quota B ${suffix}`, agentB);
+    const node = await pool.query(
+      `INSERT INTO agent_nodes (owner_id, name, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [ownerId, `quota-node-${suffix}`]
+    );
+    nodeId = node.rows[0].id;
+    const credential = await pool.query(
+      `INSERT INTO provider_credentials
+         (owner_id, name, provider_type, api_key_encrypted)
+       VALUES ($1, $2, 'opencode', 'x') RETURNING id`,
+      [ownerId, `quota-credential-${suffix}`]
+    );
+    credentialId = credential.rows[0].id;
+    const model = await pool.query(
+      `INSERT INTO provider_models (credential_id, model, source, roles, status)
+       VALUES ($1, 'quota-model', 'manual', ARRAY['worker'], 'verified') RETURNING id`,
+      [credentialId]
+    );
+    modelId = model.rows[0].id;
+    runtimeA = await insertRuntime(`quota-runtime-a-${suffix}`);
+    runtimeB = await insertRuntime(`quota-runtime-b-${suffix}`);
+    ticketA = await insertTicket(`Quota A ${suffix}`, runtimeA);
+    ticketB = await insertTicket(`Quota B ${suffix}`, runtimeB);
 
     await pool.query(
       `INSERT INTO harness_budget_policies
@@ -63,7 +87,10 @@ describe('Harness daily quota reservation race (real DB)', () => {
     if (projectId) {
       await pool.query('DELETE FROM harness_runs WHERE project_id = $1', [projectId]);
       await pool.query('DELETE FROM tickets WHERE project_id = $1', [projectId]);
-      await pool.query('DELETE FROM agents WHERE owner_id = $1', [ownerId]);
+      await pool.query('DELETE FROM agent_runtimes WHERE node_id = $1', [nodeId]);
+      await pool.query('DELETE FROM agent_nodes WHERE id = $1', [nodeId]);
+      await pool.query('DELETE FROM provider_models WHERE credential_id = $1', [credentialId]);
+      await pool.query('DELETE FROM provider_credentials WHERE id = $1', [credentialId]);
       await pool.query('DELETE FROM harness_budget_policies WHERE project_id = $1', [projectId]);
       await pool.query('DELETE FROM projects WHERE id = $1', [projectId]);
     }
@@ -77,12 +104,12 @@ describe('Harness daily quota reservation race (real DB)', () => {
     const results = await Promise.allSettled([
       HarnessRunService.startRun({
         ticketId: ticketA,
-        agentId: agentA,
+        runtimeId: runtimeA,
         branch: `quota/a/${suffix}`,
       }),
       HarnessRunService.startRun({
         ticketId: ticketB,
-        agentId: agentB,
+        runtimeId: runtimeB,
         branch: `quota/b/${suffix}`,
       }),
     ]);

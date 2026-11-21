@@ -35,11 +35,11 @@ const logger = require('../utils/logger');
 const OPERATOR_ROLES = new Set(['super_admin', 'project_admin', 'member']);
 const POLICY_WRITE_ROLES = new Set(['super_admin', 'project_admin']);
 
-function requireAgent(req) {
-  if (!req.agent || !req.agent.id) {
-    throw new ForbiddenError('Agent API key required');
+function requireAgentRuntime(req) {
+  if (!req.agent || !req.runtime || !req.runtime.id) {
+    throw new ForbiddenError('Agent runtime required');
   }
-  return req.agent.id;
+  return req.runtime.id;
 }
 
 function operatorIdentity(req) {
@@ -89,14 +89,11 @@ async function assertProjectAccess(projectId, req, permission = 'DASHBOARD_READ'
 async function assertRunAccess(runId, req, permission = 'TICKET_READ', { write = false } = {}) {
   const run = await HarnessRunService.getRun(runId);
   if (req.agent) {
-    if (!req.runtime) {
-      if (String(run.agent_id) !== String(req.agent.id)) {
-        throw new ForbiddenError('Harness run belongs to another agent');
-      }
-      return run;
+    if (!req.runtime || !req.runtime.id) {
+      throw new ForbiddenError('Agent runtime required');
     }
     if (write && String(run.runtime_id) !== String(req.runtime.id)) {
-      throw new ForbiddenError('Harness run belongs to another agent');
+      throw new ForbiddenError('Harness run belongs to another runtime');
     }
     // Node reads are project-scoped; requireRunGrant has already checked the
     // runtime's active grant for this run's project.
@@ -160,7 +157,7 @@ function projectIdParam(value) {
  */
 router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarnessEventBody(), requireBodyGrant('worker', 'reviewer', 'planner'), requireReviewEventGrant(), async (req, res, next) => {
   try {
-    const agentId = requireAgent(req);
+    const runtimeId = requireAgentRuntime(req);
     const body = req.body || {};
     if (body.type && typeof body.type === 'string' && body.type.startsWith('audit.')) {
       throw new ForbiddenError('Audit events can only be written by the backend');
@@ -171,7 +168,7 @@ router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarness
       runId: body.runId,
       ticketId: body.ticketId,
       projectId: body.projectId,
-      ...(req.runtime ? { runtimeId: req.runtime.id } : { agentId }),
+      runtimeId,
       sessionId: body.sessionId,
       type: body.type,
       version: body.version,
@@ -189,12 +186,12 @@ router.post('/events', verifyTokenOrAgent, requireRuntime('running'), forHarness
           runId: result.event.run_id,
           projectId: result.event.project_id,
           ticketId: result.event.ticket_id,
-          agentId: result.event.agent_id,
+          runtimeId: result.event.runtime_id,
           result: result.event.type === 'review.result' ? 'review_result' : 'fix_requested',
           reason: result.event.payload?.summary || result.event.type,
           eventId: result.event.event_id,
-          actorType: 'agent',
-          actorId: agentId,
+          actorType: 'runtime',
+          actorId: runtimeId,
         });
       } catch (auditError) {
         logger.warn(`Harness review audit failed: ${auditError.message}`);
@@ -240,7 +237,7 @@ router.post('/runs/:runId/usage', verifyTokenOrAgent, requireRuntime('running'),
     await assertRunAccess(req.params.runId, req, 'TICKET_READ', { write: true });
     const row = await HarnessUsageService.recordUsage({
       runId: req.params.runId,
-      ...(req.runtime ? { runtimeId: req.runtime.id } : { agentId: requireAgent(req) }),
+      runtimeId: requireAgentRuntime(req),
       model: body.model,
       promptVersion: body.promptVersion,
       configHash: body.configHash,

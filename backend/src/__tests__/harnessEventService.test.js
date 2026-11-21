@@ -23,7 +23,7 @@ const RUN = {
   id: RUN_ID,
   ticket_id: 42,
   project_id: 7,
-  agent_id: 9,
+  runtime_id: 3,
   session_id: 'ses_test',
   ticket_project_id: 7,
 };
@@ -53,7 +53,7 @@ describe('HarnessEventService', () => {
         eventId: EVENT_ID,
         traceId: TRACE_ID,
         runId: RUN_ID,
-        agentId: 9,
+        runtimeId: 3,
         type: 'tool.called',
         payload: { tool: 'bash', token: 'ghp_abcdefghijklmnopqrstuvwxyz0123456789' },
         requireRunOwnership: true,
@@ -63,56 +63,20 @@ describe('HarnessEventService', () => {
       expect(result.event).toEqual(stored);
       const insert = pool.query.mock.calls[1];
       expect(insert[0]).toContain('INSERT INTO harness_events');
+      expect(insert[0]).not.toContain('agent_id');
       expect(insert[1].slice(0, 8)).toEqual([
-        EVENT_ID, TRACE_ID, RUN_ID, 42, 7, 9, null, 'ses_test',
+        EVENT_ID, TRACE_ID, RUN_ID, 42, 7, 3, 'ses_test', 'tool.called',
       ]);
       expect(insert[0]).toContain('event_timestamp');
-      expect(Number.isNaN(Date.parse(insert[1][11]))).toBe(false);
-      expect(JSON.parse(insert[1][10])).toEqual(expect.objectContaining({
+      expect(Number.isNaN(Date.parse(insert[1][10]))).toBe(false);
+      expect(JSON.parse(insert[1][9])).toEqual(expect.objectContaining({
         tool: 'bash',
         token: '[REDACTED]',
       }));
     });
 
-    it('rejects an event from a different agent', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [RUN] });
-
-      await expect(HarnessEventService.emit({
-        eventId: EVENT_ID,
-        traceId: TRACE_ID,
-        runId: RUN_ID,
-        agentId: 10,
-        type: 'run.started',
-        requireRunOwnership: true,
-      })).rejects.toThrow('Harness run belongs to another agent');
-    });
-
-
-    it('stores runtime ownership for a runtime-owned run', async () => {
-      const runtimeRun = { ...RUN, agent_id: null, runtime_id: 3 };
-      pool.query
-        .mockResolvedValueOnce({ rows: [runtimeRun] })
-        .mockResolvedValueOnce({ rows: [{ event_id: EVENT_ID }] });
-
-      const result = await HarnessEventService.emit({
-        eventId: EVENT_ID,
-        traceId: TRACE_ID,
-        runId: RUN_ID,
-        runtimeId: 3,
-        type: 'run.started',
-        requireRunOwnership: true,
-      });
-
-      expect(result.duplicate).toBe(false);
-      const params = pool.query.mock.calls[1][1];
-      expect(params[5]).toBeNull();
-      expect(params[6]).toBe(3);
-    });
-
     it('rejects an event from a different runtime', async () => {
-      pool.query.mockResolvedValueOnce({
-        rows: [{ ...RUN, agent_id: null, runtime_id: 3 }],
-      });
+      pool.query.mockResolvedValueOnce({ rows: [RUN] });
 
       await expect(HarnessEventService.emit({
         eventId: EVENT_ID,
@@ -121,7 +85,39 @@ describe('HarnessEventService', () => {
         runtimeId: 4,
         type: 'run.started',
         requireRunOwnership: true,
-      })).rejects.toThrow('Harness run belongs to another agent');
+      })).rejects.toThrow('Harness run belongs to another runtime');
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a run-owned event without a runtime', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [RUN] });
+
+      await expect(HarnessEventService.emit({
+        eventId: EVENT_ID,
+        traceId: TRACE_ID,
+        runId: RUN_ID,
+        agentId: 3,
+        type: 'run.started',
+        requireRunOwnership: true,
+      })).rejects.toThrow('Harness run belongs to another runtime');
+      expect(pool.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('stores a project-scoped event without a run using the given runtime', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ event_id: EVENT_ID }] });
+
+      await HarnessEventService.emit({
+        eventId: EVENT_ID,
+        traceId: TRACE_ID,
+        projectId: 7,
+        runtimeId: 3,
+        type: 'routing.decided',
+      });
+
+      const params = pool.query.mock.calls[0][1];
+      expect(params.slice(0, 8)).toEqual([
+        EVENT_ID, TRACE_ID, null, null, 7, 3, null, 'routing.decided',
+      ]);
     });
 
     it('validates the event id, trace id and type', async () => {
@@ -148,7 +144,7 @@ describe('HarnessEventService', () => {
         eventId: EVENT_ID,
         traceId: TRACE_ID,
         runId: RUN_ID,
-        agentId: 9,
+        runtimeId: 3,
         type: 'run.started',
         requireRunOwnership: true,
       });
@@ -165,7 +161,7 @@ describe('HarnessEventService', () => {
         eventId: EVENT_ID,
         traceId: TRACE_ID,
         runId: RUN_ID,
-        agentId: 9,
+        runtimeId: 3,
         type: 'run.started',
         timestamp: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         requireRunOwnership: true,
@@ -178,7 +174,7 @@ describe('HarnessEventService', () => {
         eventId: EVENT_ID,
         traceId: TRACE_ID,
         runId: RUN_ID,
-        agentId: 9,
+        runtimeId: 3,
         type: 'run.started',
         timestamp: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
         requireRunOwnership: true,
@@ -191,7 +187,7 @@ describe('HarnessEventService', () => {
         eventId: EVENT_ID,
         traceId: TRACE_ID,
         runId: RUN_ID,
-        agentId: 9,
+        runtimeId: 3,
         type: 'run.started',
         timestamp: 'not-a-time',
         requireRunOwnership: true,
@@ -304,7 +300,7 @@ describe('HarnessEventService', () => {
   });
 
   describe('ensureTerminalEvent', () => {
-    it('synthesises a terminal event when the agent event was lost', async () => {
+    it('synthesises a runtime-owned terminal event when the agent event was lost', async () => {
       const stored = { event_id: EVENT_ID, type: 'run.failed' };
       pool.query
         .mockResolvedValueOnce({ rows: [] }) // existing terminal event
@@ -320,6 +316,11 @@ describe('HarnessEventService', () => {
       });
 
       expect(event).toEqual(stored);
+      const insert = pool.query.mock.calls[4];
+      expect(insert[1][5]).toBe(3);
+      expect(insert[1].slice(0, 8)).toEqual([
+        expect.any(String), TRACE_ID, RUN_ID, 42, 7, 3, 'ses_test', 'run.failed',
+      ]);
     });
 
     it('does not duplicate an existing terminal event', async () => {

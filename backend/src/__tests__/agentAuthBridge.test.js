@@ -252,27 +252,6 @@ describe('node credential bridge (FR4, FR20, NFR1)', () => {
     expect(res.body.error.code).toBe('FORBIDDEN');
   });
 
-  it('rejects node credentials on legacy agent-management routes', async () => {
-    jest.spyOn(AgentNodeService, 'authenticateAccessToken').mockResolvedValue({
-      status: 'ok',
-      node: { id: 12, owner_id: 7 },
-    });
-    jest.spyOn(AgentNodeService, 'getRuntimeForNode').mockResolvedValue({
-      id: 3,
-      role: 'worker',
-      status: 'running',
-      current_project_id: 5,
-    });
-
-    const res = await request(app)
-      .get('/api/v1/agents')
-      .set('X-API-Key', 'at_valid')
-      .set('X-Agent-Runtime', '3');
-
-    expect(res.statusCode).toBe(403);
-    expect(res.body.error.message).toMatch(/legacy agent endpoints/);
-  });
-
   it('rejects a runtime without a grant for the ticket project', async () => {
     jest.spyOn(AgentNodeService, 'authenticateAccessToken').mockResolvedValue({
       status: 'ok',

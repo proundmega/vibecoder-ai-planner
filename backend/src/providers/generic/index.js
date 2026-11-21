@@ -32,7 +32,6 @@ class GenericProvider extends ProviderInterface {
     this.apiKey = config.apiKey;
     this.projectId = config.projectId;
     this.userId = config.userId;
-    this.agentId = config.agentId;
     this.ticketId = config.ticketId;
     if (this.baseURL && typeof this.baseURL === 'string') {
       try {
@@ -85,7 +84,7 @@ class GenericProvider extends ProviderInterface {
 
     try {
       await UsageLogger.log(
-        this.projectId, this.userId, this.agentId,
+        this.projectId, this.userId,
         this.providerType, this.model, usage, duration, this.ticketId,
         { rawUsage: response.data.usage }
       );

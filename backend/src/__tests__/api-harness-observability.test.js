@@ -9,13 +9,51 @@ jest.mock('../db', () => ({
   },
 }));
 
+jest.mock('../middleware/auth', () => {
+  const actual = jest.requireActual('../middleware/auth');
+  return {
+    ...actual,
+    verifyTokenOrAgent: (req, res, next) => {
+      if (req.headers.authorization) {
+        return actual.verifyToken(req, res, next);
+      }
+      if (!req.headers['x-api-key']) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Missing authentication token' },
+        });
+      }
+      req.agent = {
+        id: 3, owner_id: 7, project_id: 5, _node: true, _nodeRecord: { id: 12 },
+      };
+      req.node = { id: 12 };
+      req.runtime = {
+        id: 3, role: 'worker', status: 'running', current_project_id: 5,
+      };
+      req.user = { userId: 'user-1', id: 3, role: 'member' };
+      return next();
+    },
+  };
+});
+
+jest.mock('../middleware/agentRole', () => {
+  const actual = jest.requireActual('../middleware/agentRole');
+  const pass = () => (req, res, next) => next();
+  return {
+    ...actual,
+    requireRuntime: pass,
+    requireRole: pass,
+    requireBodyGrant: pass,
+    requireRunGrant: pass,
+    requireTicketGrant: pass,
+    requireProjectGrant: pass,
+    requireReviewEventGrant: pass,
+  };
+});
+
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockReturnValue({ id: 'user-1', email: 'user@test.com', role: 'project_admin' }),
   sign: jest.fn().mockReturnValue('mock-token'),
-}));
-
-jest.mock('../services/AgentService', () => ({
-  getAgentByApiKey: jest.fn().mockResolvedValue({ id: 7, owner_id: 1 }),
 }));
 
 jest.mock('../services/PermissionService', () => ({
@@ -83,7 +121,7 @@ const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const EVENT_ID = '22222222-2222-4222-8222-222222222222';
 const TRACE_ID = '33333333-3333-4333-8333-333333333333';
 
-const RUN = { id: RUN_ID, agent_id: 7, ticket_id: 42, project_id: 5 };
+const RUN = { id: RUN_ID, runtime_id: 3, ticket_id: 42, project_id: 5 };
 
 describe('Harness observability API', () => {
   beforeEach(() => {
@@ -125,7 +163,7 @@ describe('Harness observability API', () => {
         eventId: EVENT_ID,
         traceId: TRACE_ID,
         runId: RUN_ID,
-        agentId: 7,
+        runtimeId: 3,
         type: 'tool.called',
         requireRunOwnership: true,
       }));
@@ -167,7 +205,7 @@ describe('Harness observability API', () => {
           run_id: RUN_ID,
           project_id: 5,
           ticket_id: 42,
-          agent_id: 7,
+          runtime_id: 3,
           payload: { summary: 'changes requested' },
         },
         duplicate: false,
@@ -182,7 +220,13 @@ describe('Harness observability API', () => {
 
       expect(res.statusCode).toBe(201);
       expect(HarnessAuditService.recordReview).toHaveBeenCalledWith(
-        expect.objectContaining({ runId: RUN_ID, projectId: 5, actorType: 'agent' })
+        expect.objectContaining({
+          runId: RUN_ID,
+          projectId: 5,
+          runtimeId: 3,
+          actorType: 'runtime',
+          actorId: 3,
+        })
       );
     });
 
@@ -206,12 +250,14 @@ describe('Harness observability API', () => {
       expect(res.body.data).toHaveLength(1);
     });
 
-    it('blocks an agent from reading another agent’s events', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ ...RUN, agent_id: 8 });
+    it('blocks a runtime from writing usage for another runtime’s run', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ ...RUN, runtime_id: 8 });
       const res = await request(app)
-        .get(`/api/v1/harness/runs/${RUN_ID}/events`)
-        .set('X-API-Key', 'agent-key');
+        .post(`/api/v1/harness/runs/${RUN_ID}/usage`)
+        .set('X-API-Key', 'agent-key')
+        .send({ model: 'gpt-4o' });
       expect(res.statusCode).toBe(403);
+      expect(HarnessUsageService.recordUsage).not.toHaveBeenCalled();
     });
 
     it('falls back to the ticket project when an older run has no project_id', async () => {
@@ -283,7 +329,7 @@ describe('Harness observability API', () => {
       expect(res.statusCode).toBe(201);
       expect(HarnessUsageService.recordUsage).toHaveBeenCalledWith(
         expect.objectContaining({
-          runId: RUN_ID, agentId: 7, model: 'gpt-4o', inputTokens: 100,
+          runId: RUN_ID, runtimeId: 3, model: 'gpt-4o', inputTokens: 100,
         })
       );
     });

@@ -14,7 +14,6 @@ class OpenAIProvider extends ProviderInterface {
     this.temperature = config.temperature || 0.1;
     this.projectId = config.projectId;
     this.userId = config.userId;
-    this.agentId = config.agentId;
     this.ticketId = config.ticketId;
   }
 
@@ -33,7 +32,7 @@ class OpenAIProvider extends ProviderInterface {
 
     try {
       await UsageLogger.log(
-        this.projectId, this.userId, this.agentId,
+        this.projectId, this.userId,
         'openai', this.model, usage, duration, this.ticketId,
         { rawUsage: response.usage }
       );

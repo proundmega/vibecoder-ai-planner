@@ -4,7 +4,7 @@ const EventHashService = require('./EventHashService');
 const logger = require('../utils/logger');
 
 class UsageLogger {
-  static async log(projectId, userId, agentId, providerType, model, usage, durationMs, ticketId = null, options = {}) {
+  static async log(projectId, userId, providerType, model, usage, durationMs, ticketId = null, options = {}) {
     const { planningStage, fileKey, rawUsage } = options;
     const tokensIn = usage?.input_tokens ?? usage?.tokens_in ?? usage?.prompt_tokens ?? 0;
     const tokensOut = usage?.output_tokens ?? usage?.tokens_out ?? usage?.completion_tokens ?? 0;
@@ -12,9 +12,9 @@ class UsageLogger {
 
     await pool.query(
       `INSERT INTO usage_logs
-       (project_id, user_id, agent_id, provider_type, model, tokens_in, tokens_out, cost_usd, duration_ms, ticket_id, planning_stage, file_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [projectId, userId, agentId, providerType, model, tokensIn, tokensOut, cost, durationMs || 0, ticketId || null, planningStage || null, fileKey || null]
+       (project_id, user_id, provider_type, model, tokens_in, tokens_out, cost_usd, duration_ms, ticket_id, planning_stage, file_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [projectId, userId, providerType, model, tokensIn, tokensOut, cost, durationMs || 0, ticketId || null, planningStage || null, fileKey || null]
     );
 
     // Update last-known usage on ticket_planning if fileKey provided
@@ -32,57 +32,14 @@ class UsageLogger {
     // Dual-write to telemetry_events
     await UsageLogger.logStructuredEvent({
       providerType, model, rawUsage: rawUsage || usage,
-      durationMs, projectId, userId, agentId, ticketId,
+      durationMs, projectId, userId, ticketId,
       planningStage, fileKey,
-    });
-  }
-
-  static async reportUsage(agentId, data) {
-    const { provider_type, model, tokens_in, tokens_out, duration_ms, ticket_id, project_id, planning_stage, file_keys, raw_usage } = data;
-
-    if (!provider_type || !model || tokens_in == null || tokens_out == null) {
-      const err = new Error('Missing required fields: provider_type, model, tokens_in, tokens_out');
-      err.statusCode = 400;
-      throw err;
-    }
-
-    const cost = calculateCost(model, tokens_in, tokens_out);
-
-    // Primary entry with first file_key if provided
-    const primaryFileKey = file_keys && file_keys.length > 0 ? file_keys[0] : null;
-
-    await pool.query(
-      `INSERT INTO usage_logs
-       (agent_id, provider_type, model, tokens_in, tokens_out, cost_usd, duration_ms, ticket_id, project_id, planning_stage, file_key)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-      [agentId, provider_type, model, tokens_in, tokens_out, cost, duration_ms || 0, ticket_id || null, project_id || null, planning_stage || null, primaryFileKey]
-    );
-
-    // Additional entries per file_key (skip first since already logged)
-    if (file_keys && file_keys.length > 1) {
-      for (let i = 1; i < file_keys.length; i++) {
-        await pool.query(
-          `INSERT INTO usage_logs
-           (agent_id, provider_type, model, tokens_in, tokens_out, cost_usd, duration_ms, ticket_id, project_id, planning_stage, file_key)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [agentId, provider_type, model, tokens_in, tokens_out, cost, duration_ms || 0, ticket_id || null, project_id || null, planning_stage || null, file_keys[i]]
-        );
-      }
-    }
-
-    // Dual-write to telemetry_events
-    await UsageLogger.logStructuredEvent({
-      providerType: provider_type, model,
-      rawUsage: raw_usage || { tokens_in, tokens_out }, durationMs: duration_ms,
-      projectId: project_id, userId: null, agentId,
-      ticketId: ticket_id, planningStage: planning_stage,
-      fileKey: primaryFileKey,
     });
   }
 
   static async logPlanningUsage(planData) {
     const {
-      projectId, userId, agentId,
+      projectId, userId,
       ticketId, planningStage, fileKeys,
       providerType, model, tokensIn, tokensOut, durationMs, rawUsage,
     } = planData;
@@ -93,11 +50,11 @@ class UsageLogger {
       for (const fk of fileKeys) {
         await pool.query(
           `INSERT INTO usage_logs
-           (project_id, user_id, agent_id, provider_type, model,
+           (project_id, user_id, provider_type, model,
             tokens_in, tokens_out, cost_usd, duration_ms, ticket_id,
             planning_stage, file_key)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-          [projectId, userId, agentId, providerType, model,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [projectId, userId, providerType, model,
             tokensIn, tokensOut, cost, durationMs || 0, ticketId || null,
             planningStage, fk]
         );
@@ -115,18 +72,18 @@ class UsageLogger {
         // Dual-write to telemetry_events
         await UsageLogger.logStructuredEvent({
           providerType, model, rawUsage: rawUsage || { input_tokens: tokensIn, output_tokens: tokensOut },
-          durationMs, projectId, userId, agentId, ticketId,
+          durationMs, projectId, userId, ticketId,
           planningStage, fileKey: fk,
         });
       }
     } else {
       await pool.query(
         `INSERT INTO usage_logs
-         (project_id, user_id, agent_id, provider_type, model,
+         (project_id, user_id, provider_type, model,
           tokens_in, tokens_out, cost_usd, duration_ms, ticket_id,
           planning_stage)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [projectId, userId, agentId, providerType, model,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [projectId, userId, providerType, model,
           tokensIn, tokensOut, cost, durationMs || 0, ticketId || null,
           planningStage]
       );
@@ -134,7 +91,7 @@ class UsageLogger {
       // Dual-write to telemetry_events
       await UsageLogger.logStructuredEvent({
         providerType, model, rawUsage: rawUsage || { input_tokens: tokensIn, output_tokens: tokensOut },
-        durationMs, projectId, userId, agentId, ticketId,
+        durationMs, projectId, userId, ticketId,
         planningStage, fileKey: null,
       });
     }
@@ -255,7 +212,7 @@ class UsageLogger {
 
   static async logStructuredEvent({
     providerType, model, rawUsage, durationMs,
-    projectId, userId, agentId, ticketId, planningStage, fileKey,
+    projectId, userId, ticketId, planningStage, fileKey,
   }) {
     try {
       const rawProviderFields = UsageLogger._buildRawProviderFields(providerType, rawUsage);
@@ -279,14 +236,14 @@ class UsageLogger {
         `INSERT INTO telemetry_events
          (schema_version, content_hash, provider_type, model,
           raw_provider_fields, normalized_fields, derived_metrics, field_provenance,
-          project_id, user_id, agent_id, ticket_id, planning_stage, file_key, duration_ms)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          project_id, user_id, ticket_id, planning_stage, file_key, duration_ms)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (content_hash) DO NOTHING`,
         [
           1, contentHash, providerType, model || 'unknown',
           JSON.stringify(rawProviderFields), JSON.stringify(normalizedFields),
           JSON.stringify(derivedMetrics), JSON.stringify(fieldProvenance),
-          projectId || null, userId || null, agentId || null,
+          projectId || null, userId || null,
           ticketId || null, planningStage || null, fileKey || null,
           durationMs || 0,
         ]

@@ -63,16 +63,16 @@ describe('HarnessRunService', () => {
       return client;
     }
 
-    it('persists a run with normalised ids', async () => {
-      const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
+    it('persists a runtime-owned run with normalised ids', async () => {
+      const row = { id: RUN_ID, ticket_id: 42, runtime_id: 7, status: 'running' };
       const client = clientWith(
-        [{ status: 'in_progress', assigned_agent_id: '7' }],
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
         { rows: [row] }
       );
 
       const result = await HarnessRunService.startRun({
         ticketId: '42',
-        agentId: 7,
+        runtimeId: 7,
         branch: ' feat/fg-33 ',
         baseSha: 'abc123',
         provider: 'anthropic',
@@ -86,13 +86,17 @@ describe('HarnessRunService', () => {
         lock: true,
         action: 'durable_start',
       });
-      expect(client.query.mock.calls[2][0]).toContain('INSERT INTO harness_runs');
-      expect(client.query.mock.calls[2][0]).toContain('project_id');
-      expect(client.query.mock.calls[2][0]).toContain('budget_reserved_usd');
-      expect(client.query.mock.calls[2][1]).toEqual([
+      expect(HarnessBudgetService.assertCanStart).toHaveBeenCalledWith(
+        expect.objectContaining({ runtimeId: 7, ticketId: 42, projectId: 5 })
+      );
+      const [sql, params] = client.query.mock.calls[2];
+      expect(sql).toContain('INSERT INTO harness_runs');
+      expect(sql).toContain('runtime_id');
+      expect(sql).not.toContain('agent_id');
+      expect(sql).toContain('t.assigned_runtime_id = $2');
+      expect(params).toEqual([
         42,
         7,
-        null,
         'feat/fg-33',
         'abc123',
         null,
@@ -108,31 +112,16 @@ describe('HarnessRunService', () => {
       ]);
     });
 
-
-    it('persists a runtime-owned run without an agents row', async () => {
-      const row = { id: RUN_ID, ticket_id: 42, agent_id: null, runtime_id: 3, status: 'running' };
-      const client = clientWith(
-        [{ status: 'in_progress', assigned_runtime_id: '3' }],
-        { rows: [row] }
-      );
-
-      const result = await HarnessRunService.startRun({
-        ticketId: '42',
-        runtimeId: 3,
-        branch: 'feat/fg-54',
-      });
-
-      expect(result).toEqual(row);
-      expect(client.query.mock.calls[2][0]).toContain('runtime_id');
-      expect(client.query.mock.calls[2][1].slice(0, 4)).toEqual([42, null, 3, 'feat/fg-54']);
-      expect(HarnessBudgetService.assertCanStart).toHaveBeenCalledWith(
-        expect.objectContaining({ runtimeId: 3, agentId: null })
-      );
+    it('rejects a legacy agent identity instead of falling back', async () => {
+      await expect(HarnessRunService.startRun({
+        ticketId: 42, agentId: 7, branch: 'feat/fg-54',
+      })).rejects.toThrow('runtimeId is required');
+      expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('audits a provider-policy start rejection without creating a run', async () => {
       const client = clientWith(
-        [{ status: 'in_progress', assigned_agent_id: '7', project_id: 5 }],
+        [{ status: 'in_progress', assigned_runtime_id: '3', project_id: 5 }],
         { rows: [] }
       );
       HarnessPrivacyService.assertProviderAllowed.mockRejectedValueOnce(
@@ -141,7 +130,7 @@ describe('HarnessRunService', () => {
 
       await expect(HarnessRunService.startRun({
         ticketId: 42,
-        agentId: 7,
+        runtimeId: 3,
         branch: 'feat/fg-42',
         provider: 'anthropic',
       })).rejects.toThrow('not allowed by the project privacy policy');
@@ -151,49 +140,26 @@ describe('HarnessRunService', () => {
           projectId: 5,
           action: 'start_blocked',
           ticketId: 42,
-          agentId: 7,
+          runtimeId: 3,
+          actorId: 3,
+          actorType: 'runtime',
           dedupeKey: 'privacy:start_blocked:42:anthropic',
         })
       );
       expect(client.release).toHaveBeenCalled();
     });
 
-
-    it('keeps the runtime identity in a privacy start-block audit', async () => {
-      const client = clientWith(
-        [{ status: 'in_progress', assigned_runtime_id: '3', project_id: 5 }],
-        { rows: [] }
-      );
-      HarnessPrivacyService.assertProviderAllowed.mockRejectedValueOnce(
-        new Error('Provider is not allowed by the project privacy policy')
-      );
-
-      await expect(HarnessRunService.startRun({
-        ticketId: 42,
-        runtimeId: 3,
-        branch: 'feat/fg-54',
-        provider: 'anthropic',
-      })).rejects.toThrow('privacy policy');
-
-      expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectId: 5,
-          runtimeId: 3,
-          actorId: 3,
-          agentId: null,
-          action: 'start_blocked',
-        })
-      );
-      expect(client.release).toHaveBeenCalled();
-    });
-
     it('persists a project-scoped repo profile revision when provided', async () => {
-      const row = { id: RUN_ID, ticket_id: 42, agent_id: 7, status: 'running' };
+      const row = { id: RUN_ID, ticket_id: 42, runtime_id: 7, status: 'running' };
       const client = {
         query: jest.fn()
           .mockResolvedValueOnce({}) // BEGIN
-          .mockResolvedValueOnce({ rows: [{ status: 'in_progress', assigned_agent_id: '7' }] })
-          .mockResolvedValueOnce({ rows: [{ id: '11111111-1111-4111-8111-111111111111', version: 3 }] })
+          .mockResolvedValueOnce({
+            rows: [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+          })
+          .mockResolvedValueOnce({
+            rows: [{ id: '11111111-1111-4111-8111-111111111111', version: 3 }],
+          })
           .mockResolvedValueOnce({ rows: [row] }) // INSERT
           .mockResolvedValueOnce({}), // COMMIT
         release: jest.fn(),
@@ -202,7 +168,7 @@ describe('HarnessRunService', () => {
 
       await HarnessRunService.startRun({
         ticketId: 42,
-        agentId: 7,
+        runtimeId: 7,
         branch: 'feat/fg-39',
         repoProfileId: '11111111-1111-4111-8111-111111111111',
         repoProfileVersion: 3,
@@ -224,7 +190,9 @@ describe('HarnessRunService', () => {
       const client = {
         query: jest.fn()
           .mockResolvedValueOnce({}) // BEGIN
-          .mockResolvedValueOnce({ rows: [{ status: 'in_progress', assigned_agent_id: '7' }] })
+          .mockResolvedValueOnce({
+            rows: [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+          })
           .mockResolvedValueOnce({ rows: [] }), // no matching profile
         release: jest.fn(),
       };
@@ -232,7 +200,7 @@ describe('HarnessRunService', () => {
 
       await expect(HarnessRunService.startRun({
         ticketId: 42,
-        agentId: 7,
+        runtimeId: 7,
         branch: 'feat/fg-39',
         repoProfileId: '11111111-1111-4111-8111-111111111111',
         repoProfileVersion: 3,
@@ -244,7 +212,7 @@ describe('HarnessRunService', () => {
     it('requires the profile id and version together', async () => {
       await expect(HarnessRunService.startRun({
         ticketId: 42,
-        agentId: 7,
+        runtimeId: 7,
         branch: 'feat/fg-39',
         repoProfileId: '11111111-1111-4111-8111-111111111111',
       })).rejects.toThrow(/provided together/);
@@ -253,33 +221,33 @@ describe('HarnessRunService', () => {
 
     it('rejects a missing ticket id', async () => {
       await expect(
-        HarnessRunService.startRun({ agentId: 7, branch: 'b' })
+        HarnessRunService.startRun({ runtimeId: 7, branch: 'b' })
       ).rejects.toThrow('ticketId must be a positive integer');
       expect(pool.connect).not.toHaveBeenCalled();
     });
 
     it('rejects a blank branch', async () => {
       await expect(
-        HarnessRunService.startRun({ ticketId: 1, agentId: 7, branch: '  ' })
+        HarnessRunService.startRun({ ticketId: 1, runtimeId: 7, branch: '  ' })
       ).rejects.toThrow('branch is required');
     });
 
     it('rejects a non-positive attempt', async () => {
       await expect(
-        HarnessRunService.startRun({ ticketId: 1, agentId: 7, branch: 'b', attempt: 0 })
+        HarnessRunService.startRun({ ticketId: 1, runtimeId: 7, branch: 'b', attempt: 0 })
       ).rejects.toThrow('attempt must be a positive integer');
     });
 
-    it('requires the ticket to be assigned to the agent', async () => {
+    it('requires the ticket to be assigned to the runtime', async () => {
       clientWith(
-        [{ status: 'in_progress', assigned_agent_id: '9' }],
+        [{ status: 'in_progress', assigned_runtime_id: '9', project_id: 5 }],
         { rows: [] },
-        [{ rows: [{ status: 'in_progress', assigned_agent_id: '9', agent_id: '7' }] }]
+        [{ rows: [{ status: 'in_progress', assigned_runtime_id: '9' }] }]
       );
 
       await expect(
-        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
-      ).rejects.toThrow('Ticket is not assigned to this agent');
+        HarnessRunService.startRun({ ticketId: 42, runtimeId: 7, branch: 'b' })
+      ).rejects.toThrow('Ticket is not assigned to this runtime');
     });
 
     it('maps the active-run unique index to a conflict', async () => {
@@ -291,20 +259,22 @@ describe('HarnessRunService', () => {
       };
       client.query
         .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ rows: [{ status: 'in_progress', assigned_agent_id: '7' }] })
+        .mockResolvedValueOnce({
+          rows: [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        })
         .mockRejectedValueOnce(error)
         .mockResolvedValueOnce({});
       pool.connect.mockResolvedValueOnce(client);
 
       await expect(
-        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
+        HarnessRunService.startRun({ ticketId: 42, runtimeId: 7, branch: 'b' })
       ).rejects.toThrow('Ticket already has an active harness run');
       expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     });
 
     it('refuses a new run when dependencies are not ready', async () => {
       const client = clientWith(
-        [{ status: 'in_progress', assigned_agent_id: '7' }],
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
         { rows: [] }
       );
       DependencyService.assertReady.mockRejectedValueOnce(
@@ -314,22 +284,22 @@ describe('HarnessRunService', () => {
       );
 
       await expect(
-        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
+        HarnessRunService.startRun({ ticketId: 42, runtimeId: 7, branch: 'b' })
       ).rejects.toThrow('Cannot start: 2 dependencies are not done');
       expect(client.query).toHaveBeenCalledWith('ROLLBACK');
       expect(client.query.mock.calls[2][0]).not.toContain('INSERT INTO harness_runs');
     });
 
-    it('does not probe dependencies for a ticket owned by another agent', async () => {
+    it('does not probe dependencies for a ticket owned by another runtime', async () => {
       clientWith(
-        [{ status: 'in_progress', assigned_agent_id: '9' }],
+        [{ status: 'in_progress', assigned_runtime_id: '9', project_id: 5 }],
         { rows: [] },
         [{ rows: [] }]
       );
 
       await expect(
-        HarnessRunService.startRun({ ticketId: 42, agentId: 7, branch: 'b' })
-      ).rejects.toThrow('Ticket is not assigned to this agent');
+        HarnessRunService.startRun({ ticketId: 42, runtimeId: 7, branch: 'b' })
+      ).rejects.toThrow('Ticket is not assigned to this runtime');
       expect(DependencyService.assertReady).not.toHaveBeenCalled();
     });
   });
@@ -360,17 +330,28 @@ describe('HarnessRunService', () => {
       );
     });
 
-    it('lists only running runs for an agent', async () => {
+    it('lists only running runs for a runtime', async () => {
       const rows = [{ id: RUN_ID, status: 'running' }];
       pool.query.mockResolvedValueOnce({ rows });
 
-      await expect(HarnessRunService.listActiveRunsForAgent(7)).resolves.toEqual(rows);
-      const sql = pool.query.mock.calls[0][0];
+      await expect(
+        HarnessRunService.listActiveRunsForActor({ runtimeId: 7 })
+      ).resolves.toEqual(rows);
+      const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain("status = 'running'");
       expect(sql).toContain('last_checkpoint_payload');
       expect(sql).toContain('ticket_status');
       expect(sql).toContain('lease_expires_at');
       expect(sql).toContain('LEFT JOIN LATERAL');
+      expect(sql).toContain('r.runtime_id = $1');
+      expect(params).toEqual([7]);
+    });
+
+    it('rejects an active-run listing without a runtime', async () => {
+      await expect(
+        HarnessRunService.listActiveRunsForActor({ agentId: 7 })
+      ).rejects.toThrow('runtimeId is required');
+      expect(pool.query).not.toHaveBeenCalled();
     });
 
     it('lists recent project runs for replay with a bounded limit', async () => {
@@ -485,49 +466,42 @@ describe('HarnessRunService', () => {
   });
 
   describe('heartbeat', () => {
-    it('updates heartbeat and optional step for the owning agent', async () => {
-      const row = { id: RUN_ID, step: 'verifying' };
+    it('updates heartbeat and optional step for the owning runtime', async () => {
+      const row = { id: RUN_ID, runtime_id: 7, step: 'verifying' };
       pool.query.mockResolvedValueOnce({ rows: [row] });
 
       await expect(
-        HarnessRunService.heartbeat(RUN_ID, 7, 'verifying')
+        HarnessRunService.heartbeat(RUN_ID, { runtimeId: 7 }, 'verifying')
       ).resolves.toEqual(row);
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('heartbeat_at = NOW()');
       expect(sql).toContain('agent_step = COALESCE');
       expect(sql).not.toContain('step = COALESCE($3, step)');
-      expect(sql).toContain('agent_id = $2');
-      expect(sql).toContain('runtime_id = $3');
-      expect(params).toEqual([RUN_ID, 7, null, 'verifying']);
+      expect(sql).toContain('runtime_id = $2');
+      expect(sql).not.toContain('agent_id');
+      expect(params).toEqual([RUN_ID, 7, 'verifying']);
     });
 
     it('leaves the step untouched when omitted', async () => {
       pool.query.mockResolvedValueOnce({ rows: [{ id: RUN_ID }] });
 
-      await HarnessRunService.heartbeat(RUN_ID, 7);
+      await HarnessRunService.heartbeat(RUN_ID, { runtimeId: 7 });
 
-      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7, null, null]);
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7, null]);
     });
 
-
-    it('updates heartbeat for a runtime owner', async () => {
-      const row = { id: RUN_ID, runtime_id: 3, step: 'verifying' };
-      pool.query.mockResolvedValueOnce({ rows: [row] });
-
+    it('rejects a legacy scalar actor without a runtime', async () => {
       await expect(
-        HarnessRunService.heartbeat(RUN_ID, { runtimeId: 3 }, 'verifying')
-      ).resolves.toEqual(row);
-
-      const [sql, params] = pool.query.mock.calls[0];
-      expect(sql).toContain('runtime_id = $3');
-      expect(params).toEqual([RUN_ID, null, 3, 'verifying']);
+        HarnessRunService.heartbeat(RUN_ID, 7, 'verifying')
+      ).rejects.toThrow('runtimeId is required');
+      expect(pool.query).not.toHaveBeenCalled();
     });
 
-    it('throws when no active run matches the agent', async () => {
-      await expect(HarnessRunService.heartbeat(RUN_ID, 7)).rejects.toThrow(
-        'Active harness run not found'
-      );
+    it('throws when no active run matches the runtime', async () => {
+      await expect(
+        HarnessRunService.heartbeat(RUN_ID, { runtimeId: 7 })
+      ).rejects.toThrow('Active harness run not found');
     });
   });
 
@@ -565,7 +539,7 @@ describe('HarnessRunService', () => {
         error: 'PII pattern detected for alice@example.com',
         project_id: 5,
         ticket_id: 42,
-        agent_id: 7,
+        runtime_id: 7,
       };
       pool.query.mockResolvedValueOnce({ rows: [row] });
 
@@ -578,7 +552,13 @@ describe('HarnessRunService', () => {
       expect(params[2]).not.toContain('alice@example.com');
       expect(params[2]).toContain('[REDACTED_EMAIL]');
       expect(HarnessAuditService.recordPrivacy).toHaveBeenCalledWith(
-        expect.objectContaining({ projectId: 5, action: 'run_blocked' })
+        expect.objectContaining({
+          projectId: 5,
+          runtimeId: 7,
+          actorId: 7,
+          action: 'run_blocked',
+          actorType: 'runtime',
+        })
       );
     });
 
@@ -627,14 +607,14 @@ describe('HarnessRunService', () => {
 
   describe('leases', () => {
     it('claims a lease only for a running run that owns the ticket', async () => {
-      const lease = { ticket_id: 42, run_id: RUN_ID, agent_id: 7 };
+      const lease = { ticket_id: 42, run_id: RUN_ID, runtime_id: 7 };
       pool.query.mockResolvedValueOnce({ rows: [lease] });
 
       await expect(
         HarnessRunService.claimLease({
           ticketId: 42,
           runId: RUN_ID,
-          agentId: 7,
+          runtimeId: 7,
           ttlSeconds: 120,
         })
       ).resolves.toEqual(lease);
@@ -642,33 +622,21 @@ describe('HarnessRunService', () => {
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('ON CONFLICT (ticket_id) DO UPDATE');
       expect(sql).toContain('EXISTS');
-      expect(sql).toContain('t.assigned_agent_id = $3');
-      expect(sql).toContain('t.assigned_runtime_id = $4');
-      expect(params).toEqual([42, RUN_ID, 7, null, 120]);
+      expect(sql).toContain('r.runtime_id = $3');
+      expect(sql).toContain('t.assigned_runtime_id = $3');
+      expect(sql).not.toContain('agent_id');
+      expect(params).toEqual([42, RUN_ID, 7, 120]);
     });
 
-
-    it('claims a lease for a runtime owner', async () => {
-      const lease = { ticket_id: 42, run_id: RUN_ID, runtime_id: 3 };
-      pool.query.mockResolvedValueOnce({ rows: [lease] });
-
+    it('rejects a lease claim without a runtime', async () => {
       await expect(
-        HarnessRunService.claimLease({
-          ticketId: 42,
-          runId: RUN_ID,
-          runtimeId: 3,
-          ttlSeconds: 120,
-        })
-      ).resolves.toEqual(lease);
-
-      const [sql, params] = pool.query.mock.calls[0];
-      expect(sql).toContain('runtime_id = $4');
-      expect(params).toEqual([42, RUN_ID, null, 3, 120]);
+        HarnessRunService.claimLease({ ticketId: 42, runId: RUN_ID, agentId: 7 })
+      ).rejects.toThrow('runtimeId is required');
     });
 
     it('returns null when another run holds an unexpired lease', async () => {
       await expect(
-        HarnessRunService.claimLease({ ticketId: 42, runId: RUN_ID, agentId: 7 })
+        HarnessRunService.claimLease({ ticketId: 42, runId: RUN_ID, runtimeId: 7 })
       ).resolves.toBeNull();
     });
 
@@ -677,31 +645,32 @@ describe('HarnessRunService', () => {
         HarnessRunService.claimLease({
           ticketId: 42,
           runId: RUN_ID,
-          agentId: 7,
+          runtimeId: 7,
           ttlSeconds: 0,
         })
       ).rejects.toThrow('ttlSeconds must be an integer between 1 and 86400');
     });
 
-    it('renews an unexpired lease', async () => {
-      const lease = { ticket_id: 42, run_id: RUN_ID };
+    it('renews an unexpired lease for the owning runtime', async () => {
+      const lease = { ticket_id: 42, run_id: RUN_ID, runtime_id: 7 };
       pool.query.mockResolvedValueOnce({ rows: [lease] });
 
       await expect(
-        HarnessRunService.renewLease({ ticketId: 42, runId: RUN_ID, agentId: 7 })
+        HarnessRunService.renewLease({ ticketId: 42, runId: RUN_ID, runtimeId: 7 })
       ).resolves.toEqual(lease);
-      const sql = pool.query.mock.calls[0][0];
+      const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('expires_at > NOW()');
       expect(sql).toContain("r.status = 'running'");
       expect(sql).toContain('l.ticket_id = r.ticket_id');
-      expect(sql).toContain('l.agent_id = r.agent_id');
-      expect(sql).toContain('t.assigned_agent_id = $3');
-      expect(sql).toContain('t.assigned_runtime_id = $4');
+      expect(sql).toContain('l.runtime_id = r.runtime_id');
+      expect(sql).toContain('t.assigned_runtime_id = $3');
+      expect(sql).not.toContain('agent_id');
+      expect(params).toEqual([42, RUN_ID, 7, 600]);
     });
 
     it('returns null when renewing a lost lease', async () => {
       await expect(
-        HarnessRunService.renewLease({ ticketId: 42, runId: RUN_ID, agentId: 7 })
+        HarnessRunService.renewLease({ ticketId: 42, runId: RUN_ID, runtimeId: 7 })
       ).resolves.toBeNull();
     });
 
@@ -714,7 +683,7 @@ describe('HarnessRunService', () => {
     });
 
     it('reaps expired leases with SKIP LOCKED and fails their runs', async () => {
-      const rows = [{ ticket_id: 42, run_id: RUN_ID, agent_id: 7, run_failed: true }];
+      const rows = [{ ticket_id: 42, run_id: RUN_ID, runtime_id: 7, run_failed: true }];
       pool.query.mockResolvedValueOnce({ rows });
 
       await expect(HarnessRunService.reapExpiredLeases(10)).resolves.toEqual(rows);
@@ -724,6 +693,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'");
       expect(sql).toContain("status = 'failed'");
       expect(sql).toContain('run has no lease and heartbeat is stale');
+      expect(sql).not.toContain('agent_id');
       expect(params).toEqual([10, 900]);
     });
 
@@ -745,8 +715,8 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('is_latest');
       expect(sql).toContain('run.pr_url IS NULL');
       expect(sql).toContain('run.head_sha IS NULL');
-      expect(sql).toContain("t.status IN ('in_progress', 'backlog')");
-      expect(sql).toContain("t.status <> 'done'");
+      expect(sql).toContain('t.assigned_runtime_id = run.runtime_id');
+      expect(sql).not.toContain('agent_id');
       expect(params).toEqual([RUN_ID]);
     });
 
@@ -778,7 +748,7 @@ describe('HarnessRunService', () => {
     });
 
     it('releases a reaped ticket only through the guarded update', async () => {
-      const ticket = { id: 42, status: 'backlog', assigned_agent_id: null };
+      const ticket = { id: 42, status: 'backlog', assigned_runtime_id: null };
       pool.query.mockResolvedValueOnce({ rows: [ticket] });
 
       await expect(
@@ -790,11 +760,12 @@ describe('HarnessRunService', () => {
       expect(sql).toContain("NULLIF(BTRIM(r.pr_url), '') IS NULL");
       expect(sql).toContain("NULLIF(BTRIM(r.head_sha), '') IS NULL");
       expect(sql).toContain("t.status = 'in_progress'");
+      expect(sql).toContain('t.assigned_runtime_id = run.runtime_id');
       expect(sql).toContain("NULLIF(BTRIM(t.pr_url), '') IS NULL");
       expect(sql).toContain('NOT EXISTS');
-      expect(params).toEqual([RUN_ID, null, null]);
+      expect(sql).not.toContain('agent_id');
+      expect(params).toEqual([RUN_ID, null]);
     });
-
 
     it('scopes a runtime-initiated release to its own run', async () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
@@ -802,11 +773,19 @@ describe('HarnessRunService', () => {
       await expect(
         HarnessRunService.releaseTicketForRun(RUN_ID, { runtimeId: 3 })
       ).resolves.toBeNull();
-      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, null, 3]);
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 3]);
+    });
+
+    it('rejects a legacy agent-initiated release', async () => {
+      await expect(
+        HarnessRunService.releaseTicketForRun(RUN_ID, { agentId: 7 })
+      ).resolves.toBeNull();
+      // Only runtimeId is read; an unknown option is ignored.
+      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, null]);
     });
 
     it('allows an operator to release a dead-letter run explicitly', async () => {
-      const ticket = { id: 42, status: 'backlog', assigned_agent_id: null };
+      const ticket = { id: 42, status: 'backlog', assigned_runtime_id: null };
       pool.query.mockResolvedValueOnce({ rows: [ticket] });
 
       await expect(
@@ -817,16 +796,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain(
         "r.status IN ('failed', 'dead_letter', 'budget_exceeded')"
       );
-      expect(params).toEqual([RUN_ID, null, null]);
-    });
-
-    it('scopes an agent-initiated release to its own run', async () => {
-      pool.query.mockResolvedValueOnce({ rows: [] });
-
-      await expect(
-        HarnessRunService.releaseTicketForRun(RUN_ID, { agentId: 7 })
-      ).resolves.toBeNull();
-      expect(pool.query.mock.calls[0][1]).toEqual([RUN_ID, 7, null]);
+      expect(params).toEqual([RUN_ID, null]);
     });
   });
 
@@ -938,25 +908,25 @@ describe('HarnessRunService', () => {
 
   describe('recordPublish', () => {
     it('stores head sha and PR URL while the run is active', async () => {
-      const row = { id: RUN_ID, head_sha: 'abc123', status: 'running' };
+      const row = { id: RUN_ID, head_sha: 'abc123', runtime_id: 7, status: 'running' };
       pool.query.mockResolvedValueOnce({ rows: [row] });
 
       await expect(
-        HarnessRunService.recordPublish(RUN_ID, 7, { headSha: ' abc123 ' })
+        HarnessRunService.recordPublish(RUN_ID, { runtimeId: 7 }, { headSha: ' abc123 ' })
       ).resolves.toEqual(row);
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('head_sha = COALESCE');
       expect(sql).toContain('pr_url = COALESCE');
       expect(sql).toContain("status = 'running'");
-      expect(sql).toContain('agent_id = $2');
-      expect(sql).toContain('runtime_id = $3');
-      expect(params).toEqual([RUN_ID, 7, null, 'abc123', null]);
+      expect(sql).toContain('runtime_id = $2');
+      expect(sql).not.toContain('agent_id');
+      expect(params).toEqual([RUN_ID, 7, 'abc123', null]);
     });
 
     it('requires head sha or PR URL', async () => {
       await expect(
-        HarnessRunService.recordPublish(RUN_ID, 7, {})
+        HarnessRunService.recordPublish(RUN_ID, { runtimeId: 7 }, {})
       ).rejects.toThrow('headSha or prUrl is required');
       expect(pool.query).not.toHaveBeenCalled();
     });
@@ -965,8 +935,16 @@ describe('HarnessRunService', () => {
       pool.query.mockResolvedValueOnce({ rows: [] });
 
       await expect(
-        HarnessRunService.recordPublish(RUN_ID, 7, { prUrl: 'https://example/pull/1' })
+        HarnessRunService.recordPublish(RUN_ID, { runtimeId: 7 }, {
+          prUrl: 'https://example/pull/1',
+        })
       ).rejects.toThrow('Active harness run not found');
+    });
+
+    it('rejects a publish update without a runtime', async () => {
+      await expect(
+        HarnessRunService.recordPublish(RUN_ID, 7, { headSha: 'abc123' })
+      ).rejects.toThrow('runtimeId is required');
     });
   });
 });

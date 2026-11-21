@@ -6,7 +6,6 @@ const cors = require('./middleware/cors');
 
 const logger = require('./utils/logger');
 const { gracefulShutdown } = require('./utils/shutdown');
-const HeartbeatService = require('./services/HeartbeatService');
 
 logger.info('Starting Vibecode API...');
 
@@ -155,13 +154,6 @@ if (process.env.NODE_ENV !== 'test') {
 
   const { pool } = require('./db');
 
-  // Periodically clean up stale agents
-  const cleanupInterval = setInterval(() => {
-    HeartbeatService.cleanupStaleAgents().catch(err => {
-      logger.error('Stale agent cleanup failed:', err.message);
-    });
-  }, 300000);
-
   // Reap expired harness leases and safely return their tickets to backlog.
   // HARNESS_REAPER_INTERVAL_SECONDS=0 disables it (e.g. during rollout).
   const HarnessReaper = require('./services/HarnessReaper');
@@ -211,7 +203,6 @@ if (process.env.NODE_ENV !== 'test') {
   agentTokenPurgeTick();
 
   gracefulShutdown(server, pool, [
-    () => clearInterval(cleanupInterval),
     () => {
       if (reaperInterval) clearInterval(reaperInterval);
     },

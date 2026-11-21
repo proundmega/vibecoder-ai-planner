@@ -9,13 +9,50 @@ jest.mock('../db', () => {
   return { pool };
 });
 
+jest.mock('../middleware/auth', () => {
+  const actual = jest.requireActual('../middleware/auth');
+  return {
+    ...actual,
+    verifyTokenOrAgent: (req, res, next) => {
+      if (req.headers.authorization) {
+        return actual.verifyToken(req, res, next);
+      }
+      if (!req.headers['x-api-key']) {
+        return res.status(401).json({
+          success: false,
+          error: { code: 'UNAUTHORIZED', message: 'Missing authentication token' },
+        });
+      }
+      req.agent = {
+        id: 3, owner_id: 7, project_id: 5, _node: true, _nodeRecord: { id: 12 },
+      };
+      req.node = { id: 12 };
+      req.runtime = {
+        id: 3, role: 'worker', status: 'running', current_project_id: 5,
+      };
+      req.user = { userId: 'user-1', id: 3, role: 'member' };
+      return next();
+    },
+  };
+});
+
+jest.mock('../middleware/agentRole', () => {
+  const actual = jest.requireActual('../middleware/agentRole');
+  const pass = () => (req, res, next) => next();
+  return {
+    ...actual,
+    requireRuntime: pass,
+    requireRole: pass,
+    requireBodyGrant: pass,
+    requireRunGrant: pass,
+    requireTicketGrant: pass,
+    requireProjectGrant: pass,
+  };
+});
+
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockReturnValue({ id: 'user-1', email: 'user@test.com', role: 'project_admin' }),
   sign: jest.fn().mockReturnValue('mock-token'),
-}));
-
-jest.mock('../services/AgentService', () => ({
-  getAgentByApiKey: jest.fn().mockResolvedValue({ id: 7, owner_id: 1 }),
 }));
 
 jest.mock('../services/PermissionService', () => ({
@@ -37,13 +74,13 @@ jest.mock('../services/HarnessRunService', () => ({
   claimLease: jest.fn(),
   renewLease: jest.fn(),
   releaseLease: jest.fn(),
-  listActiveRunsForAgent: jest.fn(),
+  listActiveRunsForActor: jest.fn(),
   recordPublish: jest.fn(),
   releaseTicketForRun: jest.fn(),
   reconcileRun: jest.fn(),
   deadLetterRun: jest.fn(),
   adoptPublishedRun: jest.fn(),
-  listActiveWorkspacePaths: jest.fn(),
+  listActiveWorkspacePathsForActor: jest.fn(),
 }));
 
 const HarnessRunService = require('../services/HarnessRunService');
@@ -69,7 +106,7 @@ describe('Harness run API', () => {
 
   describe('POST /api/v1/harness/runs', () => {
     it('starts a run for the authenticated agent', async () => {
-      HarnessRunService.startRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.startRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
 
       const res = await request(app)
         .post('/api/v1/harness/runs')
@@ -82,7 +119,7 @@ describe('Harness run API', () => {
       expect(HarnessRunService.startRun).toHaveBeenCalledWith(
         expect.objectContaining({
           ticketId: 42,
-          agentId: 7,
+          runtimeId: 3,
           branch: 'feat/fg-33',
           provider: 'anthropic',
           model: 'claude',
@@ -93,7 +130,7 @@ describe('Harness run API', () => {
     it('returns the policy resolved inside the start transaction', async () => {
       HarnessRunService.startRun.mockResolvedValue({
         id: RUN_ID,
-        agent_id: 7,
+        runtime_id: 3,
         project_id: 5,
         ticket_id: 42,
         budget_reserved_usd: 4,
@@ -120,7 +157,7 @@ describe('Harness run API', () => {
 
     it('returns the privacy policy resolved with the run', async () => {
       HarnessRunService.startRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 7, project_id: 5, ticket_id: 42,
+        id: RUN_ID, runtime_id: 3, project_id: 5, ticket_id: 42,
         budget_reserved_usd: 0,
         privacy_policy: {
           maxDataClass: 'internal',
@@ -141,7 +178,7 @@ describe('Harness run API', () => {
 
     it('returns a reservation-only policy if the full policy read fails', async () => {
       HarnessRunService.startRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 7, project_id: 5, ticket_id: 42,
+        id: RUN_ID, runtime_id: 3, project_id: 5, ticket_id: 42,
         budget_reserved_usd: 3,
       });
       HarnessBudgetService.getPolicy.mockRejectedValueOnce(new Error('db blip'));
@@ -180,7 +217,7 @@ describe('Harness run API', () => {
 
   describe('run ownership', () => {
     it('allows an agent to read its own run', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
 
       const res = await request(app)
         .get(`/api/v1/harness/runs/${RUN_ID}`)
@@ -189,19 +226,21 @@ describe('Harness run API', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('blocks an agent from reading another agent\u2019s run', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 8 });
+    it('blocks a runtime from writing another runtime’s run', async () => {
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 8 });
 
       const res = await request(app)
-        .get(`/api/v1/harness/runs/${RUN_ID}`)
-        .set('X-API-Key', 'agent-key');
+        .post(`/api/v1/harness/runs/${RUN_ID}/publish`)
+        .set('X-API-Key', 'agent-key')
+        .send({ headSha: 'abc123' });
 
       expect(res.statusCode).toBe(403);
+      expect(HarnessRunService.recordPublish).not.toHaveBeenCalled();
     });
 
     it('allows an operator JWT to read a run in their project', async () => {
       HarnessRunService.getRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 8, ticket_id: 42,
+        id: RUN_ID, runtime_id: 8, ticket_id: 42,
       });
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'user-1', is_member: false }],
@@ -216,7 +255,7 @@ describe('Harness run API', () => {
 
     it('denies a JWT without AGENT_READ', async () => {
       HarnessRunService.getRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 8, ticket_id: 42,
+        id: RUN_ID, runtime_id: 8, ticket_id: 42,
       });
       PermissionService.hasPermission.mockResolvedValue(false);
 
@@ -229,7 +268,7 @@ describe('Harness run API', () => {
 
     it('denies the user role even though the seed grants AGENT_READ', async () => {
       HarnessRunService.getRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 8, ticket_id: 42,
+        id: RUN_ID, runtime_id: 8, ticket_id: 42,
       });
       jwt.verify.mockReturnValue({
         userId: 'user-1', email: 'agent-user@test.com', role: 'user',
@@ -245,7 +284,7 @@ describe('Harness run API', () => {
 
     it('denies a JWT outside the ticket project', async () => {
       HarnessRunService.getRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 8, ticket_id: 42,
+        id: RUN_ID, runtime_id: 8, ticket_id: 42,
       });
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'other-user', is_member: false }],
@@ -261,7 +300,7 @@ describe('Harness run API', () => {
 
   describe('checkpoints', () => {
     it('records a checkpoint for the owning agent', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.recordCheckpoint.mockResolvedValue({ id: 'cp-1', step: 'cloned' });
 
       const res = await request(app)
@@ -289,7 +328,7 @@ describe('Harness run API', () => {
 
     it('lists checkpoints for operators', async () => {
       HarnessRunService.getRun.mockResolvedValue({
-        id: RUN_ID, agent_id: 8, ticket_id: 42,
+        id: RUN_ID, runtime_id: 8, ticket_id: 42,
       });
       HarnessRunService.getCheckpoints.mockResolvedValue([{ step: 'created' }]);
       pool.query.mockResolvedValueOnce({
@@ -315,11 +354,13 @@ describe('Harness run API', () => {
         .send({ step: 'verifying' });
 
       expect(res.statusCode).toBe(200);
-      expect(HarnessRunService.heartbeat).toHaveBeenCalledWith(RUN_ID, 7, 'verifying');
+      expect(HarnessRunService.heartbeat).toHaveBeenCalledWith(
+        RUN_ID, { runtimeId: 3 }, 'verifying'
+      );
     });
 
     it('finishes a run owned by the agent', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.finishRun.mockResolvedValue({ id: RUN_ID, status: 'succeeded' });
 
       const res = await request(app)
@@ -337,7 +378,7 @@ describe('Harness run API', () => {
     });
 
     it('blocks finishing another agent\u2019s run', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 8 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 8 });
 
       const res = await request(app)
         .post(`/api/v1/harness/runs/${RUN_ID}/finish`)
@@ -362,7 +403,7 @@ describe('Harness run API', () => {
       expect(HarnessRunService.claimLease).toHaveBeenCalledWith({
         ticketId: 42,
         runId: RUN_ID,
-        agentId: 7,
+        runtimeId: 3,
         ttlSeconds: 120,
       });
     });
@@ -390,7 +431,7 @@ describe('Harness run API', () => {
       expect(HarnessRunService.renewLease).toHaveBeenCalledWith({
         ticketId: '42',
         runId: RUN_ID,
-        agentId: 7,
+        runtimeId: 3,
         ttlSeconds: 120,
       });
     });
@@ -407,7 +448,7 @@ describe('Harness run API', () => {
     });
 
     it('releases an owned lease', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.releaseLease.mockResolvedValue(true);
 
       const res = await request(app)
@@ -420,7 +461,7 @@ describe('Harness run API', () => {
     });
 
     it('returns 404 when there is no lease to release', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.releaseLease.mockResolvedValue(false);
 
       const res = await request(app)
@@ -434,33 +475,33 @@ describe('Harness run API', () => {
 
   describe('startup recovery endpoints', () => {
     it('lists active runs for the authenticated agent only', async () => {
-      HarnessRunService.listActiveRunsForAgent.mockResolvedValue([
+      HarnessRunService.listActiveRunsForActor.mockResolvedValue([
         { id: RUN_ID, status: 'running' },
       ]);
 
       const res = await request(app)
-        .get('/api/v1/harness/agents/7/runs')
+        .get('/api/v1/harness/agents/3/runs')
         .set('X-API-Key', 'agent-key');
 
       expect(res.statusCode).toBe(200);
       expect(res.body.data).toEqual([{ id: RUN_ID, status: 'running' }]);
-      expect(HarnessRunService.listActiveRunsForAgent).toHaveBeenCalledWith(7);
+      expect(HarnessRunService.listActiveRunsForActor).toHaveBeenCalledWith({ runtimeId: 3 });
     });
 
     it('refuses to list another agent\u2019s runs', async () => {
       const res = await request(app)
-        .get('/api/v1/harness/agents/8/runs')
+        .get('/api/v1/harness/agents/4/runs')
         .set('X-API-Key', 'agent-key');
 
       expect(res.statusCode).toBe(403);
-      expect(HarnessRunService.listActiveRunsForAgent).not.toHaveBeenCalled();
+      expect(HarnessRunService.listActiveRunsForActor).not.toHaveBeenCalled();
     });
 
     it('lists protected workspace paths for the owning agent', async () => {
-      HarnessRunService.listActiveWorkspacePaths.mockResolvedValue(['/tmp/ws']);
+      HarnessRunService.listActiveWorkspacePathsForActor.mockResolvedValue(['/tmp/ws']);
 
       const res = await request(app)
-        .get('/api/v1/harness/agents/7/workspaces')
+        .get('/api/v1/harness/agents/3/workspaces')
         .set('X-API-Key', 'agent-key');
 
       expect(res.statusCode).toBe(200);
@@ -469,14 +510,14 @@ describe('Harness run API', () => {
 
     it('refuses to list workspaces for another agent', async () => {
       const res = await request(app)
-        .get('/api/v1/harness/agents/8/workspaces')
+        .get('/api/v1/harness/agents/4/workspaces')
         .set('X-API-Key', 'agent-key');
 
       expect(res.statusCode).toBe(403);
     });
 
     it('records publish evidence for the owning agent', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.recordPublish.mockResolvedValue({ id: RUN_ID, head_sha: 'abc123' });
 
       const res = await request(app)
@@ -486,7 +527,7 @@ describe('Harness run API', () => {
 
       expect(res.statusCode).toBe(200);
       expect(HarnessRunService.recordPublish).toHaveBeenCalledWith(
-        RUN_ID, 7, { headSha: 'abc123', prUrl: undefined }
+        RUN_ID, { runtimeId: 3 }, { headSha: 'abc123', prUrl: undefined }
       );
     });
 
@@ -500,12 +541,12 @@ describe('Harness run API', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.data).toEqual({ released: true });
       expect(HarnessRunService.releaseTicketForRun).toHaveBeenCalledWith(
-        RUN_ID, { agentId: 7 }
+        RUN_ID, { runtimeId: 3 }
       );
     });
 
     it('reconciles a terminal run through the agent-scoped route', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.reconcileRun.mockResolvedValue({
         run_id: RUN_ID, ticket_id: 42, adopted: true, released: false, marked: true,
       });
@@ -520,7 +561,7 @@ describe('Harness run API', () => {
     });
 
     it('refuses reconcile when the run is still active', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
       HarnessRunService.reconcileRun.mockResolvedValue(null);
 
       const res = await request(app)
@@ -550,7 +591,7 @@ describe('Harness run API', () => {
     });
 
     it('dead-letters a run for an operator JWT', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
       HarnessRunService.deadLetterRun.mockResolvedValue({
         id: RUN_ID, status: 'dead_letter',
       });
@@ -568,7 +609,7 @@ describe('Harness run API', () => {
     });
 
     it('lets an operator release a dead-letter ticket', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
       HarnessRunService.releaseTicketForRun.mockResolvedValue({ id: 42 });
 
       const res = await request(app)
@@ -586,7 +627,7 @@ describe('Harness run API', () => {
       jwt.verify.mockReturnValue({
         userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'user',
       });
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
 
       const res = await request(app)
         .post(`/api/v1/harness/runs/${RUN_ID}/release-ticket`)
@@ -597,7 +638,7 @@ describe('Harness run API', () => {
     });
 
     it('adopts a published run for an operator JWT', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
       HarnessRunService.adoptPublishedRun.mockResolvedValue({
         run_id: RUN_ID, adopted: true, released: false, marked: true,
       });
@@ -611,7 +652,7 @@ describe('Harness run API', () => {
     });
 
     it('passes an operator-verified prUrl through to adoption', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
       HarnessRunService.adoptPublishedRun.mockResolvedValue({
         run_id: RUN_ID, adopted: true, released: false, marked: true,
       });
@@ -635,7 +676,7 @@ describe('Harness run API', () => {
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'owner-1', is_member: true }],
       });
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
       HarnessRunService.deadLetterRun.mockResolvedValue({ id: RUN_ID, status: 'dead_letter' });
 
       const res = await request(app)
@@ -655,7 +696,7 @@ describe('Harness run API', () => {
       pool.query.mockResolvedValueOnce({
         rows: [{ owner_id: 'owner-1', is_member: false }],
       });
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
 
       const res = await request(app)
         .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
@@ -671,7 +712,7 @@ describe('Harness run API', () => {
         userId: 'user-1', id: 'user-1', email: 'user@test.com', role: 'user',
       });
       PermissionService.hasPermission.mockResolvedValue(true);
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
 
       const res = await request(app)
         .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
@@ -686,7 +727,7 @@ describe('Harness run API', () => {
         userId: 'user-1', id: 'user-1', email: 'member@test.com', role: 'member',
       });
       PermissionService.hasPermission.mockResolvedValue(false);
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
 
       const res = await request(app)
         .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
@@ -697,7 +738,7 @@ describe('Harness run API', () => {
     });
 
     it('refuses operator actions from an agent key', async () => {
-      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, agent_id: 7, ticket_id: 42 });
+      HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3, ticket_id: 42 });
 
       const res = await request(app)
         .post(`/api/v1/harness/runs/${RUN_ID}/dead-letter`)
@@ -711,7 +752,7 @@ describe('Harness run API', () => {
 
   describe('GET /api/v1/harness/tickets/:ticketId/run', () => {
     it('returns the latest run', async () => {
-      HarnessRunService.getLatestRunForTicket.mockResolvedValue({ id: RUN_ID, agent_id: 7 });
+      HarnessRunService.getLatestRunForTicket.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
 
       const res = await request(app)
         .get('/api/v1/harness/tickets/42/run')

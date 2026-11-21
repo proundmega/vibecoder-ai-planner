@@ -10,7 +10,6 @@ const {
   ValidationError,
   ConflictError,
 } = require('../errors/HttpError');
-const { resolveProviderEndpoint } = require('../utils/providerDefaults');
 
 /**
  * Harness privacy and data-governance policy (fg-42).
@@ -192,35 +191,11 @@ class HarnessPrivacyService {
     provider,
     providerBaseUrl = null,
     providerRegion = null,
-    agentId = null,
     client = pool,
   } = {}) {
     const policy = await this.getPolicy(projectId, { client });
-    let resolvedBaseUrl = providerBaseUrl;
-    let resolvedRegion = providerRegion;
-    if (agentId !== null && agentId !== undefined) {
-      // Prefer the provider config the backend owns over agent-supplied
-      // metadata. The agent is trusted, but this is defense in depth and gives
-      // the run an auditable endpoint/region.
-      const providerConfig = await client.query(
-        `SELECT p.provider_type,
-                p.base_url,
-                p.endpoint_url,
-                p.routing_rules->>'region' AS region
-         FROM agents a
-         LEFT JOIN providers p ON p.id = a.provider_id
-         WHERE a.id = $1`,
-        [positiveInteger(agentId, 'agentId')]
-      );
-      const row = providerConfig.rows?.[0] || {};
-      const resolvedEndpoint = resolveProviderEndpoint({
-        providerType: row.provider_type,
-        baseUrl: row.base_url,
-        endpointUrl: row.endpoint_url,
-      });
-      if (resolvedEndpoint) resolvedBaseUrl = resolvedEndpoint;
-      if (row.region) resolvedRegion = row.region;
-    }
+    const resolvedBaseUrl = providerBaseUrl;
+    const resolvedRegion = providerRegion;
     const normalised = normaliseProvider(provider);
     const restricted = policy.source === 'project'
       || policy.allowedProviders.length > 0

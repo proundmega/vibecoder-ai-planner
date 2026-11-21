@@ -2,8 +2,7 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const { runMigrationFile } = require('./migrationSupport');
 
-// Only migrations registered in apply.js. 057_agent_fleet_clean_cut.sql is
-// deliberately unregistered until the joint clean cut.
+// Only migrations registered in apply.js. 057 is registered by default.
 const { SQL_FILES } = require('../../migrations/apply');
 
 const pool = new Pool({
@@ -24,19 +23,17 @@ async function runMigration(file) {
 }
 
 /**
- * A long-lived integration database may still contain the deferred clean cut
- * from an earlier branch run. Rebuild it before applying the registered set.
+ * A long-lived integration database may already carry the destructive 057
+ * cut. Rebuild it so the registered migration chain starts from a clean base.
  */
 async function resetIfCleanCutApplied() {
   const columns = await pool.query(
     `SELECT
        to_regclass('public.agent_runtimes') IS NOT NULL AS has_runtimes,
-       to_regclass('public.agents') IS NOT NULL AS has_agents,
-       EXISTS (SELECT 1 FROM information_schema.columns
-               WHERE table_name = 'agent_actions' AND column_name = 'agent_id') AS has_legacy_action`
+       to_regclass('public.agents') IS NOT NULL AS has_agents`
   );
   const row = columns.rows[0];
-  const cutApplied = row.has_runtimes && (!row.has_agents || !row.has_legacy_action);
+  const cutApplied = row.has_runtimes && !row.has_agents;
   if (!cutApplied) return;
 
   const resetAllowed =

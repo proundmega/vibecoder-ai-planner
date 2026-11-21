@@ -53,7 +53,7 @@ function mockQueries({
     if (sql.includes('JOIN tickets') && sql.includes('COUNT(*)')) {
       return { rows: [{ count: projectRuns }] };
     }
-    if (sql.includes('FROM harness_runs') && sql.includes('agent_id')) {
+    if (sql.includes('FROM harness_runs') && sql.includes('runtime_id')) {
       return { rows: [{ count: agentRuns }] };
     }
     if (sql.includes('INSERT INTO harness_budget_policies')) {
@@ -151,41 +151,41 @@ describe('HarnessBudgetService', () => {
       });
 
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       })).rejects.toThrow('Harness kill switch is enabled: incident');
     });
 
     it('blocks starts beyond the retry cap', async () => {
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9, attempt: 4,
+        projectId: 7, ticketId: 42, runtimeId: 9, attempt: 4,
       })).rejects.toThrow('Harness retry limit reached');
     });
 
     it('blocks starts when the daily project budget is exhausted', async () => {
       mockQueries({ spend: 25 });
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       })).rejects.toThrow('Harness daily project budget exhausted');
     });
 
     it('blocks starts at the project concurrency limit', async () => {
       mockQueries({ projectRuns: 4 });
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       })).rejects.toThrow('Harness project concurrency limit reached');
     });
 
-    it('blocks starts at the agent concurrency limit', async () => {
+    it('blocks starts at the runtime concurrency limit', async () => {
       mockQueries({ agentRuns: 1 });
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       })).rejects.toThrow('Harness agent concurrency limit reached');
     });
 
     it('blocks a second start for a ticket that already has a running run', async () => {
       mockQueries({ activeRun: true });
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       })).rejects.toThrow('Ticket already has an active harness run');
     });
 
@@ -196,7 +196,7 @@ describe('HarnessBudgetService', () => {
         policies: [{ scope: 'project', daily_cost_usd: 10 }],
       });
       const first = await HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       });
       expect(first.reservedCostUsd).toBe(2);
 
@@ -206,7 +206,7 @@ describe('HarnessBudgetService', () => {
         policies: [{ scope: 'project', daily_cost_usd: 10 }],
       });
       await expect(HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 43, agentId: 10,
+        projectId: 7, ticketId: 43, runtimeId: 10,
       })).rejects.toThrow('Harness daily project budget is fully reserved');
     });
 
@@ -215,7 +215,7 @@ describe('HarnessBudgetService', () => {
         policies: [{ scope: 'project', daily_cost_usd: 0, max_cost_usd: 5 }],
       });
       const policy = await HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9,
+        projectId: 7, ticketId: 42, runtimeId: 9,
       });
       expect(policy.quotas.dailyCostUsd).toBe(0);
       expect(policy.reservedCostUsd).toBe(5);
@@ -223,7 +223,7 @@ describe('HarnessBudgetService', () => {
 
     it('takes the project advisory lock and allows a compliant start', async () => {
       const policy = await HarnessBudgetService.assertCanStart({
-        projectId: 7, ticketId: 42, agentId: 9, attempt: 1, lock: true,
+        projectId: 7, ticketId: 42, runtimeId: 9, attempt: 1, lock: true,
       });
 
       expect(policy.projectId).toBe(7);

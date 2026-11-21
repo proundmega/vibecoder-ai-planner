@@ -26,7 +26,7 @@ function setup({ ticket = null, updated = [], membership = [] } = {}) {
   return client;
 }
 
-const released = { id: 1, status: 'backlog', assigned_agent_id: null, locked_at: null };
+const released = { id: 1, status: 'backlog', assigned_runtime_id: null, locked_at: null };
 
 describe('TicketService.releaseTicket authorization', () => {
   beforeEach(() => {
@@ -34,9 +34,9 @@ describe('TicketService.releaseTicket authorization', () => {
   });
 
   test('the assigned agent can release its own ticket', async () => {
-    const client = setup({ ticket: { id: 1, assigned_agent_id: '7' }, updated: [released] });
+    const client = setup({ ticket: { id: 1, assigned_runtime_id: '7' }, updated: [released] });
 
-    const result = await TicketService.releaseTicket(1, { agentId: '7' });
+    const result = await TicketService.releaseTicket(1, { runtimeId: '7' });
 
     expect(result.status).toBe('backlog');
     expect(client.query).toHaveBeenCalledWith(
@@ -48,10 +48,10 @@ describe('TicketService.releaseTicket authorization', () => {
   });
 
   test('another agent cannot release the ticket', async () => {
-    const client = setup({ ticket: { id: 1, assigned_agent_id: '7' } });
+    const client = setup({ ticket: { id: 1, assigned_runtime_id: '7' } });
 
     await expect(
-      TicketService.releaseTicket(1, { agentId: '8' })
+      TicketService.releaseTicket(1, { runtimeId: '8' })
     ).rejects.toBeInstanceOf(ForbiddenError);
 
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
@@ -61,7 +61,7 @@ describe('TicketService.releaseTicket authorization', () => {
   test('a project owner can release without an agent identity', async () => {
     Project.findById.mockResolvedValue({ id: 1, ownerId: 42 });
     const client = setup({
-      ticket: { id: 1, project_id: 1, assigned_agent_id: '7' },
+      ticket: { id: 1, project_id: 1, assigned_runtime_id: '7' },
       updated: [released],
     });
 
@@ -74,7 +74,7 @@ describe('TicketService.releaseTicket authorization', () => {
   test('a project member can release without an agent identity', async () => {
     Project.findById.mockResolvedValue({ id: 1, ownerId: 99 });
     const client = setup({
-      ticket: { id: 1, project_id: 1, assigned_agent_id: '7' },
+      ticket: { id: 1, project_id: 1, assigned_runtime_id: '7' },
       updated: [released],
       membership: [{ ok: 1 }],
     });
@@ -88,7 +88,7 @@ describe('TicketService.releaseTicket authorization', () => {
   test('a non-member cannot release the ticket', async () => {
     Project.findById.mockResolvedValue({ id: 1, ownerId: 99 });
     const client = setup({
-      ticket: { id: 1, project_id: 1, assigned_agent_id: '7' },
+      ticket: { id: 1, project_id: 1, assigned_runtime_id: '7' },
       membership: [],
     });
 
@@ -101,7 +101,7 @@ describe('TicketService.releaseTicket authorization', () => {
 
   test('an admin bypasses the project check', async () => {
     const client = setup({
-      ticket: { id: 1, project_id: 1, assigned_agent_id: '7' },
+      ticket: { id: 1, project_id: 1, assigned_runtime_id: '7' },
       updated: [released],
     });
 
@@ -114,12 +114,12 @@ describe('TicketService.releaseTicket authorization', () => {
 
   test('a release that loses the assignment race updates nothing', async () => {
     const client = setup({
-      ticket: { id: 1, assigned_agent_id: '7' },
+      ticket: { id: 1, assigned_runtime_id: '7' },
       updated: [],
     });
 
     await expect(
-      TicketService.releaseTicket(1, { agentId: '7' })
+      TicketService.releaseTicket(1, { runtimeId: '7' })
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');

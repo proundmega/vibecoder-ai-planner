@@ -11,8 +11,6 @@ jest.mock('../services/TicketService', () => {
     ...actual,
     pickUpTicket: jest.fn(),
     releaseTicket: jest.fn(),
-    enforceOwnership: jest.fn(),
-    recoverOrphanedTickets: jest.fn(),
     getOne: jest.fn(),
     update: jest.fn(),
     updateStatus: jest.fn(),
@@ -54,55 +52,26 @@ describe('TicketController - Agent Orchestration', () => {
   });
 
   describe('pickUpTicket', () => {
-    test('should pick up a ticket using the agent id, not the owner user id', async () => {
+    test('should pick up a ticket for the node runtime', async () => {
       const mockTicket = {
         id: 100,
         title: 'Test Ticket',
         status: 'in_progress',
-        assigned_agent_id: 7,
+        assigned_runtime_id: 3,
         locked_at: new Date(),
       };
 
       TicketService.pickUpTicket.mockResolvedValueOnce(mockTicket);
 
       req.params.ticketId = '100';
-      req.agent = { id: 7, owner_id: 1 };
-
-      await ticketController.pickUpTicket(req, res);
-
-      expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', { agentId: 7, operatorId: 1 });
-      expect(res.json).toHaveBeenCalledWith({
-        success: true,
-        data: {
-          id: 100,
-          title: 'Test Ticket',
-          status: 'in_progress',
-          assignedAgentId: 7,
-          lockedAt: expect.any(Date),
-        },
-      });
-    });
-
-    test('should pass the runtime id and return the assigned runtime', async () => {
-      TicketService.pickUpTicket.mockResolvedValueOnce({
-        id: 100,
-        title: 'Test Ticket',
-        status: 'in_progress',
-        assigned_agent_id: null,
-        assigned_runtime_id: 3,
-        locked_at: new Date(),
-      });
-
-      req.params.ticketId = '100';
-      req.agent = { id: 3, owner_id: 1, _node: true };
+      req.agent = { id: 12, owner_id: 1, _node: true };
       req.runtime = { id: 3 };
 
       await ticketController.pickUpTicket(req, res);
 
       expect(TicketService.pickUpTicket).toHaveBeenCalledWith('100', {
-        agentId: 3,
-        operatorId: 1,
         runtimeId: 3,
+        operatorId: 1,
       });
       expect(res.json).toHaveBeenCalledWith({
         success: true,
@@ -110,16 +79,14 @@ describe('TicketController - Agent Orchestration', () => {
           id: 100,
           title: 'Test Ticket',
           status: 'in_progress',
-          assignedAgentId: null,
           assignedRuntimeId: 3,
           lockedAt: expect.any(Date),
         },
       });
     });
 
-    test('should reject a JWT request that has no agent identity', async () => {
+    test('should reject a JWT request that has no runtime identity', async () => {
       req.params.ticketId = '100';
-      req.agent = undefined;
 
       await ticketController.pickUpTicket(req, res);
 
@@ -129,7 +96,7 @@ describe('TicketController - Agent Orchestration', () => {
         success: false,
         error: {
           code: 'FORBIDDEN',
-          message: 'Agent credentials required to pick up a ticket',
+          message: 'Node runtime credentials required to pick up a ticket',
         },
       });
     });
@@ -139,7 +106,8 @@ describe('TicketController - Agent Orchestration', () => {
       TicketService.pickUpTicket.mockRejectedValueOnce(mockError);
 
       req.params.ticketId = '100';
-      req.agent = { id: 7, owner_id: 1 };
+      req.agent = { id: 12, owner_id: 1, _node: true };
+      req.runtime = { id: 3 };
 
       const next = jest.fn();
       await ticketController.pickUpTicket(req, res, next);
@@ -154,7 +122,7 @@ describe('TicketController - Agent Orchestration', () => {
         id: 100,
         title: 'Test Ticket',
         status: 'backlog',
-        assigned_agent_id: null,
+        assigned_runtime_id: null,
         locked_at: null,
       };
 
@@ -163,7 +131,6 @@ describe('TicketController - Agent Orchestration', () => {
       PermissionService.hasPermission.mockResolvedValueOnce(true);
 
       req.params.ticketId = '100';
-      req.agent = undefined;
 
       await ticketController.releaseTicket(req, res);
 
@@ -175,28 +142,10 @@ describe('TicketController - Agent Orchestration', () => {
           id: 100,
           title: 'Test Ticket',
           status: 'backlog',
-          assignedAgentId: null,
+          assignedRuntimeId: null,
           lockedAt: null,
         },
       });
-    });
-
-    test('should release as the assigned agent and pass the agent id', async () => {
-      TicketService.releaseTicket.mockResolvedValueOnce({
-        id: 100,
-        title: 'Test Ticket',
-        status: 'backlog',
-        assigned_agent_id: null,
-        locked_at: null,
-      });
-
-      req.params.ticketId = '100';
-      req.agent = { id: 7, owner_id: 1 };
-
-      await ticketController.releaseTicket(req, res);
-
-      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { agentId: 7 });
-      expect(PermissionService.hasPermission).not.toHaveBeenCalled();
     });
 
     test('should release as the assigned runtime and return the assigned runtime', async () => {
@@ -204,28 +153,24 @@ describe('TicketController - Agent Orchestration', () => {
         id: 100,
         title: 'Test Ticket',
         status: 'backlog',
-        assigned_agent_id: null,
         assigned_runtime_id: null,
         locked_at: null,
       });
 
       req.params.ticketId = '100';
-      req.agent = { id: 3, owner_id: 1, _node: true };
+      req.agent = { id: 12, owner_id: 1, _node: true };
       req.runtime = { id: 3 };
 
       await ticketController.releaseTicket(req, res);
 
-      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', {
-        agentId: 3,
-        runtimeId: 3,
-      });
+      expect(TicketService.releaseTicket).toHaveBeenCalledWith('100', { runtimeId: 3 });
+      expect(PermissionService.hasPermission).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: {
           id: 100,
           title: 'Test Ticket',
           status: 'backlog',
-          assignedAgentId: null,
           assignedRuntimeId: null,
           lockedAt: null,
         },
@@ -237,7 +182,6 @@ describe('TicketController - Agent Orchestration', () => {
       PermissionService.hasPermission.mockResolvedValueOnce(false);
 
       req.params.ticketId = '100';
-      req.agent = undefined;
 
       await ticketController.releaseTicket(req, res);
 
@@ -257,7 +201,8 @@ describe('TicketController - Agent Orchestration', () => {
       TicketService.releaseTicket.mockRejectedValueOnce(mockError);
 
       req.params.ticketId = '100';
-      req.agent = { id: 7, owner_id: 1 };
+      req.agent = { id: 12, owner_id: 1, _node: true };
+      req.runtime = { id: 3 };
 
       const next = jest.fn();
       await ticketController.releaseTicket(req, res, next);

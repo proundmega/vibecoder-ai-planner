@@ -166,7 +166,7 @@ local testing only. Deleting the credential volume requires a new join token.
 | `AGENT_API_KEY` | Static API key for backend auth | _(required for legacy)_ |
 | `AGENT_AUTH_MODE` | `auto`, `legacy` or `enroll`; `auto` prefers a static pair and enrolls when it is absent | `auto` |
 | `ENROLLMENT_TOKEN` | One-time `enr_…` join token minted in Agents → Enrollment | _(none)_ |
-| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-enrollment/enroll`) | _(derived)_ |
+| `ENROLLMENT_URL` | Override the enrollment endpoint (defaults to `BACKEND_URL` + `/api/v1/agent-nodes/enroll`) | _(derived)_ |
 | `AGENT_CREDENTIALS_FILE` | Persistent credential file for enrolled nodes; the file wins over `ENROLLMENT_TOKEN` on restart | _(none)_ |
 | `BACKEND_URL` | Backend API URL | `http://localhost:3001` |
 | `PROJECT_ID` | Project to work on | `1` |
@@ -328,12 +328,12 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 | GET | `/api/auth/me` | JWT | Current user info |
 | GET/POST | `/api/v1/projects/*` | JWT | Project CRUD |
 | GET/POST/PUT/DELETE | `/api/v1/tickets/*` | JWT | Ticket CRUD + status transitions |
-| GET/POST | `/api/v1/agents/*` | JWT/API Key | Agent management |
-| GET | `/api/v1/agents/:id/heartbeat` | JWT/API Key | Agent heartbeat |
+| GET/POST/PATCH | `/api/v1/agent-nodes/*` | JWT / node token | Node fleet management, enrollment and runtime heartbeat |
+| POST | `/api/v1/providers/resolve` | JWT | Resolve a verified registry model by role or phase |
 
 **Auth:**
 - User auth: JWT via `Authorization: Bearer <token>` header
-- Agent auth: `X-API-Key` header (mock keys: starts with `test-` or equals `mock-agent-key`)
+- Node/runtime auth: `X-API-Key` with a node access token plus `X-Agent-Runtime`; legacy static agent API keys are removed
 
 **Rate limiting:**
 - `/api/auth/register`: 3 requests per 60 seconds

@@ -249,10 +249,9 @@ describe('Telemetry Events', () => {
       expect(values[3]).toBe('claude-sonnet-4-20250514'); // model
       expect(values[8]).toBe(1); // project_id
       expect(values[9]).toBe(1); // user_id
-      expect(values[10]).toBe(1); // agent_id
-      expect(values[11]).toBe(5); // ticket_id
-      expect(values[12]).toBe('design'); // planning_stage
-      expect(values[13]).toBe('design.md'); // file_key
+      expect(values[10]).toBe(5); // ticket_id
+      expect(values[11]).toBe('design'); // planning_stage
+      expect(values[12]).toBe('design.md'); // file_key
     });
   });
 });

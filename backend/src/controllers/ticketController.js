@@ -160,23 +160,19 @@ async function changeStatus(req, res, next) {
 async function pickUpTicket(req, res, next) {
   try {
     const { ticketId } = req.params;
-    // assigned_agent_id references agents(id); only API-key agent requests
-    // carry an agent identity.
-    const agentId = req.agent && req.agent.id;
-
-    if (!agentId) {
+    // Only node/runtime credentials pick up tickets; operator JWTs release.
+    if (!req.runtime) {
       return res.status(403).json({
         success: false,
         error: {
           code: 'FORBIDDEN',
-          message: 'Agent credentials required to pick up a ticket',
+          message: 'Node runtime credentials required to pick up a ticket',
         },
       });
     }
 
     const operatorId = req.user && req.user.userId;
-    const actor = { agentId, operatorId };
-    if (req.runtime) actor.runtimeId = req.runtime.id;
+    const actor = { runtimeId: req.runtime.id, operatorId };
     const result = await TicketService.pickUpTicket(ticketId, actor);
     res.json({
       success: true,
@@ -184,7 +180,6 @@ async function pickUpTicket(req, res, next) {
         id: result.id,
         title: result.title,
         status: result.status,
-        assignedAgentId: result.assigned_agent_id,
         assignedRuntimeId: result.assigned_runtime_id,
         lockedAt: result.locked_at,
       },
@@ -198,17 +193,14 @@ async function releaseTicket(req, res, next) {
   try {
     const { ticketId } = req.params;
 
-    if (req.agent) {
-      const releaseActor = { agentId: req.agent.id };
-      if (req.runtime) releaseActor.runtimeId = req.runtime.id;
-      const result = await TicketService.releaseTicket(ticketId, releaseActor);
+    if (req.runtime) {
+      const result = await TicketService.releaseTicket(ticketId, { runtimeId: req.runtime.id });
       return res.json({
         success: true,
         data: {
           id: result.id,
           title: result.title,
           status: result.status,
-          assignedAgentId: result.assigned_agent_id,
           assignedRuntimeId: result.assigned_runtime_id,
           lockedAt: result.locked_at,
         },
@@ -238,7 +230,6 @@ async function releaseTicket(req, res, next) {
         id: result.id,
         title: result.title,
         status: result.status,
-        assignedAgentId: result.assigned_agent_id,
         assignedRuntimeId: result.assigned_runtime_id,
         lockedAt: result.locked_at,
       },

@@ -10,7 +10,6 @@
 #   projects.test.sh        — Project CRUD
 #   tickets.test.sh         — Ticket CRUD
 #   status_transitions.test.sh  — Valid/invalid status transitions
-#   agents.test.sh          — AI agent endpoints
 #   frontend.test.sh        — Frontend SPA serving
 #   frontend_proxy.test.sh  — API proxy via frontend
 #   route_ordering.test.sh  — Route precedence (tickets vs project)
@@ -21,12 +20,9 @@
 #   jwt_expiry.test.sh        — JWT token expiry validation
 #   frontend_crud.test.sh     — Ticket CRUD via /api/tickets
 #   credentials.test.sh       — Secure API key management
-#   ticket_ownership.test.sh  — Ticket pickup/release for agents
 #   usage_tracking.test.sh    — Usage logging & model pricing
 #   billing.test.sh           — Billing aggregation
 #   agent_memory.test.sh      — Shared agent memory (pgvector)
-#   agent_lifecycle.test.sh   — Agent pickup → message → release
-#   agent_auth.test.sh        — X-API-Key header tests
 #   rate_limiter.test.sh      — Rate limit enforcement
 #   file_upload.test.sh       — Attachment upload
 #   permission_matrix.test.sh — Role × endpoint matrix

@@ -8,7 +8,8 @@ const suffix = `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
 describe('Harness privacy deletion (real DB)', () => {
   let ownerId;
   let projectId;
-  let agentId;
+  let nodeId;
+  let runtimeId;
   let ticketId;
   let runId;
 
@@ -27,22 +28,40 @@ describe('Harness privacy deletion (real DB)', () => {
       [`Privacy Project ${suffix}`, ownerId]
     );
     projectId = project.rows[0].id;
-    const agent = await pool.query(
-      `INSERT INTO agents (name, api_key, owner_id)
-       VALUES ($1, $2, $3) RETURNING id`,
-      [`privacy-agent-${suffix}`, `privacy_key_${suffix}`, ownerId]
+    const node = await pool.query(
+      `INSERT INTO agent_nodes (owner_id, name, status)
+       VALUES ($1, $2, 'active') RETURNING id`,
+      [ownerId, `privacy-node-${suffix}`]
     );
-    agentId = agent.rows[0].id;
+    nodeId = node.rows[0].id;
+    const credential = await pool.query(
+      `INSERT INTO provider_credentials
+         (owner_id, name, provider_type, api_key_encrypted)
+       VALUES ($1, $2, 'opencode', 'x') RETURNING id`,
+      [ownerId, `privacy-credential-${suffix}`]
+    );
+    const model = await pool.query(
+      `INSERT INTO provider_models (credential_id, model, source, roles, status)
+       VALUES ($1, 'privacy-model', 'manual', ARRAY['worker'], 'verified') RETURNING id`,
+      [credential.rows[0].id]
+    );
+    const runtime = await pool.query(
+      `INSERT INTO agent_runtimes
+         (node_id, name, role, model_id, status, current_project_id)
+       VALUES ($1, $2, 'worker', $3, 'running', $4) RETURNING id`,
+      [nodeId, `privacy-runtime-${suffix}`, model.rows[0].id, projectId]
+    );
+    runtimeId = runtime.rows[0].id;
     const ticket = await pool.query(
-      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_agent_id)
+      `INSERT INTO tickets (project_id, title, status, owner_id, assigned_runtime_id)
        VALUES ($1, 'Privacy ticket', 'in_progress', $2, $3) RETURNING id`,
-      [projectId, ownerId, agentId]
+      [projectId, ownerId, runtimeId]
     );
     ticketId = ticket.rows[0].id;
     const run = await pool.query(
-      `INSERT INTO harness_runs (ticket_id, agent_id, project_id, branch, status)
+      `INSERT INTO harness_runs (ticket_id, runtime_id, project_id, branch, status)
        VALUES ($1, $2, $3, $4, 'running') RETURNING id`,
-      [ticketId, agentId, projectId, `privacy/${suffix}`]
+      [ticketId, runtimeId, projectId, `privacy/${suffix}`]
     );
     runId = run.rows[0].id;
   });
@@ -64,6 +83,13 @@ describe('Harness privacy deletion (real DB)', () => {
       await pool.query('DELETE FROM harness_usage WHERE project_id = $1', [projectId]);
       await pool.query('DELETE FROM usage_logs WHERE project_id = $1', [projectId]);
       await pool.query('DELETE FROM harness_privacy_policies WHERE project_id = $1', [projectId]);
+      await pool.query('DELETE FROM agent_runtimes WHERE node_id = $1', [nodeId]);
+      await pool.query('DELETE FROM agent_nodes WHERE id = $1', [nodeId]);
+      await pool.query(
+        'DELETE FROM provider_models WHERE credential_id IN (SELECT id FROM provider_credentials WHERE owner_id = $1)',
+        [ownerId]
+      );
+      await pool.query('DELETE FROM provider_credentials WHERE owner_id = $1', [ownerId]);
       await pool.query('DELETE FROM projects WHERE id = $1', [projectId]);
     }
     if (ownerId) {
