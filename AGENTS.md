@@ -101,18 +101,20 @@ docker compose --env-file .env.local down -v             # stop and remove volum
 - **File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var). Run locally with `CI=` (unset).
 
 ### Frontend (Vitest + Cypress)
-- 74 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
+- 66 unit test files / 574 tests in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
 - 7 Cypress e2e specs + 7 component specs in `cypress/`. Seed data is created through `cy.seed()` in `cypress/support/commands.ts`.
 - Contract test: `src/__tests__/api-contract.test.ts` — verified in CI.
 - Coverage excludes many views/components intentionally listed in `vitest.config.ts`.
 
 ### CI (Jenkins — `Jenkinsfile`)
+These commands run inside Jenkins, which writes the root `.env` before Compose.
+Local commands above use `--env-file .env.local` instead.
 ```
 backend job:  npm ci → lint → syntax check → unit test → coverage
 frontend job: npm ci → lint → typecheck → unit test → coverage → build
 contract test: vitest run api-contract.test.ts (runs after backend+frontend)
-cypress: docker compose (e2e overlay) → cypress/included runs e2e + component
-integration job: docker compose up → Jest integration tests → bash integration tests
+cypress: Jenkins writes .env → docker compose (e2e overlay) → cypress/included runs e2e + component
+integration job: Jenkins writes .env → docker compose up → Jest integration tests → bash integration tests
 agent job: mvn test → package → agent image build
 sandbox job: build sandbox/proxy images → Docker integration suite
 cleanup job: Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)

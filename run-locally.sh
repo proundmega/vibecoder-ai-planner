@@ -7,6 +7,7 @@ if [ ! -f .env.local ]; then
     exit 1
   fi
   cp .env.example .env.local
+  chmod 600 .env.local
   echo "Created .env.local from .env.example; edit it if you need non-default secrets."
 fi
 
