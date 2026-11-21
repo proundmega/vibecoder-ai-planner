@@ -147,14 +147,15 @@ Required for `docker compose --env-file .env.local up`:
 
 The agent is configured through node enrollment plus the supervisor's runtime
 declaration. A node needs `BACKEND_URL`, a persistent `AGENT_CREDENTIALS_FILE`
-(required; enrollment fails without it) and a one-time `ENROLLMENT_TOKEN` on
-first boot. The operator no longer configures a static project or role: the
-supervisor injects `AGENT_RUNTIME_ID`, `AGENT_ROLE`, `AGENT_LLM_MODEL`,
-`AGENT_EFFORT` and the project from the runtime declaration, and the backend
-authorizes the project. `PROJECT_ID` / `AGENT_PROJECT_ID` remain an optional
-project hint, and `REPO_OWNER` / `REPO_NAME` an optional build fallback.
-Provider credentials and models come from the backend registry; `AI_*`
-variables are development fallbacks only.
+(required; enrollment fails without it), a one-time `ENROLLMENT_TOKEN` on first
+boot and a `SUPERVISOR_CONFIG` runtime declaration. The operator no longer
+configures a static project or role: the supervisor injects
+`AGENT_RUNTIME_ID`, `AGENT_ROLE`, `AGENT_LLM_MODEL`, `AGENT_EFFORT` and the
+project from the runtime declaration, and the backend authorizes the project.
+`PROJECT_ID` / `AGENT_PROJECT_ID` remain an optional project hint, and
+`REPO_OWNER` / `REPO_NAME` an optional build fallback. Provider credentials and
+models come from the backend registry; `AI_*` variables are development
+fallbacks only.
 
 See [`agent/ENROLLMENT.md`](agent/ENROLLMENT.md) for the enrollment walkthrough
 and [`agent/README.md`](agent/README.md) for the full node, supervisor and
