@@ -246,7 +246,7 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | 4 | primary (planning) | none — minor notes only | notes applied; PR #179 merged as `bfd1d8a` | approved — merged |
 | 5 | close-out review | gates unchecked; #184 evidence/counts stale | `c75d482` — gates checked, #184 added, counts refreshed | addressed — awaited re-review |
 | 6 | independent close-out review | B1 planning-doc collision with #191; B2 opt-in claims obsolete; B3 D9 still open; B4 counts predate the final stack | rebased on #191 at `1278834`; preserved the NFR8 ledger row, clean-cut Results rows and rewritten 057 section; removed opt-in claims; D9 dropped; final counts applied | addressed — round 7 |
-| 7 | final nit review | none — rollback attribution was split between 057 and 056 | rollback warning now names 057 (runtime-owned rows + empty legacy tables) and 056 (additive runtime/registry tables); provisional #191 SHA removed from the merged-status rows | approved — merge after #191 |
+| 7 | final nit review | none — rollback attribution was split between 057 and 056 | rollback warning now names 057 (runtime-owned rows + empty legacy tables) and 056 (additive runtime/registry tables); provisional #191 SHA removed from the merged-status rows | approved — #191 merged as `2a34db5` |
 
 ## Results
 
@@ -255,7 +255,7 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck at that slice. #180, #181, #182, #183 and #184 are merged; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1` on a fresh pgvector database. 057 was still an opt-in at this point; #191 made it the default. |
 | 2026-11-21 | Clean cut default | 057 is registered after 059 by default; legacy agent/provider/auth routes, services, validators, tables and legacy `agent_id` columns are removed; the legacy backfill migration and data path are gone. Backend unit 148 suites / 1750 tests and integration 18 suites / 138 tests pass on pg17. OpenAPI regenerated without legacy paths; only `/providers/resolve` remains under the old provider prefix. |
 | 2026-11-21 | Migration ledger re-run | `apply.js` records applied files in `schema_migrations` and baselines the registered chain when a post-cut schema has no ledger. Unit planning tests pass; `migrationLedger.integration.test.js` runs `apply.js` twice and asserts both runs succeed. |
-| 2026-11-21 | Merged (#179, #184, #191) | PR #179 `bfd1d8a`, #184 `809789f`, #191. Backend 148 suites / 1750 tests; integration 18 suites / 138 tests on PG17 with 057 and `REQUIRE_FLEET_SCHEMA=1`; agent 900 tests (10 skipped); frontend 66 files / 574 tests + typecheck (recheck after #190). D9 dropped; D16 remains open. |
+| 2026-11-21 | Merged (#179, #184, #191) | PR #179 `bfd1d8a`, #184 `809789f`, #191 (squash `2a34db5`). Backend 148 suites / 1750 tests; integration 18 suites / 138 tests on PG17 with 057 and `REQUIRE_FLEET_SCHEMA=1`; agent 900 tests (10 skipped); frontend 66 files / 574 tests + typecheck (recheck after #190). D9 dropped; D16 remains open. |
 
 ### Clean cut is the default (057)
 
