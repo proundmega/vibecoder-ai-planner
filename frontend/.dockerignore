@@ -4,6 +4,8 @@ node_modules/
 .dockerignore
 .docker
 .env
+.env.local
+.env.*.local
 dist/
 coverage/
 cypress/screenshots/

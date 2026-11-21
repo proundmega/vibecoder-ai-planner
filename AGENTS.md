@@ -9,8 +9,14 @@ Read highest-value sources first: `README*`, root manifests, workspace config, l
 ## Quick Start
 
 ```bash
-docker compose up --build                        # dev: frontend :3000, API :3001, PG :5432
-docker compose -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
+cp .env.example .env.local   # root env is gitignored; never commit secrets
+docker compose --env-file .env.local up --build                        # dev: frontend :3000, API :3001, PG :5432
+docker compose --env-file .env.local -f docker-compose.yml up --build  # prod-style: frontend :3002, API :3001
+
+# Fresh checkout: install Node 24 (via nvm), deps and the Cypress binary
+bash scripts/bootstrap-local.sh
+# Local PR checks (not Docker integration, Cypress, agent image or sandbox)
+bash scripts/verify-local.sh
 
 # Manual dev (requires Node 24 LTS):
 nvm use 24                          # or use `.nvmrc`
@@ -18,7 +24,7 @@ cd backend && npm run dev          # API :3001, uses `node --watch`
 cd ../frontend && npm run dev      # Vite :3000, proxies /api → :3001
 ```
 
-`.env` (root) requires: `POSTGRES_PASSWORD`, `JWT_SECRET`, `PGADMIN_PASSWORD`, `ENCRYPTION_KEY`.
+`.env.local` (root, copied from `.env.example`) requires: `POSTGRES_PASSWORD`, `JWT_SECRET`, `PGADMIN_PASSWORD`, `ENCRYPTION_KEY`. `.env` and `.env.local` are gitignored.
 
 ## Structure
 
@@ -77,10 +83,10 @@ npm run cypress:component # cypress run --component --browser chrome
 
 ### Docker
 ```bash
-docker compose up --build          # dev mode (override: frontend :3000, API :3001, PG :5432)
-docker compose -f docker-compose.yml up --build  # production ports (frontend :3002)
-docker compose --profile dev up    # includes pgadmin on :5050
-docker compose down -v           # stop and remove volumes
+docker compose --env-file .env.local up --build          # dev mode (override: frontend :3000, API :3001, PG :5432)
+docker compose --env-file .env.local -f docker-compose.yml up --build  # production ports (frontend :3002)
+docker compose --env-file .env.local --profile dev up    # includes pgadmin on :5050
+docker compose --env-file .env.local down -v             # stop and remove volumes
 ```
 
 ## Testing
@@ -95,18 +101,20 @@ docker compose down -v           # stop and remove volumes
 - **File upload tests** (`file_upload.test.sh`) are skipped in CI (`CI=1` env var). Run locally with `CI=` (unset).
 
 ### Frontend (Vitest + Cypress)
-- 60 unit test files in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
+- 66 unit test files / 574 tests in `src/__tests__/`. `setupFiles: src/__tests__/setup.ts` loads design-tokens.css variables into DOM for tests.
 - 7 Cypress e2e specs + 7 component specs in `cypress/`. Seed data is created through `cy.seed()` in `cypress/support/commands.ts`.
 - Contract test: `src/__tests__/api-contract.test.ts` — verified in CI.
 - Coverage excludes many views/components intentionally listed in `vitest.config.ts`.
 
 ### CI (Jenkins — `Jenkinsfile`)
+These commands run inside Jenkins, which writes the root `.env` before Compose.
+Local commands above use `--env-file .env.local` instead.
 ```
 backend job:  npm ci → lint → syntax check → unit test → coverage
 frontend job: npm ci → lint → typecheck → unit test → coverage → build
 contract test: vitest run api-contract.test.ts (runs after backend+frontend)
-cypress: docker compose (e2e overlay) → cypress/included runs e2e + component
-integration job: docker compose up → Jest integration tests → bash integration tests
+cypress: Jenkins writes .env → docker compose (e2e overlay) → cypress/included runs e2e + component
+integration job: Jenkins writes .env → docker compose up → Jest integration tests → bash integration tests
 agent job: mvn test → package → agent image build
 sandbox job: build sandbox/proxy images → Docker integration suite
 cleanup job: Jenkinsfile.cleanup → label/age-scoped orphan GC (dedicated host)
@@ -394,9 +402,10 @@ Definition-of-Ready enforcement is scoped to `planning/fg-45-ticket-quality-gate
 - Backend ESLint uses **flat config** (`eslint.config.js`), not `.eslintrc*`.
 - Frontend ESLint uses flat config with TypeScript + Vue plugins; Vue components require `PascalCase` names, `camelCase` props, and `require-default-prop`.
 - Frontend `api/client.ts` uses native `fetch` — **not axios** (axios is a dep but unused for API calls).
-- Docker compose has two modes: `docker compose up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose -f docker-compose.yml up` uses production ports (frontend 3002).
+- Docker compose has two modes: `docker compose --env-file .env.local up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose --env-file .env.local -f docker-compose.yml up` uses production ports (frontend 3002). Always pass `--env-file .env.local`; `.env` is not tracked.
 - Backend `npm run dev` uses `node --watch` (Node 24 LTS required).
 - Frontend `npm test` runs Vitest in watch mode; CI uses `npm test -- --run`.
+- npm 11 blocks dependency install scripts by default, so `npm ci` does not download the Cypress binary; `scripts/bootstrap-local.sh` runs `npx cypress install` explicitly.
 - Jest mocks pg, winston, bcryptjs, uuid, jsonwebtoken, **and provides a full Redis mock** — no real DB needed.
 - Integration tests (`npm run test:integration`) use a real PG at `postgresql://postgres:changeme@localhost:5432/vibecode` with `maxWorkers:1`.
 - Migration order in `apply.js` is **array order**, not numeric — 011/012 appear after 014.

@@ -8,24 +8,37 @@ AI-powered Kanban SaaS for managing development tasks with integrated AI agents.
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 24 LTS (`nvm use` reads `.nvmrc`; Node 18 is no longer supported)
 - Docker & Docker Compose (v2, `docker compose` subcommand)
 - Java 17+ (optional, for agent compute nodes)
+
+### Bootstrap and verification
+
+On a fresh checkout:
+
+```bash
+bash scripts/bootstrap-local.sh   # Node from .nvmrc, npm ci, Cypress binary
+bash scripts/verify-local.sh      # local Node/Java checks (not the full Jenkins pipeline)
+```
+
+`verify-local.sh --quick` skips coverage and the Java agent tests. It does not
+run Docker integration, Cypress, agent packaging/image or sandbox checks; run
+the Jenkins pipeline or the dedicated commands for those.
 
 ### Docker Setup (Recommended)
 
 ```bash
-# Copy and configure environment variables
-cp .env .env.local   # edit .env.local with your values
+# Root .env and .env.local are gitignored. Start from the example:
+cp .env.example .env.local   # edit .env.local with your values
 
 # Dev mode — frontend :3000, API :3001, PG :5432
-docker compose up --build
+docker compose --env-file .env.local up --build
 
 # Production-style — frontend :3002, API :3001
-docker compose -f docker-compose.yml up --build
+docker compose --env-file .env.local -f docker-compose.yml up --build
 
 # With PgAdmin (dev only) — available at :5050
-docker compose --profile dev up --build
+docker compose --env-file .env.local --profile dev up --build
 ```
 
 **Service URLs:**
@@ -41,20 +54,24 @@ docker compose --profile dev up --build
 ### Manual Setup
 
 ```bash
-# Start infrastructure
-docker compose --profile dev up postgres redis
+# Start infrastructure (password must match the backend DATABASE_URL below)
+docker compose --env-file .env.local --profile dev up postgres redis
+
+# Activate the Node version from .nvmrc
+nvm use
 
 # Backend
 cd backend
 cp .env.example .env        # configure .env
-npm install
+npm ci
 npm run db:migrate           # run database migrations
 npm run dev                  # API :3001, uses `node --watch`
 
 # Frontend (new terminal)
 cd ../frontend
 cp .env.example .env.local   # configure .env.local
-npm install
+npm ci
+npx cypress install          # npm 11 does not run Cypress's download script
 npm run dev                  # Vite :3000, proxies /api → :3001
 
 # Agent (new terminal, Java 17 required)
@@ -64,11 +81,16 @@ mvn package -DskipTests
 java -jar target/agent-1.0.0.jar
 ```
 
+`POSTGRES_PASSWORD` in the root `.env.local` and the password in
+`backend/.env`'s `DATABASE_URL` must match (`changeme` in the examples).
+Local Cypress needs Chrome/Chromium and Xvfb; `bootstrap-local.sh` reports
+both, and the Docker Cypress image is the fallback when they are unavailable.
+
 ## Environment Variables
 
-### Root `.env` (Docker)
+### Root `.env.local` (Docker)
 
-Required for `docker compose up`:
+Required for `docker compose --env-file .env.local up`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -83,7 +105,7 @@ Required for `docker compose up`:
 |----------|-------------|---------|
 | `NODE_ENV` | Environment | `development` |
 | `PORT` | API port | `3001` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/vibecode` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:changeme@localhost:5432/vibecode` |
 | `JWT_SECRET` | JWT signing secret | _(required)_ |
 | `TOKEN_EXPIRY_HOURS` | JWT token expiry | `24` |
 | `DATABASE_POOL_MAX` | Max DB pool connections | `20` |
@@ -247,7 +269,7 @@ vibecode/
 │   └── TICKETS.txt         → Active tickets
 ├── docker-compose.yml      → Production compose
 ├── docker-compose.override.yml → Dev overrides (ports, volumes)
-└── .env                    → Root env (POSTGRES_PASSWORD, JWT_SECRET, etc.)
+└── .env.example            → Root env template (copy to .env.local)
 ```
 
 ## Development Commands
@@ -286,10 +308,10 @@ npm run cypress:all  # Run all Cypress tests
 ### Docker
 
 ```bash
-docker compose up --build                        # Dev mode
-docker compose -f docker-compose.yml up --build  # Production ports
-docker compose --profile dev up                  # Includes PgAdmin
-docker compose down -v                           # Stop and remove volumes
+docker compose --env-file .env.local up --build                        # Dev mode
+docker compose --env-file .env.local -f docker-compose.yml up --build  # Production ports
+docker compose --env-file .env.local --profile dev up                  # Includes PgAdmin
+docker compose --env-file .env.local down -v                           # Stop and remove volumes
 ```
 
 ## API
@@ -339,7 +361,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 
 ### Frontend (Vitest + Cypress)
 
-- 60 unit test files in `src/__tests__/`
+- 66 unit test files / 574 tests in `src/__tests__/`
 - 7 Cypress E2E specs + 7 component specs in `cypress/`
 - Contract test: `src/__tests__/api-contract.test.ts`
 
