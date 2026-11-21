@@ -83,10 +83,10 @@ npm run cypress:component # cypress run --component --browser chrome
 
 ### Docker
 ```bash
-docker compose up --build          # dev mode (override: frontend :3000, API :3001, PG :5432)
-docker compose -f docker-compose.yml up --build  # production ports (frontend :3002)
-docker compose --profile dev up    # includes pgadmin on :5050
-docker compose down -v           # stop and remove volumes
+docker compose --env-file .env.local up --build          # dev mode (override: frontend :3000, API :3001, PG :5432)
+docker compose --env-file .env.local -f docker-compose.yml up --build  # production ports (frontend :3002)
+docker compose --env-file .env.local --profile dev up    # includes pgadmin on :5050
+docker compose --env-file .env.local down -v             # stop and remove volumes
 ```
 
 ## Testing
@@ -400,7 +400,7 @@ Definition-of-Ready enforcement is scoped to `planning/fg-45-ticket-quality-gate
 - Backend ESLint uses **flat config** (`eslint.config.js`), not `.eslintrc*`.
 - Frontend ESLint uses flat config with TypeScript + Vue plugins; Vue components require `PascalCase` names, `camelCase` props, and `require-default-prop`.
 - Frontend `api/client.ts` uses native `fetch` — **not axios** (axios is a dep but unused for API calls).
-- Docker compose has two modes: `docker compose up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose -f docker-compose.yml up` uses production ports (frontend 3002).
+- Docker compose has two modes: `docker compose --env-file .env.local up` uses `docker-compose.override.yml` (dev ports 3000/3001); `docker compose --env-file .env.local -f docker-compose.yml up` uses production ports (frontend 3002). Always pass `--env-file .env.local`; `.env` is not tracked.
 - Backend `npm run dev` uses `node --watch` (Node 24 LTS required).
 - Frontend `npm test` runs Vitest in watch mode; CI uses `npm test -- --run`.
 - npm 11 blocks dependency install scripts by default, so `npm ci` does not download the Cypress binary; `scripts/bootstrap-local.sh` runs `npx cypress install` explicitly.

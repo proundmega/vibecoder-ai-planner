@@ -4,5 +4,7 @@ node_modules/
 .dockerignore
 .docker
 .env
+.env.local
+.env.*.local
 __tests__
 __mocks__

@@ -30,7 +30,7 @@ for arg in "$@"; do
 done
 
 if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-  for tool in curl git sha256sum; do
+  for tool in curl git; do
     if ! command -v "$tool" >/dev/null 2>&1; then
       echo "error: $tool is required to install nvm" >&2
       echo "Install it with your package manager, then re-run this script." >&2
@@ -43,7 +43,16 @@ if [ ! -s "$NVM_DIR/nvm.sh" ]; then
   curl -sSL --fail --max-time 120 \
     "https://raw.githubusercontent.com/nvm-sh/nvm/$NVM_VERSION/install.sh" \
     -o "$NVM_DIR/install.sh"
-  if ! echo "$NVM_INSTALL_SHA256  $NVM_DIR/install.sh" | sha256sum -c - >/dev/null 2>&1; then
+  if command -v sha256sum >/dev/null 2>&1; then
+    HASH_CMD=(sha256sum -c -)
+  elif command -v shasum >/dev/null 2>&1; then
+    HASH_CMD=(shasum -a 256 -c -)
+  else
+    echo "error: sha256sum or shasum is required to verify the nvm installer" >&2
+    rm -f "$NVM_DIR/install.sh"
+    exit 1
+  fi
+  if ! echo "$NVM_INSTALL_SHA256  $NVM_DIR/install.sh" | "${HASH_CMD[@]}" >/dev/null 2>&1; then
     echo "error: nvm install.sh checksum did not match" >&2
     rm -f "$NVM_DIR/install.sh"
     exit 1
