@@ -174,7 +174,7 @@ One row per requirement. This table is the contract between `01` and the code.
 | FR7 | backend route | `backend/src/__tests__/providerRegistry.test.js` | `FR7 adds a manual model` | `npm test` |
 | FR8 | backend unit | `backend/src/__tests__/providerRegistry.test.js` | `FR8 test marks verified or stores the error` | `npm test` |
 | FR9 | backend unit | `backend/src/__tests__/agentNodes.test.js` | `FR9 rejects a role not tagged on the model` | `npm test` |
-| FR10 | backend unit | `backend/src/__tests__/agentRuntime.test.js` | `FR10 worker accepts one active project` | `npm test` |
+| FR10 | backend unit | `backend/src/__tests__/agentRuntime.test.js` | `FR10 persists a runtime with a single active project` | `npm test` |
 | FR11 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorReconcileTest.java` | `FR11 apply twice is a no-op; remove one drains only that child` | `mvn test` |
 | FR11 | agent integration | `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorIntegrationTest.java` | `FR11 kill -9 then restart yields the exact child set` | `mvn test` |
 | FR12 | agent unit | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | `FR12 rejects secrets and unknown keys in the ini` | `mvn test` |
@@ -255,7 +255,7 @@ grep -rn "assigned_agent_id\|AGENT_API_KEY\|AGENT_ID\|AGENT_AUTH_MODE\|api_key_h
 | 2026-11-20 | Track B runtime/UI (PR #179) | Supervisor/runtime/manager/Fleet+Registry implemented; `mvn -B test` 910 pass (10 skipped), backend 2140 pass (173 suites), frontend 574 pass + typecheck at that slice. #180, #181, #182, #183 and #184 are merged; manager integration passed 3/3 with `REQUIRE_FLEET_SCHEMA=1` on a fresh pgvector database. 057 was still an opt-in at this point; #191 made it the default. |
 | 2026-11-21 | Clean cut default | 057 is registered after 059 by default; legacy agent/provider/auth routes, services, validators, tables and legacy `agent_id` columns are removed; the legacy backfill migration and data path are gone. Backend unit 148 suites / 1750 tests and integration 18 suites / 138 tests pass on pg17. OpenAPI regenerated without legacy paths; only `/providers/resolve` remains under the old provider prefix. |
 | 2026-11-21 | Migration ledger re-run | `apply.js` records applied files in `schema_migrations` and baselines the registered chain when a post-cut schema has no ledger. Unit planning tests pass; `migrationLedger.integration.test.js` runs `apply.js` twice and asserts both runs succeed. |
-| 2026-11-21 | Merged (#179, #184, #191) | PR #179 `bfd1d8a`, #184 `809789f`, #191 (squash `2a34db5`). Backend 148 suites / 1750 tests; integration 18 suites / 138 tests on PG17 with 057 and `REQUIRE_FLEET_SCHEMA=1`; agent 900 tests (10 skipped); frontend 66 files / 575 tests + typecheck. D9 dropped; D16 remains open. |
+| 2026-11-21 | Merged (#179, #184, #190, #191) | PR #179 `bfd1d8a`, #184 `809789f`, #190 (`9126e26`, regenerated frontend API client without legacy services) and #191 (squash `2a34db5`). Backend 148 suites / 1750 tests; integration 18 suites / 138 tests on PG17 with 057 and `REQUIRE_FLEET_SCHEMA=1`; agent 900 tests (10 skipped); frontend 66 files / 575 tests + typecheck. D9 dropped; D16 remains open. |
 
 ### Clean cut is the default (057)
 
