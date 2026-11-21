@@ -2685,20 +2685,26 @@
           "Providers"
         ],
         "summary": "Resolve provider for a ticket",
+        "description": "Selects a verified registry model by role or phase. Legacy labels/priority routing is not used.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "labels": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "priority": {
+                  "phase": {
                     "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "worker",
+                      "reviewer",
+                      "planner"
+                    ]
+                  },
+                  "project_id": {
+                    "$ref": "#/components/schemas/NumericId"
                   }
                 }
               }
@@ -2708,6 +2714,9 @@
         "responses": {
           "200": {
             "description": "Resolved provider config"
+          },
+          "403": {
+            "description": "Caller cannot access the requested project"
           }
         }
       }
