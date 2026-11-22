@@ -25,6 +25,7 @@ export { CspService } from './services/CspService';
 export { GitHubService } from './services/GitHubService';
 export { HarnessService } from './services/HarnessService';
 export { MemoryService } from './services/MemoryService';
+export { NotificationsService } from './services/NotificationsService';
 export { PermissionsService } from './services/PermissionsService';
 export { PlanningService } from './services/PlanningService';
 export { ProjectsService } from './services/ProjectsService';

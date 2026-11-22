@@ -29,6 +29,7 @@ function mapTicket(row) {
     status: row.status,
     phase: row.phase,
     priority: row.priority,
+    createdAt: row.created_at || null,
     templateSchema: row.template_schema || null,
     planningStatus: row.planning_status || 'not_started',
     planApprovedAt: row.plan_approved_at || null,
@@ -190,6 +191,23 @@ class TicketReadinessService {
   }
 
   /**
+   * Queue-safe readiness check used by the agent backlog endpoint. It never
+   * writes. In enforce mode an unready ticket must not consume the agent's only
+   * processing slot, so `findBacklog` filters it out and a ready ticket later
+   * in the list is still reached.
+   */
+  async isReadyForExecution(ticketId) {
+    try {
+      const context = await this.loadContext(ticketId);
+      if (context.ticket.readinessGrandfatheredAt) return true;
+      return this.evaluateContext(context).ready;
+    } catch (error) {
+      if (error instanceof NotFoundError) return false;
+      throw error;
+    }
+  }
+
+  /**
    * The single execution gate. Evaluates inside the caller's transaction,
    * returns a blocked result in warn mode and throws in enforce mode.
    * Persistence of the blocked row is the caller's post-commit/rollback job.
@@ -204,6 +222,7 @@ class TicketReadinessService {
     }
 
     const result = this.evaluateContext(context);
+    ReadinessMetrics.increment('tickets_evaluated_total');
     if (result.ready) {
       ReadinessMetrics.increment('tickets_ready_total');
       return { ...result, mode, ticketId: context.ticket.id };
@@ -224,6 +243,9 @@ class TicketReadinessService {
 
     if (mode === 'enforce') {
       ReadinessMetrics.increment('tickets_blocked_by_readiness_total', { source });
+      if (String(source).includes('pickup')) {
+        ReadinessMetrics.increment('readiness_pickup_rejected_total');
+      }
       throw new ReadinessError(blocked);
     }
 
@@ -365,6 +387,10 @@ class TicketReadinessService {
         before: { planApproved: Boolean(context.ticket.planApprovedAt), ready: Boolean(context.ticket.readyAt) },
         after: { planApproved: true, ready: true, requirementIds },
       });
+      if (context.ticket.createdAt) {
+        const seconds = (Date.now() - new Date(context.ticket.createdAt).getTime()) / 1000;
+        ReadinessMetrics.observe('readiness_time_to_ready_seconds', seconds);
+      }
       ReadinessMetrics.increment('tickets_ready_total');
       return this.evaluate(ticketId);
     } catch (error) {
@@ -420,6 +446,7 @@ class TicketReadinessService {
             SET plan_approved_at = NULL, plan_approved_by = NULL,
                 ready_at = NULL, ready_by = NULL,
                 readiness_requirement_ids = '{}',
+                readiness_grandfathered_at = NULL,
                 planning_status = 'in_progress',
                 updated_at = NOW()
           WHERE id = $1`,
@@ -480,6 +507,9 @@ class TicketReadinessService {
         waivedCodes: codes,
         expiresAt: expiry.toISOString(),
       });
+      for (const code of codes) {
+        ReadinessMetrics.increment('readiness_override_total', { code });
+      }
       await this.refreshReadyState(ticketId, actor);
       return this.evaluate(ticketId);
     } catch (error) {
@@ -569,7 +599,8 @@ class TicketReadinessService {
          FROM tickets
         WHERE readiness_override_expires_at IS NOT NULL
           AND readiness_override_expires_at <= $1
-          AND readiness_grandfathered_at IS NULL`,
+          AND readiness_grandfathered_at IS NULL
+          AND deleted_at IS NULL`,
       [now]
     );
 
@@ -586,6 +617,7 @@ class TicketReadinessService {
           waivedCodes: row.readiness_waived_codes || [],
           expiresAt: row.readiness_override_expires_at,
         });
+        ReadinessMetrics.increment('readiness_override_expired_total');
       }
       await pool.query(
         `UPDATE tickets
@@ -623,10 +655,11 @@ class TicketReadinessService {
     if (clean.length === 0) throw new ValidationError('At least one acceptance criterion is required');
 
     const ticketResult = await pool.query(
-      'SELECT id FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      'SELECT id, project_id FROM tickets WHERE id = $1 AND deleted_at IS NULL',
       [ticketId]
     );
     if (ticketResult.rows.length === 0) throw new NotFoundError('Ticket not found');
+    await this._assertMember(actor, ticketResult.rows[0].project_id, pool);
 
     const positionResult = await pool.query(
       'SELECT COALESCE(MAX(position), -1) + 1 AS next FROM ticket_acceptance_criteria WHERE ticket_id = $1',
@@ -651,6 +684,12 @@ class TicketReadinessService {
 
   async updateCriterion(ticketId, criterionId, { text }, actor = {}) {
     if (!text || !String(text).trim()) throw new ValidationError('Criterion text is required');
+    const ticketResult = await pool.query(
+      'SELECT project_id FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      [ticketId]
+    );
+    if (ticketResult.rows.length === 0) throw new NotFoundError('Ticket not found');
+    await this._assertMember(actor, ticketResult.rows[0].project_id, pool);
     const result = await pool.query(
       `UPDATE ticket_acceptance_criteria
           SET text = $3
@@ -664,6 +703,12 @@ class TicketReadinessService {
   }
 
   async deleteCriterion(ticketId, criterionId, actor = {}) {
+    const ticketResult = await pool.query(
+      'SELECT project_id FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      [ticketId]
+    );
+    if (ticketResult.rows.length === 0) throw new NotFoundError('Ticket not found');
+    await this._assertMember(actor, ticketResult.rows[0].project_id, pool);
     const result = await pool.query(
       'DELETE FROM ticket_acceptance_criteria WHERE id = $2 AND ticket_id = $1 RETURNING id',
       [ticketId, criterionId]

@@ -209,6 +209,20 @@ class TicketPlanningService {
       );
     }
 
+    // Conditional update closes the read-then-write race with approvePlan:
+    // a concurrent approval makes this row invisible and returns
+    // REPLAN_REQUIRED instead of overwriting `completed`.
+    const updated = await pool.query(
+      `UPDATE tickets
+          SET planning_status = $1, updated_at = NOW()
+        WHERE id = $2
+          AND deleted_at IS NULL
+          AND planning_status <> 'completed'
+        RETURNING id`,
+      [status, ticketId]
+    );
+    if (updated.rows.length > 0) return;
+
     const current = await pool.query(
       'SELECT planning_status FROM tickets WHERE id = $1 AND deleted_at IS NULL',
       [ticketId]
@@ -220,10 +234,9 @@ class TicketPlanningService {
         'The plan is approved. Call replan before changing the planning status.'
       );
     }
-
-    await pool.query(
-      'UPDATE tickets SET planning_status = $1, updated_at = NOW() WHERE id = $2',
-      [status, ticketId]
+    throw new PlanningStatusError(
+      'PLANNING_STATUS_FORBIDDEN',
+      'Planning status could not be updated; retry the request.'
     );
   }
 

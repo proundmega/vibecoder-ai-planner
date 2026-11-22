@@ -214,6 +214,27 @@ describe('ReadinessEvaluator', () => {
     expect(codes(evaluate({ files }))).toContain('MISSING_CHANGE_IMPACT');
   });
 
+  test('requirement parsing ignores cross-references and parses bullet definitions', () => {
+    const files = readyFiles();
+    files['01_ARCHITECT_REQUIREMENT.md'] = files['01_ARCHITECT_REQUIREMENT.md'].replace(
+      /## Functional requirements[\s\S]*?(?=## Dependencies)/,
+      [
+        '## Functional requirements',
+        '- **FR1 - Build the gate:** returns 409 (FR5).',
+        '- **FR2 - Audit the decision:** writes one row (FR1).',
+        '',
+        'See FR1/FR8 for the audit rows.',
+        '',
+      ].join('\n')
+    );
+
+    const result = evaluate({ files });
+
+    expect(result.requirements.map(req => req.id)).toEqual(['FR1', 'FR2']);
+    expect(codes(result)).not.toContain('DUPLICATE_REQUIREMENT_ID');
+    expect(codes(result)).not.toContain('MISSING_REQUIREMENT_ACCEPTANCE');
+  });
+
   test('duplicate and acceptance-less requirement IDs are reported', () => {
     const files = readyFiles();
     files['01_ARCHITECT_REQUIREMENT.md'] = files['01_ARCHITECT_REQUIREMENT.md']
@@ -269,6 +290,24 @@ describe('ReadinessEvaluator', () => {
         'No material assumptions — docs-only change with a visual check.' },
     });
     expect(codes(result)).not.toContain('MISSING_ASSUMPTIONS');
+  });
+
+  test('a security-sensitive small fix still requires security considerations', () => {
+    const result = evaluate({
+      template: null,
+      files: {},
+      criteria: ['The auth check still rejects the caller'],
+      smallFix: { at: '2026-11-22T00:00:00Z', reason: 'One-line permission typo' },
+      ticket: {
+        templateSchema: null,
+        title: 'Fix the authentication permission check',
+        description: 'In scope: one permission check. No material assumptions — verified by the auth test.',
+      },
+      waivedCodes: ['MISSING_SECURITY_CONSIDERATIONS'],
+    });
+
+    expect(codes(result)).toContain('MISSING_SECURITY_CONSIDERATIONS');
+    expect(result.ready).toBe(false);
   });
 
   test('custom templates without requiredSections report sectionsEnforced false', () => {

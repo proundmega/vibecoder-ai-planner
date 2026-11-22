@@ -21,6 +21,7 @@ async function createTicket(req, res, next) {
       template,
       acceptanceCriteria,
       smallFix,
+      role: req.user.role,
     });
     res.status(201).json({ success: true, data: ticket });
   } catch (error) {
@@ -69,7 +70,14 @@ async function updateTicket(req, res, next) {
     }
     
     const updatedTicket = await TicketService.update(
-      req.params.ticketId, filteredUpdates, req.user.userId, userRole
+      req.params.ticketId,
+      filteredUpdates,
+      req.user.userId,
+      userRole,
+      {
+        type: req.agent ? 'agent' : 'user',
+        agentId: req.agent ? req.agent.id : null,
+      }
     );
     res.json({ success: true, data: updatedTicket });
   } catch (error) {
@@ -154,7 +162,16 @@ async function changeStatus(req, res, next) {
       });
     }
     
-    await TicketService.updateStatus(req.params.ticketId, status, req.user.userId, req.user.role);
+    await TicketService.updateStatus(
+      req.params.ticketId,
+      status,
+      req.user.userId,
+      req.user.role,
+      {
+        type: req.agent ? 'agent' : 'user',
+        agentId: req.agent ? req.agent.id : null,
+      }
+    );
     res.json({ success: true, data: { message: 'Status updated', status } });
   } catch (error) {
     next(error);

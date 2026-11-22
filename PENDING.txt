@@ -37,9 +37,9 @@ fg-38 (#164), fg-41 (#163), fg-42 (#166), fg-53 (#174/#175),
 fg-54 (#179/#184/#190/#191). fg-43 (#197) and fg-55 (#195) are also merged. fg-54 is a direct fg-55 dependency; fg-53 is its
 prerequisite.
 
-**Sequencing note:** fg-45 currently lists fg-31 as a dependency. The pilot uses
-human review (no fg-31), so before starting fg-45 either narrow that dependency
-to its fg-31 integration slice or move fg-45 after fg-31.
+**Sequencing note:** fg-45's dependency is narrowed to fg-30. The pilot uses
+human review, so the fg-31 reviewer integration is deferred (fg-45 `00` D2)
+instead of blocking the ticket.
 
 **Background, not on the pilot critical path:** fg-34 remains in progress for
 D12/D24/D25/D26 hardening; fg-39 remains in progress for FR3 (D7), FR4 (D9)
@@ -202,7 +202,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-45** | `fg-45-ticket-quality-gates` | P1 | fg-30, fg-31 | **In review (PR #199).**  Definition of Ready: permissive drafts, acceptance criteria, template sections, readiness gates on pickup/status/PUT/phase paths, service-owned planning completion, scoped audited overrides, both agent modes. Adds the **pre-implementation risk review** (assumptions, failure modes, security considerations, change impact) and exports stable requirement IDs for fg-51. |
+| **fg-45** | `fg-45-ticket-quality-gates` | P1 | fg-30 (fg-31 integration deferred, D2) | **In review (PR #199).** Definition of Ready: permissive drafts, acceptance criteria, template sections, readiness gates on pickup/status/PUT/phase paths, service-owned planning completion, scoped audited overrides, harness mode. Adds the **pre-implementation risk review** (assumptions, failure modes, security considerations, change impact) and exports stable requirement IDs for fg-51. |
 | **fg-46** | `fg-46-flow-observability` | P2 - deferred | fg-30, fg-31, fg-32, fg-33, fg-36, fg-41, fg-44, fg-45 | Flow and harness observability. **Wanted, but deferred until the project completes a full build -> review -> fix -> merge cycle.** Canonical `deriveStage` (status-first, fg-45 `ready_at`), read-only flow endpoint with JWT + membership auth, reuses the fg-33 `run_id`; add Prometheus/Grafana later. |
 | **fg-47** | `fg-47-independent-review-pass` | P2 | fg-31, fg-32, fg-37, fg-41 | Independent second reviewer pass: different model family/provider, separate read-only context, structured findings, dedupe/triage, blocking-only gating, cost caps and human escalation. **Planned; not part of the current review flow.** |
 | **fg-48** | `fg-48-planning-claim-checks` | P2 | fg-47, fg-31 | Deterministic `check-claims` script: structured Status evidence, `Plan merged` vs `Merged` index labels, matrix coverage, done placeholders, deferred-register counts. Read-only, no network/LLM by default. **Planned; `check-planning.js` covers the easy invariants today.** |

@@ -20,6 +20,20 @@ class TicketService {
 
     const ticket = await Ticket.create(projectId, title, description, priority, userId);
 
+    // The dedicated small-fix route requires TICKET_READINESS_OVERRIDE. The
+    // create wizard must not become a weaker side door for the same waiver.
+    // Check it before applying any other option so a denied request has no
+    // side effects beyond the draft row itself.
+    if (options.smallFix && options.smallFix.reason) {
+      const canOverride = await PermissionService.hasPermission(
+        options.role || 'member',
+        'TICKET_READINESS_OVERRIDE'
+      );
+      if (!canOverride) {
+        throw new ForbiddenError('TICKET_READINESS_OVERRIDE is required to record a small-fix exemption');
+      }
+    }
+
     // Criteria are inserted before applying a template so a specification's
     // seed step sees a non-empty table and does not duplicate them.
     if (Array.isArray(options.acceptanceCriteria) && options.acceptanceCriteria.length > 0) {
@@ -35,6 +49,7 @@ class TicketService {
       await TicketReadinessService.smallFix(ticket.id, options.smallFix.reason, {
         type: 'user',
         userId,
+        role: options.role,
       });
     }
 
@@ -58,7 +73,21 @@ class TicketService {
   async findBacklog(projectId) {
     const tickets = await Ticket.findByStatus(projectId, 'backlog');
     await DependencyService.enrich(tickets);
-    return tickets.filter(ticket => ticket.ready !== false);
+    const dependencyReady = tickets.filter(ticket => ticket.ready !== false);
+
+    // In enforce mode an unready ticket must not starve the queue: the agent
+    // only fetches a small batch and stops at the first rejection. Exclude
+    // unready tickets here so a ready ticket later in the list is still
+    // reached. warn/off keep the previous behaviour (the gate allows them).
+    if (TicketReadinessService.gateMode() !== 'enforce') return dependencyReady;
+
+    const ready = [];
+    for (const ticket of dependencyReady) {
+      if (await TicketReadinessService.isReadyForExecution(ticket.id)) {
+        ready.push(ticket);
+      }
+    }
+    return ready;
   }
 
   async getOne(id, userId) {
@@ -135,7 +164,7 @@ class TicketService {
     return membership.rows.length > 0;
   }
 
-  async update(id, data, userId, userRole) {
+  async update(id, data, userId, userRole, actorMeta = {}) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
 
@@ -216,6 +245,12 @@ class TicketService {
       dependsOn,
     };
 
+    const actor = {
+      type: actorMeta.type || 'user',
+      userId,
+      agentId: actorMeta.agentId || null,
+      role,
+    };
     const entersExecution = data.status === 'in_progress' && ticket.status !== 'in_progress';
     if (!entersExecution) {
       // Single SQL round-trip; returns the persisted ticket.
@@ -223,7 +258,7 @@ class TicketService {
       // Content edits can satisfy or invalidate the approved plan. Approval is
       // content-bound: a failing edit clears it and requires re-approval.
       if (data.title !== undefined || data.description !== undefined) {
-        await TicketReadinessService.refreshReadyState(id, { type: 'user', userId, role });
+        await TicketReadinessService.refreshReadyState(id, actor);
       }
       return updated;
     }
@@ -245,15 +280,30 @@ class TicketService {
         dependsOn,
         action: 'ticket_update',
       });
+
+      // Apply content first, then evaluate, then start. Otherwise a request
+      // that edits the plan and sets in_progress in one round-trip would gate
+      // the old content and write the new content with a stale approval.
+      const contentUpdates = { ...updates };
+      delete contentUpdates.status;
+      const hasContentChange = [
+        'title', 'description', 'priority', 'assigneeId', 'prUrl',
+        'milestoneId', 'estimate', 'dependsOn',
+      ].some(key => contentUpdates[key] !== undefined);
+      if (hasContentChange) {
+        await Ticket.update(id, contentUpdates, client);
+      }
+
       readiness = await TicketReadinessService.assertReadyForExecution(id, {
         toStatus: 'in_progress',
         source: 'ticket_update',
-        actor: { type: 'user', userId, role },
+        actor,
         db: client,
       });
-      const updated = await Ticket.update(id, updates, client);
+      const updated = await Ticket.update(id, { status: 'in_progress' }, client);
       await client.query('COMMIT');
       committed = true;
+      await TicketReadinessService.refreshReadyState(id, actor);
       if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
       return updated;
     } catch (error) {
@@ -290,7 +340,7 @@ class TicketService {
     await Ticket.delete(id);
   }
 
-  async updateStatus(ticketId, status, userId, userRole = null) {
+  async updateStatus(ticketId, status, userId, userRole = null, actorMeta = {}) {
     if (status !== 'in_progress') {
       return await Ticket.updateStatus(ticketId, status, userId);
     }
@@ -313,7 +363,12 @@ class TicketService {
       const readiness = await TicketReadinessService.assertReadyForExecution(ticketId, {
         toStatus: 'in_progress',
         source: 'status_transition',
-        actor: { type: 'user', userId, role: userRole || 'member' },
+        actor: {
+          type: actorMeta.type || 'user',
+          userId,
+          agentId: actorMeta.agentId || null,
+          role: userRole || 'member',
+        },
         db: client,
       });
       await Ticket.updateStatus(ticketId, status, userId, client);
@@ -396,6 +451,7 @@ class TicketService {
         actor: {
           type: 'agent',
           userId: normalizedActor.operatorId || null,
+          agentId: normalizedActor.runtimeId || null,
           role: normalizedActor.role || null,
         },
         db: client,

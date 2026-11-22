@@ -119,6 +119,7 @@ export interface ReadinessResult {
   overrideExpiresAt?: string | null
   smallFixReason?: string | null
   securitySensitive?: boolean
+  grandfathered?: boolean
   requirements?: ReadinessRequirement[]
 }
 

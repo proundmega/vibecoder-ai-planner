@@ -10,6 +10,9 @@ vi.mock('@/api/tickets', async (importOriginal) => {
     replan: vi.fn().mockResolvedValue({}),
     grantOverride: vi.fn().mockResolvedValue({}),
     revokeOverride: vi.fn().mockResolvedValue({}),
+    fetchCriteria: vi.fn().mockResolvedValue([]),
+    addCriteria: vi.fn().mockResolvedValue([]),
+    deleteCriterion: vi.fn().mockResolvedValue(undefined),
   }
 })
 

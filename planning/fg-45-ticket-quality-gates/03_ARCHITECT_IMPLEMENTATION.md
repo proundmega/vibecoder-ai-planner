@@ -64,8 +64,11 @@
 
 ## Dependencies
 
-- fg-30, fg-31
-- fg-50 for the repo/product template drift test that keeps the risk sections aligned
+- fg-30.
+- The fg-31 reviewer integration is narrowed out of this ticket and tracked as D2;
+  the pilot uses human review, so fg-45 does not wait for fg-31.
+- fg-50 owns the repo/product template drift test that keeps the risk sections
+  aligned (D7).
 - `fg-51` consumes the requirement IDs exported by this ticket; do not duplicate traceability here
 
 ## Verification matrix (canonical)
@@ -78,21 +81,21 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR2 | Backend unit | `backend/src/__tests__/ticketReadinessCreate.test.js` | Criteria are inserted before a template seed | `cd backend && npm test -- ticketReadinessCreate` |
 | FR3 | Backend unit | `backend/src/__tests__/ticketReadinessService.test.js` | `evaluate` returns ready, issues, template, waived codes and expiry | `cd backend && npm test -- ticketReadinessService` |
 | FR4 | Backend unit | `backend/src/__tests__/ticketReadinessGates.test.js` | Pickup surfaces `READINESS_FAILED` (409) with issues | `cd backend && npm test -- ticketReadinessGates` |
-| FR5 | Backend unit | `backend/src/__tests__/ticketReadinessGates.test.js` | Pickup, status, PUT, phase transition gated; non-execution edit is not | `cd backend && npm test -- ticketReadinessGates` |
+| FR5 | Backend unit | `backend/src/__tests__/ticketReadinessGates.test.js`, `ticketReadinessBacklog.test.js` | Pickup, status, PUT, phase transition gated; content is written before the gate; enforce filters unready backlog tickets | `cd backend && npm test -- ticketReadiness` |
 | FR6 | Backend unit | `backend/src/__tests__/ticketPlanningStatusGuard.test.js` | `completed` rejected; leaving completed requires replan; authoring states update | `cd backend && npm test -- ticketPlanningStatusGuard` |
 | FR7 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | `PLACEHOLDER` carries the file/marker | `cd backend && npm test -- readinessEvaluator` |
 | FR8 | Backend unit | `backend/src/__tests__/ticketReadinessService.test.js` | Override validation, expiry cap and audit dedupe | `cd backend && npm test -- ticketReadinessService` |
 | FR9 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Small fix waives template/file/test/deps/rollback but checks criteria/assumptions | `cd backend && npm test -- readinessEvaluator` |
 | FR10 | Agent unit | `agent/src/test/java/com/vibecode/agent/harness/HarnessTicketProcessorTest.java` | Readiness failure posts issues and starts no harness | `cd agent && mvn test -Dtest=HarnessTicketProcessorTest` |
 | FR11 | Frontend unit | `frontend/src/__tests__/readiness.test.ts`, `ticketBoardCreateFlow.test.js` | Panel renders issues; create errors surface; drag path restores | `cd frontend && npm test -- --run readiness ticketBoardCreateFlow` |
-| FR12 | Migration | `backend/src/migrations/061_ticket_readiness.sql` | Grandfathers `in_progress`/`review`/`done` with approval/ready/completed | `cd backend && npm run db:migrate` (integration) |
-| FR13 | Backend unit | `backend/src/services/ReadinessMetrics.js` | Ready/blocked counters incremented on gate paths | `cd backend && npm test -- ticketReadinessService` |
+| FR12 | Integration | `backend/src/__tests__/integration/ticketReadinessMigration.test.js` | Runs the real 061 file; grandfathers `in_progress`/`review`/`done`, leaves drafts alone | `cd backend && npm run test:integration` |
+| FR13 | Backend unit | `backend/src/__tests__/readinessMetrics.test.js` | Ready/blocked/evaluated counters, pickup rejections, waiver counts, time-to-ready observation | `cd backend && npm test -- readinessMetrics` |
 | FR14 | Backend unit | `backend/src/__tests__/ticketReadinessService.test.js` | Approved/invalidated/blocked events; blocked dedupes on `attempt_id` | `cd backend && npm test -- ticketReadinessService` |
-| FR15 | Backend unit | `backend/src/__tests__/ticketReadinessService.test.js` | Approval requires project membership | `cd backend && npm test -- ticketReadinessService` |
+| FR15 | Backend unit | `backend/src/__tests__/ticketReadinessService.test.js` | Approval and acceptance-criteria writes require project membership | `cd backend && npm test -- ticketReadinessService` |
 | FR16 | Backend unit | `backend/src/__tests__/ticketReadinessService.test.js` | Passing edit keeps approval; failing edit clears approval and writes `approval_invalidated` | `cd backend && npm test -- ticketReadinessService` |
 | FR17 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Missing/empty assumptions fail; explicit "No material assumptions" passes | `cd backend && npm test -- readinessEvaluator` |
 | FR18 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Missing/empty failure modes fail for non-small templates | `cd backend && npm test -- readinessEvaluator` |
-| FR19 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Missing security section fails; security-sensitive issue is non-waivable | `cd backend && npm test -- readinessEvaluator` |
+| FR19 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Missing security section fails; security-sensitive issue is non-waivable, including for a small fix | `cd backend && npm test -- readinessEvaluator` |
 | FR20 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Missing/empty change impact fails | `cd backend && npm test -- readinessEvaluator` |
 | FR21 | Backend unit | `backend/src/__tests__/readinessEvaluator.test.js` | Requirement IDs are unique, parsed and changing an approved ID requires replan | `cd backend && npm test -- readinessEvaluator` |
 

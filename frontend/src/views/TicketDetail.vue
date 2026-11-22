@@ -503,6 +503,7 @@ async function handleShowTemplateSelect() {
         :readiness="readiness"
         :can-approve="canApproveReadiness()"
         :can-override="canOverrideReadiness()"
+        :can-edit="canUpdate()"
         @refresh="loadReadiness"
       />
 

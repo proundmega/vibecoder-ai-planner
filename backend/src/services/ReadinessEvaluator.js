@@ -175,46 +175,71 @@ function anyFileContains(files, pattern) {
   return Object.values(files || {}).some(content => pattern.test(content || ''));
 }
 
+/**
+ * Parse requirement *definitions*, not every mention of an ID.
+ *
+ * Priority: a requirements table (the ID must be the first cell) wins over
+ * bullet definitions. Cross-reference prose ("See FR1/FR8 ...") is ignored so
+ * a valid plan cannot be blocked by a duplicate or a missing acceptance.
+ */
 function parseRequirements(fileContent) {
-  const requirements = [];
-  const duplicates = new Set();
-  const seen = new Set();
-  if (!fileContent) return { requirements, duplicates, missingAcceptance: [] };
+  const tableDefinitions = [];
+  const bulletDefinitions = [];
+  if (!fileContent) {
+    return { requirements: [], duplicates: new Set(), missingAcceptance: [] };
+  }
 
-  const lines = String(fileContent).split(/\r?\n/);
-  for (const line of lines) {
-    const idMatch = /\b(N?FR\d+)\b/.exec(line);
-    if (!idMatch) continue;
-    const id = idMatch[1];
-    if (seen.has(id)) duplicates.add(id);
-    seen.add(id);
+  for (const line of String(fileContent).split(/\r?\n/)) {
+    const trimmed = line.trim();
 
-    let acceptance = '';
-    if (line.trim().startsWith('|')) {
-      const cells = line.split('|').slice(1, -1).map(cell => cell.trim());
-      const idIndex = cells.findIndex(cell => /\bN?FR\d+\b/.test(cell));
-      acceptance = idIndex >= 0 ? (cells[idIndex + 2] || '') : (cells[2] || '');
-    } else {
-      const rest = line.replace(/.*\bN?FR\d+\b/, '').replace(/^[\s:–—-]+/, '').trim();
-      acceptance = rest;
+    if (trimmed.startsWith('|')) {
+      const cells = trimmed.split('|').slice(1, -1).map(cell => cell.trim());
+      const idIndex = cells.findIndex(cell => /^N?FR\d+$/.test(cell));
+      // Requirement tables put the ID in the first column. A reference table
+      // that merely mentions an ID in a later column is ignored.
+      if (idIndex === 0) {
+        tableDefinitions.push({
+          id: cells[0],
+          text: trimmed,
+          acceptance: cells[2] || '',
+        });
+      }
+      continue;
     }
 
-    requirements.push({
-      id,
-      text: line.trim(),
-      acceptance,
+    const bullet = /^\s*(?:[-*]|\d+[.)])\s+(.*)$/.exec(line);
+    if (!bullet) continue;
+    const body = bullet[1];
+    const idMatch = /^(?:\*\*)?\s*(N?FR\d+)\b/.exec(body);
+    if (!idMatch) continue;
+
+    let rest = body.slice(idMatch[0].length).replace(/^[\s*:—–-]+/, '');
+    // Bold definitions: "**FR1 - Build the gate:** returns 409". The
+    // acceptance starts after the closing bold marker.
+    const boldEnd = rest.indexOf('**');
+    if (boldEnd !== -1) rest = rest.slice(boldEnd + 2);
+    rest = rest.replace(/^[\s:—–-]+/, '').trim();
+
+    bulletDefinitions.push({
+      id: idMatch[1],
+      text: trimmed,
+      acceptance: rest,
     });
   }
 
-  const missingAcceptance = requirements
-    .filter(req => (req.acceptance || '').replace(/[|\s]/g, '').length < 8)
-    .map(req => req.id);
+  const definitions = tableDefinitions.length > 0 ? tableDefinitions : bulletDefinitions;
+  const duplicates = new Set();
+  const seen = new Set();
+  for (const definition of definitions) {
+    if (seen.has(definition.id)) duplicates.add(definition.id);
+    seen.add(definition.id);
+  }
 
-  return {
-    requirements: requirements.map(req => ({ ...req })),
-    duplicates,
-    missingAcceptance,
-  };
+  const missingAcceptance = definitions
+    .filter(definition => (definition.acceptance || '').replace(/[|\s]/g, '').length < 8)
+    .map(definition => definition.id);
+
+  return { requirements: definitions, duplicates, missingAcceptance };
 }
 
 function isSecuritySensitive({ ticket, files }) {
@@ -379,19 +404,24 @@ class ReadinessEvaluator {
       }
     }
 
-    // 12. Security considerations (non-small or security-sensitive)
-    if (!isSmallFix && riskProfile?.security) {
+    // 12. Security considerations.
+    // Security-sensitive scope is never waived by a small-fix exemption: a
+    // one-line auth/permission change still needs the section. The small fix
+    // only waives template/files/failure modes.
+    if (securitySensitive) {
+      const entry = sectionFromFiles(files, Object.keys(files), 'Security considerations');
+      if (!validSecurity(entry?.section)) {
+        push('MISSING_SECURITY_CONSIDERATIONS', 'This ticket is security-sensitive; add Security considerations', {
+          file: entry?.key,
+          waivable: false,
+        });
+      }
+    } else if (!isSmallFix && riskProfile?.security) {
       const entry = sectionFromFiles(files, riskProfile.security, 'Security considerations');
       if (!validSecurity(entry?.section)) {
         push('MISSING_SECURITY_CONSIDERATIONS', 'Add Security considerations covering auth, permissions, scoping, secrets, audit, rate limiting, validation and data exposure', {
           file: entry?.key,
-          waivable: !securitySensitive,
-        });
-      }
-    } else if (securitySensitive && !isSmallFix) {
-      if (!validSecurity(sectionFromFiles(files, Object.keys(files), 'Security considerations')?.section)) {
-        push('MISSING_SECURITY_CONSIDERATIONS', 'This ticket is security-sensitive; add Security considerations', {
-          waivable: false,
+          waivable: true,
         });
       }
     }

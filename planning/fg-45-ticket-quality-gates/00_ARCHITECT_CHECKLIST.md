@@ -1,15 +1,15 @@
 ---
 id: "fg-45"
 title: "Ticket Quality Gates and Definition of Ready"
-status: in_progress
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
 updated: "2026-11-22"
-pr: null
+pr: 199
 branch: "feat/fg-45-readiness-gate"
-depends_on: ["fg-30", "fg-31"]
+depends_on: ["fg-30"]
 ---
 
 # 00 — Ticket Quality Gates and Definition of Ready (fg-45)

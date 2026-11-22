@@ -122,6 +122,64 @@ describe('fg-45 execution gate covers all five paths', () => {
     expect(Ticket.update).not.toHaveBeenCalled();
   });
 
+  test('content edits are applied before the gate, so a new description cannot start on old approval', async () => {
+    TicketReadinessService.assertReadyForExecution.mockResolvedValueOnce({ ready: true });
+    Ticket.findById.mockResolvedValueOnce({
+      id: '10',
+      status: 'backlog',
+      ownerId: '100',
+      projectId: '1',
+    });
+    Ticket.update
+      .mockResolvedValueOnce({ id: '10', status: 'backlog', title: 'New title' })
+      .mockResolvedValueOnce({ id: '10', status: 'in_progress', title: 'New title' });
+    transactionClient({ id: '10' });
+
+    await TicketService.update(
+      '10',
+      { title: 'New title', description: 'New description', status: 'in_progress' },
+      '100',
+      'project_admin'
+    );
+
+    const contentWrite = Ticket.update.mock.calls[0];
+    expect(contentWrite[1]).toEqual(expect.objectContaining({
+      title: 'New title',
+      description: 'New description',
+    }));
+    expect(contentWrite[1].status).toBeUndefined();
+    expect(Ticket.update.mock.calls[1][1]).toEqual({ status: 'in_progress' });
+
+    const contentOrder = Ticket.update.mock.invocationCallOrder[0];
+    const gateOrder = TicketReadinessService.assertReadyForExecution.mock.invocationCallOrder[0];
+    const statusOrder = Ticket.update.mock.invocationCallOrder[1];
+    expect(contentOrder).toBeLessThan(gateOrder);
+    expect(gateOrder).toBeLessThan(statusOrder);
+  });
+
+  test('a failing gate rolls back the content edit with the start', async () => {
+    Ticket.findById.mockResolvedValueOnce({
+      id: '10',
+      status: 'backlog',
+      ownerId: '100',
+      projectId: '1',
+    });
+    Ticket.update.mockResolvedValueOnce({ id: '10', status: 'backlog' });
+    const client = transactionClient({ id: '10' });
+
+    await expect(
+      TicketService.update(
+        '10',
+        { description: 'Removed the plan', status: 'in_progress' },
+        '100',
+        'project_admin'
+      )
+    ).rejects.toBeInstanceOf(ReadinessError);
+
+    expect(Ticket.update).toHaveBeenCalledTimes(1);
+    expect(client.query.mock.calls.some(call => String(call[0]).includes('ROLLBACK'))).toBe(true);
+  });
+
   test('a non-execution ticket edit is not gated', async () => {
     Ticket.findById.mockResolvedValueOnce({
       id: '10',

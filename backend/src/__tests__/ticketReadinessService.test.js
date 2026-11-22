@@ -23,7 +23,7 @@ const { pool } = require('../db');
 const ReadinessEvaluator = require('../services/ReadinessEvaluator');
 const ProjectAccessService = require('../services/ProjectAccessService');
 const TicketReadinessService = require('../services/TicketReadinessService');
-const { ReadinessError, ValidationError } = require('../errors/HttpError');
+const { ReadinessError, ValidationError, ForbiddenError } = require('../errors/HttpError');
 
 function context(overrides = {}) {
   return {
@@ -217,6 +217,28 @@ describe('TicketReadinessService approve and refresh', () => {
     expect(ProjectAccessService.assertProjectMember).toHaveBeenCalled();
   });
 
+  test('replan clears a grandfather exemption so the ticket follows the gate', async () => {
+    const row = {
+      id: 1,
+      project_id: '7',
+      readiness_grandfathered_at: '2026-11-01T00:00:00Z',
+      planning_status: 'completed',
+      plan_approved_at: '2026-11-01T00:00:00Z',
+      ready_at: '2026-11-01T00:00:00Z',
+    };
+    const client = clientFor(row);
+    jest.spyOn(TicketReadinessService, 'loadContext').mockResolvedValue(context());
+    jest.spyOn(TicketReadinessService, 'recordEvent').mockResolvedValue(undefined);
+    ReadinessEvaluator.evaluate.mockReturnValue(notReadyResult());
+
+    await TicketReadinessService.replan(1, { type: 'user', userId: 5, role: 'project_admin' });
+
+    const update = client.query.mock.calls.find(call =>
+      String(call[0]).includes('readiness_grandfathered_at = NULL'));
+    expect(update).toBeDefined();
+    expect(String(update[0])).toContain("planning_status = 'in_progress'");
+  });
+
   test('a failing content edit invalidates an approved plan', async () => {
     pool.query.mockResolvedValue({ rows: [] });
     jest.spyOn(TicketReadinessService, 'loadContext').mockResolvedValue(
@@ -285,6 +307,28 @@ describe('TicketReadinessService overrides and audit', () => {
         expiresAt: new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString(),
       })
     ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  test('criteria writes require project membership', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 1, project_id: '7' }] });
+    ProjectAccessService.assertProjectMember.mockRejectedValueOnce(
+      new ForbiddenError('Not a project member')
+    );
+
+    await expect(
+      TicketReadinessService.addCriteria(1, ['A testable criterion'], {
+        type: 'user',
+        userId: 5,
+        role: 'member',
+      })
+    ).rejects.toBeInstanceOf(ForbiddenError);
+
+    expect(ProjectAccessService.assertProjectMember).toHaveBeenCalledWith(
+      5,
+      '7',
+      { role: 'member' },
+      expect.anything()
+    );
   });
 
   test('blocked audit rows dedupe on attempt_id', async () => {

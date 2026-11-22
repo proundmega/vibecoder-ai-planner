@@ -15,6 +15,7 @@ jest.mock('../services/TicketReadinessService', () => ({
 
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
+const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketReadinessService = require('../services/TicketReadinessService');
 const TicketService = require('../services/TicketService');
@@ -24,6 +25,7 @@ describe('fg-45 permissive ticket creation', () => {
     jest.clearAllMocks();
     Project.findById.mockResolvedValue({ id: '1', ownerId: '100' });
     Ticket.create.mockResolvedValue({ id: '10', projectId: '1', title: 'Title' });
+    PermissionService.hasPermission.mockResolvedValue(true);
   });
 
   test('a title-only ticket is created without readiness state', async () => {
@@ -40,6 +42,7 @@ describe('fg-45 permissive ticket creation', () => {
       acceptanceCriteria: ['Given a draft, when it starts, then it is gated'],
       template: 'simple',
       smallFix: { reason: 'Single-file label change' },
+      role: 'project_admin',
     });
 
     expect(TicketReadinessService.addCriteria).toHaveBeenCalledWith(
@@ -51,13 +54,26 @@ describe('fg-45 permissive ticket creation', () => {
     expect(TicketReadinessService.smallFix).toHaveBeenCalledWith(
       '10',
       'Single-file label change',
-      { type: 'user', userId: '100' }
+      { type: 'user', userId: '100', role: 'project_admin' }
     );
 
     // Criteria are inserted before the template so a spec seed cannot duplicate them.
     const criteriaOrder = TicketReadinessService.addCriteria.mock.invocationCallOrder[0];
     const templateOrder = TicketPlanningService.applyTemplate.mock.invocationCallOrder[0];
     expect(criteriaOrder).toBeLessThan(templateOrder);
+  });
+
+  test('a member cannot use the create path to record a small fix', async () => {
+    PermissionService.hasPermission.mockResolvedValue(false);
+
+    await expect(
+      TicketService.create('1', 'Title', 'description', 'medium', '100', {
+        smallFix: { reason: 'Single-file label change' },
+        role: 'member',
+      })
+    ).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(TicketReadinessService.smallFix).not.toHaveBeenCalled();
   });
 
   test('an unknown project still fails before creation', async () => {

@@ -25,22 +25,22 @@ describe('fg-45 planning status guard', () => {
   });
 
   test('leaving completed requires replan', async () => {
-    pool.query.mockResolvedValueOnce({ rows: [{ planning_status: 'completed' }] });
+    pool.query
+      .mockResolvedValueOnce({ rows: [] }) // conditional UPDATE refuses completed
+      .mockResolvedValueOnce({ rows: [{ planning_status: 'completed' }] });
 
     await expect(
       TicketPlanningService.updateStatus('10', 'in_progress', '100')
     ).rejects.toMatchObject({ code: 'REPLAN_REQUIRED', statusCode: 409 });
   });
 
-  test('the authoring states still update', async () => {
-    pool.query
-      .mockResolvedValueOnce({ rows: [{ planning_status: 'not_started' }] })
-      .mockResolvedValueOnce({ rows: [] });
+  test('the authoring states still update with a completed-safe predicate', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ id: '10' }] });
 
     await TicketPlanningService.updateStatus('10', 'in_progress', '100');
 
     expect(pool.query).toHaveBeenLastCalledWith(
-      'UPDATE tickets SET planning_status = $1, updated_at = NOW() WHERE id = $2',
+      expect.stringContaining("planning_status <> 'completed'"),
       ['in_progress', '10']
     );
   });
@@ -60,9 +60,7 @@ describe('fg-45 planning status guard', () => {
   });
 
   test('the post-approval refresh re-evaluates instead of trusting completed', async () => {
-    pool.query
-      .mockResolvedValueOnce({ rows: [{ planning_status: 'not_started' }] })
-      .mockResolvedValueOnce({ rows: [] });
+    pool.query.mockResolvedValueOnce({ rows: [{ id: '10' }] });
 
     await TicketPlanningService.updateStatus('10', 'template_selected', '100');
 
