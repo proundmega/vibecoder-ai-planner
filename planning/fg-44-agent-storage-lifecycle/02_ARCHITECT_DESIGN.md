@@ -1,181 +1,282 @@
-# 02_ARCHITECT_DESIGN.md - Agent Storage Lifecycle and Idle Refresh (fg-44)
+# 02 — Design (fg-44)
+
+> **Owns:** current-state audit, design, data flow, contracts, risks, rollout.
+> **Not here:** requirements (`01`), verification matrix (`03`), file operations
+> (`04`), status and deferrals (`00`).
+
+## Current State
+
+- `WorkspaceManager(repoCloneDir, repoName, ...)` clones into a random
+  `<8hex>-<repo>` directory under `REPO_CLONE_DIR`; it has a no-arg `cleanup()`.
+- `HarnessTicketProcessor` calls that `cleanup()` in the per-ticket `finally`
+  after destroying the sandbox; the same harness child also runs
+  `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` with
+  `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24) and the backend active-path
+  list. This is random-dir cleanup, not runtime/ticket-keyed lifecycle
+  management.
+- The fg-54 supervisor spawns one child per runtime and passes
+  `REPO_CLONE_DIR` (default `/repos`); children share the same root.
+- `HarnessTicketProcessor` owns the clone, the sandbox and the finish path, so
+  it is the natural cleanup caller.
+- There is no idle-refresh timer, disk/inode watermark, role budget meter,
+  runtime-root sweep or `host-storage.sh`. The existing child/startup temp/
+  own-root prune stays; the supervisor's `/repos`-rooted legacy pass covers the
+  old random dirs, and the runtime-root sweep is new. D10 retires the one-time
+  legacy path.
+- The supervisor Compose service already has `json-file` rotation 10m/3; the
+  sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
+  1m/1 and are not Compose services.
 
 ## Design summary
 
-Make storage a first-class lifecycle: per-agent workspace roots, ticket-scoped cleanup, idle refresh, disk watermarks and a reaper. `PoolManager` remains the owner of container lifecycle; `WorkspaceManager` remains the owner of ticket workspaces.
-
 ```
-PoolManager
-  -> creates /repos/agents/<agentId>
-  -> WorkspaceManager clones /repos/agents/<agentId>/<ticketId>
-  -> ticket end (terminal run + lease release):
-       WorkspaceManager.cleanup(ticketId)   # new ticket-scoped API
-  -> idle 2h: PoolManager.refresh(agentId)
-       -> stop container
-       -> remove workspace + caches
-       -> start fresh container (same identity/key or rotate)
-  -> reaper: orphan dirs, old logs, dangling images
+Supervisor
+  -> child env REPO_CLONE_DIR=/repos/runtimes/<runtimeId>
+  -> child WorkspaceManager clones <ticketId>/repo
+  -> HarnessTicketProcessor finishes (terminal + lease release)
+       -> destroy sandbox
+       -> WorkspaceManager.cleanup(ticketId)
+  -> idle 2h / max 24h between tickets:
+       -> stop child, destroy sandbox, remove runtime root, restart child
+       -> same runtime id + refreshed node credential
+  -> periodic storage sweep:
+       -> du/inode meter, watermarks, runtime-root + legacy/temp pass, orphan
+          reaper, dangling images
+  -> host-storage.sh (dry-run/apply) for manual recovery
 ```
-
-`WorkspaceManager` currently exposes a no-arg `cleanup()`; this ticket adds a ticket-scoped `cleanup(ticketId)` (or `cleanupWorkspace(ticketId)`). The no-arg method remains for full workspace shutdown.
 
 ## Workspace layout
 
 ```
 /repos/
-  agents/
-    <agentId>/
+  runtimes/
+    <runtimeId>/
       <ticketId>/
         repo/
         tmp/
         logs/
-      cache/          # optional per-agent npm/m2 cache, TTL-bound
-  orphans/            # quarantine for debugging, short TTL
+      cache/            # per-runtime npm/m2/OpenCode temp, TTL-bound
+  orphans/
+    <runtimeId>-<ticketId>-<timestamp>/
 ```
 
-- `REPO_CLONE_DIR=/repos/agents/<agentId>` passed to the agent.
-- `WorkspaceManager` must use that root and never delete outside it.
-- On ticket end after a terminal run and lease release, remove `<ticketId>` entirely; on an unclean exit, leave it for the reaper.
-- On a clean container stop with no active run/lease, remove the agent root. On a crash or unclean JVM exit, preserve it until the fg-33 reaper marks the run terminal and the lease expires; never delete an active workspace.
+- `REPO_CLONE_DIR=/repos/runtimes/<runtimeId>` is passed by the supervisor to
+  each child. The child never writes outside its runtime root.
+- `WorkspaceManager` gains a `workspaceKey` (the ticket id, sanitized) and
+  creates `<runtimeRoot>/<ticketId>/repo`. A no-ticket task (profile
+  validation) uses `<uuid>/repo`.
+- `cleanup(ticketId)` deletes only `<runtimeRoot>/<ticketId>`; a
+  `cleanupRuntime()` deletes the runtime root; the existing no-arg `cleanup()`
+  remains as a full shutdown wrapper.
+- `assertSafeToDelete` currently uses `toAbsolutePath().normalize()`. fg-44
+  changes it to `toRealPath(LinkOption.NOFOLLOW_LINKS)` for an existing path
+  (and a normalized, non-following check for a path that does not exist yet),
+  refusing anything outside the runtime root.
 
-## Idle refresh
+## Cleanup flow
 
-Current `PoolManager` has an idle timeout of 5 minutes for pool scaling. Add a separate refresh timer:
+1. The run reaches `succeeded`, `failed`, `budget_exceeded` or `dead_letter`.
+2. `HarnessTicketProcessor` destroys the sandbox (if any) and verifies the
+   destroy/close result.
+3. It records the final checkpoint/finish (lease release).
+4. Only after the lease release, it calls `WorkspaceManager.cleanup(ticketId)`;
+   cleanup deletes the ticket root including `.active`. On failure, the marker
+   remains for the sweep.
+5. On failure, it preserves the workspace and `.active` marker and emits a
+   `storage.cleanup_failed` event; the orphan sweep retries after TTL. A marker
+   whose run is terminal and whose lease has expired is stale only after the
+   retention TTL.
+6. On an unclean JVM exit, the workspace stays until the fg-33 reaper marks the
+   run terminal and the lease expires; the storage sweep then removes it.
 
-- `AGENT_IDLE_REFRESH_MS` default `2h`.
-- A refresh is eligible only if:
-  - `entry.ticketId == null`;
-  - no active lease in the DB/Redis;
-  - no child process/OpenCode session;
-  - container is healthy/idle.
-- Refresh flow:
-  1. mark `refreshing` (do not assign tickets);
-  2. capture workspace size;
-  3. `docker stop` with grace period;
-  4. remove the workspace and per-agent cache;
-  5. start a new container with the same DB agent id/API key, or rotate the key and delete the old record;
-  6. health check + re-register in the pool;
-  7. log freed bytes and duration.
-- If refresh fails, keep the old container (if still running) or mark the slot degraded and retry later.
+Cleanup is idempotent and never touches a directory with an active workspace
+lock. `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start; the
+successful `cleanup(ticketId)` deletes the ticket root including the marker. A
+failed cleanup leaves the marker for the sweep. The supervisor slot and the
+marker are both checked. `host-storage.sh` uses the same marker/PID state in
+stopped-supervisor mode.
 
-A max-lifetime refresh (`AGENT_MAX_LIFETIME_HOURS`, default 24h) uses the same flow but only between tickets.
+## Idle refresh and max lifetime
 
-## Disk watermarks
+- The supervisor tracks `lastActivityAt` per runtime (last claim/finish).
+- `AGENT_IDLE_REFRESH_MS` default `7200000` (2h); `AGENT_MAX_LIFETIME_HOURS`
+  default `24`.
+- Eligible only if no active ticket, no lease, no sandbox and no active
+  harness/OpenCode process. The idle runtime child JVM is the process being
+  restarted.
+- Flow: mark `refreshing` (not assignable), capture size, stop the child with
+  `SUPERVISOR_STOP_TIMEOUT_SECONDS`, destroy the sandbox, remove the runtime
+  root and caches, start a fresh child with the same runtime id, refresh the
+  node credential, health check and re-register.
+- If the restart fails after the child was stopped, mark the slot `degraded`,
+  emit `storage.refresh_failed` and retry with backoff. Do not claim the old
+  child is still running; it was stopped. If the remove step failed before
+  deletion, keep the workspace for recovery and retry.
+- A max-lifetime refresh uses the same flow but only between tickets.
 
-Compute from the repo volume filesystem:
+## Watermarks
+
+The supervisor samples the repo volume (`statfs`) every
+`AGENT_STORAGE_CHECK_SECONDS` (default 60):
 
 | Usage | Action |
 |---|---|
-| 70% | warn, emit metric |
-| 80% | stop spawning new agents; reject `requestAgent` with a clear error |
-| 85% | clean idle agent workspaces/caches; re-run `df` |
-| 90% | emergency recycle oldest idle agents; alert; consider pausing the pool |
-| 95% | stop assigning tickets; require manual recovery |
+| 70% | warn + `storage.watermark` event |
+| 80% | stop spawning; reject new claims with `STORAGE_PRESSURE` |
+| 85% | clean idle runtime roots/caches; re-sample |
+| 90% | emergency recycle the oldest idle runtime; alert |
+| 95% | stop assigning; require `host-storage.sh --apply` with the supervisor stopped |
 
-Inode usage uses the same thresholds. A full disk must not be treated as a ticket failure.
+Inode usage uses the same thresholds. The backend exposes the current state via
+the existing heartbeat/status payload so the fleet UI can show it.
+
+## Budget meter
+
+- Every `AGENT_STORAGE_METER_SECONDS` (default 300), walk the active runtime
+  roots with `du -sb` and count inodes (bounded depth; skip `.git` objects if
+  needed).
+- Compare against the resolved per-runtime budget: the role default (worker
+  20 GB, reviewer/planner 10 GB, light 5 GB) or the fg-43 override
+  `AGENT_DISK_BUDGET_GB`. fg-44 makes `host-init.sh` write the override to
+  `.env.agent-host`; it also writes `HARNESS_WORKSPACE_RETENTION_HOURS`, so the
+  supervisor sees the operator TTL. The supervisor passes the resolved budget
+  to the child. `StoragePolicy`/`RuntimeState` carry the role and budget; do
+  not add a second `AGENT_WORKSPACE_BUDGET_GB` knob.
+- On breach: send `SIGTERM` to the workspace child/sandbox, fail the run with
+  `storage_budget_exceeded`, move the ticket dir to `orphans/`, emit an event
+  and alert.
+- The meter is best-effort and never blocks the supervisor loop; a slow scan is
+  bounded and skipped with a warning.
 
 ## Reaper
 
-A periodic job (in `PoolManager` or host cron):
+The supervisor's storage sweep:
 
-1. list `/repos/agents/*`;
-2. keep directories for active pool entries/leases;
-3. remove directories older than `AGENT_WORKSPACE_TTL_HOURS` (default 24h) with no active owner;
-4. move suspicious dirs to `orphans/` for a short TTL, then delete;
-5. prune dangling images weekly (`docker image prune -f` only, never `-a` blindly);
-6. rotate/truncate Docker logs (prefer log driver config over truncation);
-7. report freed bytes and failures.
+1. list `/repos/runtimes/*`;
+2. keep roots for active runtimes/leases/processes;
+3. remove runtime roots older than `HARNESS_WORKSPACE_RETENTION_HOURS` (default
+   24h) with no active owner;
+4. legacy pass: `/repos/<8hex>-*` via a supervisor `WorkspaceManager` rooted at
+   `/repos` using the Java `pruneStaleWorkspaces()`; the child/startup manager
+   only sees its runtime root, so it does not cover the legacy dirs.
+   `java.io.tmpdir` (`opencode-harness-*`/`vibecode-askpass-*`) via
+   `pruneStaleTempDirectories()` in the child/startup path.
+   `host-storage.sh --legacy` reimplements the same find/prefix/retention rules
+   in bash over `/repos` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; it does not call
+   Java. The child/startup temp/own-root prune stays until D10;
+5. move suspicious dirs to `orphans/` for `AGENT_ORPHAN_TTL_HOURS` (default
+   24h), then delete;
+6. prune dangling images weekly (`docker image prune -f` only, never `-a`);
+7. report freed bytes and failures as events.
+
+`host-storage.sh` exposes the same sweep as `--dry-run`/`--apply` for manual
+recovery; `--legacy` reimplements the same rules in bash over
+`/repos/<8hex>-*` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`
+(`opencode-harness-*`/`vibecode-askpass-*`). It has no backend control token and
+cannot read backend leases; it uses `.active` markers and supervisor PID/state,
+and `--apply` is restricted to a documented stopped-supervisor recovery mode (it
+refuses live supervisor/marker state, exit 4). The supervisor remains the
+lease-safe cleanup owner during normal operation.
 
 ## Logs and images
 
-Docker log config per container:
-
-```json
-{
-  "Type": "json-file",
-  "Config": { "max-size": "10m", "max-file": "3" }
-}
-```
-
-- Never use unbounded default json-file logging.
-- Prune dangling images only; keep the current `vibecode-agent` tag.
-- Keep at most N old images for rollback if the deployment supports it.
+- The supervisor Compose service already uses `json-file` 10m/3; keep it.
+- Sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
+  1m/1 log options; they are not Compose services. Configurable sandbox
+  rotation is deferred as D9.
+- Keep the current `vibecode-agent`/sandbox tags; prune dangling images only.
+- Keep at most N old tags for rollback when the deployment supports it.
 
 ## Caches
 
-- Prefer per-agent caches with a TTL; never share a writable cache between agents.
-- A read-only shared dependency cache is a later optimization.
-- Do not persist `node_modules` across tickets unless the repo/profile explicitly opts in.
+- Per-runtime caches under `<runtimeRoot>/cache`; `WorkspaceManager.getCacheDir()`
+  creates it, `cleanupRuntime()` deletes it, and the TTL is
+  `HARNESS_WORKSPACE_RETENTION_HOURS`.
+- Never share a writable cache between runtimes; a read-only shared cache is
+  D5.
 - Clear `~/.npm`, `~/.m2`, OpenCode temp and `/tmp` on refresh.
+- Do not persist `node_modules` across tickets unless the repo profile opts in
+  (fg-39).
 
-## Workspace budget enforcement
+## Metrics and events
 
-- Each profile has a disk budget (fg-43). A periodic meter runs `du -sb` (and counts inodes) per agent/ticket.
-- On breach: stop the agent's workspace child processes, mark the ticket `storage_budget_exceeded`, quarantine the workspace under `orphans/`, emit a metric and alert.
-- Docker `storage-opt size` is used only for the container writable layer where the driver/filesystem supports it; the shared repo volume is enforced by the meter.
-- Test with a fixture that writes past the budget and asserts the ticket fails before the host fills.
+Emit through the fg-41 event sink (or structured logs when the sink is off):
 
-## Active-ticket safety
-
-- The refresh/reaper checks the DB lease and the in-memory pool entry.
-- If either says active, skip and log.
-- A stale lease (fg-33) must be reaped before the workspace can be removed.
-- Never delete a workspace on a `SIGKILL` while a ticket is active; wait for the reaper after the lease expires.
-
-## Metrics
-
-- `agent_workspace_bytes{agent}`
-- `agent_cache_bytes{agent}`
-- `host_disk_free_bytes`, `host_disk_used_percent`
-- `host_inodes_free`, `host_inodes_used_percent`
-- `agent_refresh_total{reason}`
-- `agent_cleanup_total{reason}`
-- `agent_orphan_dirs`
-- `docker_image_bytes`, `docker_log_bytes`
+- `storage.workspace` `{runtimeId, ticketId, bytes, inodes}`
+- `storage.cleanup` `{runtimeId, ticketId, bytes, reason}`
+- `storage.cleanup_failed` `{runtimeId, ticketId, error}`
+- `storage.refresh` `{runtimeId, reason, freedBytes}`
+- `storage.refresh_failed` `{runtimeId, error}`
+- `storage.watermark` `{level, freeBytes, usedPct, freeInodes, inodePct}`
+- `storage.log_bytes` `{component, bytes}`
+- `storage.budget_exceeded` `{runtimeId, ticketId, budgetGb, usedGb}`
+- `storage.orphan` `{path, bytes, action}`
+- `storage.image_prune` `{removed, reclaimedBytes}`
 
 ## Manual recovery
 
-Document:
+1. Stop the supervisor (stopped-supervisor recovery mode). There is no
+   pool-control token.
+2. Confirm no supervisor PID/slot or `.active` marker remains.
+3. Run `agent/scripts/host-storage.sh --dry-run`, then `--apply`; add
+   `--legacy` for `/repos/<8hex>-*` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`
+   temp dirs. The script refuses live supervisor/marker state (exit 4).
+4. `docker system df`; prune only dangling images/stopped containers.
+5. Verify free bytes/inodes.
+6. Restart the supervisor and monitor.
 
-1. stop new assignments via `POST /api/v1/pool/config { "paused": true }`, `POOL_PAUSED=true`, or `MAX_POOL_SIZE=0`; this runs on the host/control plane and never passes `POOL_ADMIN_TOKEN` to agents;
-2. `docker ps` and stop idle agents;
-3. run the reaper/cleanup script in dry-run, then apply;
-4. `docker system df` and prune only safe objects;
-5. verify free space/inodes;
-6. restart the pool and monitor.
+## Failure modes
 
-## Tests
+| Case | Behavior |
+|---|---|
+| Sandbox destroy fails | Keep the workspace, mark the runtime tracked, fail closed |
+| Disk 80% during a run | Finish the current run; reject new claims |
+| Disk 95% | Stop assigning; require manual recovery |
+| `du` scan slow/timeout | Skip the cycle, log a warning; do not kill the run |
+| Refresh restart fails | Child was stopped; mark degraded, emit `storage.refresh_failed`, retry with backoff; keep the workspace if removal failed |
+| Orphan dir has a live marker/slot | Skip; log |
+| Inode exhaustion | Same as disk pressure; no new claims |
+| Cleanup after an unclean exit | Preserve until the fg-33 reaper, then sweep |
+| Legacy/temp dirs | Keep the child/startup temp/own-root prune; the supervisor/host `/repos` `--legacy` pass covers the old dirs; D10 retires the legacy path |
 
-- ticket cleanup on success/failure;
-- unclean exit preserves the workspace until lease expiry, then the reaper cleans it;
-- workspace budget breach fails the ticket with `storage_budget_exceeded`;
-- idle 2h refresh, including identity/key handling;
-- active ticket is never refreshed/cleaned;
-- 80%/85%/90% watermark behavior;
-- inode pressure;
-- orphan reaper and TTL;
-- log rotation config;
-- image prune safety;
-- full-disk recovery script.
+## Security considerations
+
+- Workspace deletion is bounded by the runtime root. fg-44 changes
+  `assertSafeToDelete` from `toAbsolutePath().normalize()` to
+  `toRealPath(LinkOption.NOFOLLOW_LINKS)` (with a non-following fallback for a
+  path that does not exist yet); symlinks outside the root are refused.
+- No secret is written to a workspace or log; the provider key stays in the
+  harness memory/env file.
+- `host-storage.sh` runs on the host and never receives `POOL_ADMIN_TOKEN`
+  (removed), a backend lease token or provider keys. It uses `.active`
+  markers/PID state and `--apply` is stopped-supervisor recovery only.
+- Quarantined workspaces may contain repo code; restrict permissions and delete
+  after TTL.
+- Docker log rotation is mandatory; log contents follow fg-42 redaction.
+
+## Alternatives considered
+
+1. **Keep random clone dirs and a backend reaper** — rejected: the backend
+   cannot safely delete host paths, and random names make ownership ambiguous.
+2. **Container idle refresh** — rejected: runtimes are child JVMs, not
+   containers; restarting the child is the correct unit.
+3. **A shared writable cache** — rejected: cross-runtime leakage and
+   corruption; D5 keeps a read-only cache as a future option.
+4. **Host cron only** — rejected: the supervisor already owns the lifecycle and
+   can clean at the right boundary; the host script is for recovery.
 
 ## Rollout
 
-1. Add per-agent workspace roots and ticket cleanup.
-2. Add metrics and warn-only watermarks.
-3. Enable reaper in dry-run.
+1. Add the runtime-scoped layout and ticket cleanup.
+2. Add metrics/events and warn-only watermarks.
+3. Enable the reaper in dry-run.
 4. Enable idle refresh at 2h.
 5. Enable stop-spawn/emergency recycle.
-6. Tune budgets per profile.
-
-## Open questions
-
-1. Per-agent volume vs shared volume with subdirectories?
-2. Keep the same DB agent identity across refresh or rotate the key?
-3. Is 2h idle refresh too aggressive for long test runs? (Only idle, never active.)
-4. Resolved: use Docker `storage-opt size` for the container writable layer where supported, and a periodic `du`/inode meter for the shared repo volume.
-5. Do we need a read-only shared cache for node_modules/Maven?
-6. Where should the reaper run: backend, host cron, or a sidecar?
+6. Tune budgets per role.
+7. Run the one-time `/repos` + temp sweep; keep the child/startup temp/own-root
+   prune until D10; the `/repos` legacy pass is the supervisor/host script.
 
 ## Deferred scope
 
-See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not
+keep a copy.
