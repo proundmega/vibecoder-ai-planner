@@ -18,7 +18,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | bt-60 | `bt-60-durable-harness-e2e-tests` | In progress — Phase A merged (#198); Phase B staging pending | Full harness e2e: real backend HTTP + Postgres, node runtime contract, disposable staging run | fg-33 (merged) |
 | fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138) | Sandbox isolation, limits, egress, secretless execution, read/grep and guarded edit/write isolation; D13 (real-Docker CI) merged (#140); D14 (freeze-and-verify sweep) merged (#139); D21-D23 merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 deployment wiring merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) with fg-39 profile plumbing merged (#161); D12, D24, D25, D26 remain; D29 merged (#162) | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Merged (#197) | One supervisor per host, supervisor container limits; per-child cgroups are D6 | fg-33, fg-54 (fg-34 recommended) |
-| fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
+| fg-44 | `fg-44-agent-storage-lifecycle` | Coding-ready (#204) | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
 | fg-45 | `fg-45-ticket-quality-gates` | Merged (#199) | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30 (fg-31 integration deferred, D2) |
 | fg-46 | `fg-46-flow-observability` | Deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
 | fg-47 | `fg-47-independent-review-pass` | Planned | Independent second reviewer: different model/provider/context, read-only, dedupe/triage, blocking policy | fg-31, fg-32, fg-37, fg-41 |
@@ -52,7 +52,7 @@ specified there.
 1. **fg-33** durable execution and recovery (validation: **bt-60**; fg-33 slices 1-3 merged, Phase A merged #198, Phase B staging pending)
 2. **fg-34** sandbox and supply-chain security
 3. **fg-43** Docker agent host sizing and deployment (merged #197; follow-ups fg-43-D1/D6/D7)
-4. **fg-44** agent storage lifecycle and idle refresh
+4. **fg-44** agent storage lifecycle and idle refresh (coding-ready #204)
 5. **fg-35** GitHub App credentials
 
 ### Phase A2 - Human loop
