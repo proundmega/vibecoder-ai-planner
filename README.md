@@ -201,13 +201,13 @@ vibecode/
 │   ├── index.js            → Express app (exports for testing)
 │   ├── api/
 │   │   ├── routes.js       → /health, /version, /docs, /metrics, /auth/*, /v1/*
-│   │   ├── v1/index.js     → 23 route modules (27 router.use mounts) + inlined template/attachment/planning/ip-whitelist routes
+│   │   ├── v1/index.js     → 25 route modules (29 router.use mounts) + inlined template/attachment/planning/ip-whitelist routes
 │   │   └── terminal.js     → WebSocket terminal proxy
 │   ├── middleware/         → auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, slow request logger
-│   ├── services/           → 42 business logic services
+│   ├── services/           → 44 business logic services
 │   ├── controllers/        → 11 request handlers
 │   ├── models/             → approval, project, ticket, user
-│   ├── migrations/         → 58 registered SQL files + 1 data migration (schema_migrations ledger)
+│   ├── migrations/         → 59 registered SQL files + 1 data migration (schema_migrations ledger)
 │   ├── validators/         → Joi schemas
 │   ├── db.js               → pg Pool (DATABASE_URL)
 │   └── utils/logger.js     → Winston logger
@@ -405,7 +405,7 @@ The review policy defines the target formal gates before merge: deterministic ch
 
 ## Migration System
 
-Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). 58 SQL files are registered plus one data migration (`migrate_provider_api_keys.js`). Applied files are recorded in the `schema_migrations` ledger, so a re-run executes only files that are not recorded and each SQL file is recorded in the same transaction as its statements. Notable ordering:
+Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). 59 SQL files are registered plus one data migration (`migrate_provider_api_keys.js`). Applied files are recorded in the `schema_migrations` ledger, so a re-run executes only files that are not recorded and each SQL file is recorded in the same transaction as its statements. Notable ordering:
 - 057 (the agent-fleet clean cut) is registered after 059 despite its number
 - 011/012 appear after 014
 - 020 appears after 018 (no 019)

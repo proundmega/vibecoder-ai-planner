@@ -18,6 +18,7 @@
           <router-link v-if="showCspViolationsLink" to="/csp-violations" class="nav-link">CSP Violations</router-link>
         </div>
         <div class="nav-right">
+          <NotificationBell />
           <span class="nav-user">{{ authStore.user?.value?.name || 'User' }}</span>
           <VButton variant="ghost" size="small" @click="handleLogout">Logout</VButton>
         </div>
@@ -43,6 +44,7 @@ import { useAuthStore } from '@/stores/auth'
 import { get } from '@/api/client'
 import { validateApiResponse } from '@/api/validator'
 import VButton from '@/components/VButton.vue'
+import NotificationBell from '@/components/NotificationBell.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()

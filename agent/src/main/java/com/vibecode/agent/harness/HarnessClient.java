@@ -20,6 +20,26 @@ public interface HarnessClient extends AutoCloseable {
 
     DiffSummary getDiff(String sessionId) throws IOException;
 
+    /**
+     * Reply to a blocked OpenCode question/permission request (fg-55). The
+     * default fails closed: a harness that cannot resume must not pretend it
+     * did, because the run would continue without the human decision.
+     */
+    default void replyToQuestion(
+        String sessionId,
+        String requestId,
+        String kind,
+        String answer
+    ) throws IOException {
+        throw new IOException("This harness cannot resume a question");
+    }
+
+    /** Reject/abort a blocked question (timeout or operator abort). */
+    default void rejectQuestion(String sessionId, String requestId, String kind)
+        throws IOException {
+        throw new IOException("This harness cannot reject a question");
+    }
+
     boolean isHealthy();
 
     @Override

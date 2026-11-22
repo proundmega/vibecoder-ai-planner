@@ -232,6 +232,45 @@ public final class OpenCodeClient implements HarnessClient {
         postJson("/session/" + sessionId + "/message", body, true);
     }
 
+    /**
+     * Resume a blocked question (fg-55). The exact reply shape is the pinned
+     * OpenCode contract; a 404 fails closed with an IOException so the
+     * supervisor fails the run instead of pretending the human answered.
+     */
+    @Override
+    public void replyToQuestion(
+        String sessionId,
+        String requestId,
+        String kind,
+        String answer
+    ) throws IOException {
+        if (requestId == null || requestId.isBlank()) {
+            throw new IOException("OpenCode question id is missing; cannot resume");
+        }
+        if ("permission".equals(kind)) {
+            postJson("/session/" + sessionId + "/permissions/" + requestId,
+                Map.of("response", "once"));
+            return;
+        }
+        postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
+            Map.of("answers", List.of(Map.of("text", answer == null ? "" : answer))));
+    }
+
+    @Override
+    public void rejectQuestion(String sessionId, String requestId, String kind)
+        throws IOException {
+        if (requestId == null || requestId.isBlank()) {
+            return;
+        }
+        if ("permission".equals(kind)) {
+            postJson("/session/" + sessionId + "/permissions/" + requestId,
+                Map.of("response", "reject"));
+            return;
+        }
+        postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
+            Map.of("reject", true));
+    }
+
     @Override
     public void subscribe(String sessionId, Consumer<HarnessEvent> listener) throws IOException {
         if (listener == null) {

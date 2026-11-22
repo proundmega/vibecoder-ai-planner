@@ -505,6 +505,45 @@ describe('HarnessRunService', () => {
     });
   });
 
+  describe('waiting for a human (fg-55)', () => {
+    it('marks a running run waiting without moving the status', async () => {
+      const row = { id: RUN_ID, waiting_since: '2026-11-22T10:00:00.000Z' };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(HarnessRunService.markWaiting(RUN_ID)).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('waiting_since = COALESCE(waiting_since, NOW())');
+      expect(sql).toContain("status = 'running'");
+      expect(params).toEqual([RUN_ID]);
+    });
+
+    it('clears waiting and adds the elapsed time to waited_ms', async () => {
+      const row = { id: RUN_ID, waiting_since: null, waited_ms: 65000 };
+      pool.query.mockResolvedValueOnce({ rows: [row] });
+
+      await expect(HarnessRunService.clearWaiting(RUN_ID)).resolves.toEqual(row);
+
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('waited_ms = waited_ms');
+      expect(sql).toContain('waiting_since = NULL');
+      expect(params).toEqual([RUN_ID]);
+    });
+
+    it('finish expires pending questions and notifies recipients in one statement', async () => {
+      pool.query.mockResolvedValueOnce({ rows: [{ id: RUN_ID, status: 'succeeded' }] });
+
+      await HarnessRunService.finishRun(RUN_ID, { status: 'succeeded' });
+
+      const [sql] = pool.query.mock.calls[0];
+      expect(sql).toContain('waiting_since = NULL');
+      expect(sql).toContain('expired_questions AS');
+      expect(sql).toContain('INSERT INTO notifications');
+      expect(sql).toContain("perm.code = 'AGENT_READ'");
+      expect(sql).toContain("WHEN 'succeeded' THEN 'run_succeeded'");
+    });
+  });
+
   describe('finishRun', () => {
     it('marks a running run terminal and releases its lease', async () => {
       const row = { id: RUN_ID, status: 'succeeded' };

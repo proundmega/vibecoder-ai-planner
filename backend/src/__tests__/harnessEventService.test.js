@@ -335,5 +335,17 @@ describe('HarnessEventService', () => {
       expect(event).toEqual(existing);
       expect(pool.query).toHaveBeenCalledTimes(1);
     });
+
+    it('accepts the fg-55 question and notification event types', () => {
+      for (const type of [
+        'question.asked',
+        'question.answered',
+        'question.timeout',
+        'doom_loop.escalated',
+        'notification.created',
+      ]) {
+        expect(HarnessEventService.isKnownType(type)).toBe(true);
+      }
+    });
   });
 });

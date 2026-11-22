@@ -61,6 +61,7 @@ const SQL_FILES = [
   path.join(__dirname, './056_agent_fleet.sql'),
   path.join(__dirname, './058_provider_registry_events.sql'),
   path.join(__dirname, './059_harness_runtime_ownership.sql'),
+  path.join(__dirname, './060_ticket_questions_notifications.sql'),
 ];
 
 // 057 is the destructive clean cut and runs after 059. The migration ledger

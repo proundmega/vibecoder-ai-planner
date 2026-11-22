@@ -142,6 +142,28 @@ SELECT * FROM harness_leases WHERE ticket_id = :ticket_id;
   runtime loses access, the supervisor releases the claim, and the reaper owns
   the final cleanup.
 
+## Question drill (fg-55)
+
+1. Set `HARNESS_QUESTION_LOOP=true` on the pilot runtime (and
+   `HARNESS_QUESTION_TIMEOUT_MINUTES=5` for the drill) and restart it.
+2. Start a disposable ticket whose plan requires a real decision (for example,
+   two valid libraries with no repo precedent). With the flag off, confirm the
+   config still denies `question` and the agent decides or fails.
+3. With the flag on, confirm the run row has `waiting_since`, a `pending`
+   `ticket_questions` row exists, the lease heartbeat keeps renewing, and the
+   bell/inbox shows the question.
+4. Answer in the ticket card or `/questions`. The same OpenCode session resumes,
+   the question becomes `answered`, `waiting_since` clears and `waited_ms`
+   grows by the wait.
+5. Repeat with no answer. After the timeout the question is `expired`, the run
+   fails with `question_timeout`, no PR is opened and the ticket is released.
+6. Doom-loop drill: script three identical tool calls. A `doom_loop` question
+   is raised; a human `continue` resets the counter, and exceeding the continue
+   cap or answering `abort` fails the run without publishing.
+7. Restart the supervisor while a question is pending. Startup recovery must
+   expire the question and fail/release the run (`question_timeout`), not adopt
+   a published PR.
+
 ## Cleanup
 
 Close/delete the test PR and branch first. Then, with the test IDs:
@@ -171,5 +193,7 @@ if they are disposable.
 - Treat the egress allowlist as a hard host boundary while D16 is open
   (`sni-only` default; `terminate` is opt-in).
 - Leave a test PR, branch, node, runtime, credential or lease behind.
-- Expect the agent to ask questions until `fg-55` lands; Phase 1 denies
-  `question` and `doom_loop`, so the agent must decide or fail.
+- Expect the agent to ask questions unless `HARNESS_QUESTION_LOOP=true`; with
+  the flag off (`doom_loop` always denied) the agent must decide or fail.
+- Enable Docker mode for an untrusted repository without the D14 gate, or treat
+  the allowlist as a hard host boundary while D16 is open.

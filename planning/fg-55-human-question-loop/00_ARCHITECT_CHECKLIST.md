@@ -1,7 +1,7 @@
 ---
 id: "fg-55"
 title: "Human Question Loop and Notifications"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
@@ -38,9 +38,9 @@ repetition policy that escalates to a question.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Plan merged | pending | ☐ |
-| Implementation merged | pending | ☐ |
-| Verification results | `03` → Results | ☐ |
+| Plan merged | #193 added this suite to master | ☑ |
+| Implementation merged | pending review | ☐ |
+| Verification results | `03` → Results (local: backend 152/1781, integration 19/139, agent 920, frontend 68/589) | ☑ |
 
 ## Deferred register (canonical)
 
@@ -65,9 +65,9 @@ deferred scope are owned by this document; `01`–`04` link here.
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
 | 1 | Alert channel | in-app bell / GitHub only / in-app + email | In-app bell + question inbox | Answered 2026-11-22: in-app bell + question inbox; email/Slack deferred (D1) |
-| 2 | Waiting strategy | live wait / suspend and resume | Live wait with a bounded timeout; suspend is deferred (D3) | Pending |
-| 3 | Doom-loop default | ask after N repeats / auto-continue under budget | Ask after 3 repeats; budget and tool caps stay authoritative | Pending |
-| 4 | Feature flag default | off / on | Off by default; enable per environment for the pilot | Pending |
+| 2 | Waiting strategy | live wait / suspend and resume | Live wait with a bounded timeout; suspend is deferred (D3) | Answered 2026-11-22: live wait, `HARNESS_QUESTION_TIMEOUT_MINUTES` (60); durable suspend is D3 |
+| 3 | Doom-loop default | ask after N repeats / auto-continue under budget | Ask after 3 repeats; budget and tool caps stay authoritative | Answered 2026-11-22: ask after 3 repeats (`HARNESS_DOOM_LOOP_MAX`), abort after 3 continues; auto-continue is D10 |
+| 4 | Feature flag default | off / on | Off by default; enable per environment for the pilot | Answered 2026-11-22: `HARNESS_QUESTION_LOOP=false` by default; Phase 1 behavior when off |
 
 ## Completion gate
 

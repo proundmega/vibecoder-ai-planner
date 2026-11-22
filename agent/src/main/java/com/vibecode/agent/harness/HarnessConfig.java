@@ -17,7 +17,8 @@ public record HarnessConfig(
     List<String> verificationCommands,
     List<String> protectedPaths,
     String modelOverride,
-    String resumeMode
+    String resumeMode,
+    QuestionLoopConfig questionLoop
 ) {
 
     public static final String DEFAULT_BINARY = "opencode";
@@ -26,6 +27,22 @@ public record HarnessConfig(
     public static final String DEFAULT_PROTECTED_PATHS =
         ".env*;**/.env*;Jenkinsfile;**/Jenkinsfile;.github/**;**/.github/**;**/secrets/**";
 
+    /**
+     * Backwards-compatible constructor for callers written before fg-55. The
+     * question loop defaults to off, which is the Phase 1 behavior.
+     */
+    public HarnessConfig(
+        String binary,
+        Duration startupTimeout,
+        Duration maxDuration,
+        List<String> verificationCommands,
+        List<String> protectedPaths,
+        String modelOverride,
+        String resumeMode
+    ) {
+        this(binary, startupTimeout, maxDuration, verificationCommands,
+            protectedPaths, modelOverride, resumeMode, QuestionLoopConfig.disabled());
+    }
 
     /** Return a copy with a shorter overall budget for one profile round. */
     public HarnessConfig withMaxDuration(Duration budget) {
@@ -33,7 +50,7 @@ public record HarnessConfig(
             return this;
         }
         return new HarnessConfig(binary, startupTimeout, budget,
-            verificationCommands, protectedPaths, modelOverride, resumeMode);
+            verificationCommands, protectedPaths, modelOverride, resumeMode, questionLoop);
     }
 
     public static HarnessConfig fromEnvironment() {
@@ -60,7 +77,8 @@ public record HarnessConfig(
             split(value(env, "HARNESS_VERIFY_COMMANDS", "")),
             split(value(env, "HARNESS_PROTECTED_PATHS", DEFAULT_PROTECTED_PATHS)),
             model.isBlank() ? null : model,
-            resumeMode
+            resumeMode,
+            QuestionLoopConfig.from(env)
         );
     }
 
@@ -69,7 +87,7 @@ public record HarnessConfig(
         return new HarnessConfig(
             binary, startupTimeout, maxDuration, verificationCommands,
             protectedPaths, model == null || model.isBlank() ? modelOverride : model.trim(),
-            resumeMode);
+            resumeMode, questionLoop);
     }
 
     public void validate() {
@@ -82,6 +100,9 @@ public record HarnessConfig(
         }
         requirePositive(startupTimeout, "HARNESS_STARTUP_TIMEOUT_MS");
         requirePositive(maxDuration, "HARNESS_MAX_DURATION_MINUTES");
+        if (questionLoop != null) {
+            questionLoop.validate();
+        }
     }
 
     private static void requirePositive(Duration duration, String name) {
@@ -116,5 +137,79 @@ public record HarnessConfig(
             .map(String::trim)
             .filter(part -> !part.isBlank())
             .toList();
+    }
+
+    /**
+     * The Phase 2 question loop (fg-55). Disabled by default; when disabled the
+     * generated config denies `question` and the processor ignores question
+     * events, which is exactly Phase 1 behavior.
+     */
+    public record QuestionLoopConfig(
+        boolean enabled,
+        Duration timeout,
+        Duration pollInterval,
+        int doomLoopMax,
+        int doomLoopContinues
+    ) {
+        public static final long DEFAULT_TIMEOUT_MINUTES = 60L;
+        public static final long DEFAULT_POLL_SECONDS = 5L;
+        public static final int DEFAULT_DOOM_LOOP_MAX = 3;
+        public static final int DEFAULT_DOOM_LOOP_CONTINUES = 3;
+
+        public static QuestionLoopConfig disabled() {
+            return new QuestionLoopConfig(false,
+                Duration.ofMinutes(DEFAULT_TIMEOUT_MINUTES),
+                Duration.ofSeconds(DEFAULT_POLL_SECONDS),
+                DEFAULT_DOOM_LOOP_MAX,
+                DEFAULT_DOOM_LOOP_CONTINUES);
+        }
+
+        public static QuestionLoopConfig from(Function<String, String> env) {
+            boolean enabled = boolValue(env, "HARNESS_QUESTION_LOOP", false);
+            long timeoutMinutes = longValue(
+                env, "HARNESS_QUESTION_TIMEOUT_MINUTES", DEFAULT_TIMEOUT_MINUTES);
+            long pollSeconds = longValue(
+                env, "HARNESS_QUESTION_POLL_SECONDS", DEFAULT_POLL_SECONDS);
+            int max = intValue(env, "HARNESS_DOOM_LOOP_MAX", DEFAULT_DOOM_LOOP_MAX);
+            int continues = intValue(
+                env, "HARNESS_DOOM_LOOP_CONTINUES", DEFAULT_DOOM_LOOP_CONTINUES);
+            return new QuestionLoopConfig(
+                enabled,
+                Duration.ofMinutes(timeoutMinutes),
+                Duration.ofSeconds(pollSeconds),
+                max,
+                continues);
+        }
+
+        public void validate() {
+            requirePositive(timeout, "HARNESS_QUESTION_TIMEOUT_MINUTES");
+            requirePositive(pollInterval, "HARNESS_QUESTION_POLL_SECONDS");
+            if (pollInterval.compareTo(timeout) > 0) {
+                throw new IllegalStateException(
+                    "HARNESS_QUESTION_POLL_SECONDS must not exceed the timeout");
+            }
+            if (doomLoopMax < 1) {
+                throw new IllegalStateException("HARNESS_DOOM_LOOP_MAX must be at least 1");
+            }
+            if (doomLoopContinues < 1) {
+                throw new IllegalStateException(
+                    "HARNESS_DOOM_LOOP_CONTINUES must be at least 1");
+            }
+        }
+
+        private static boolean boolValue(Function<String, String> env, String name, boolean fallback) {
+            String value = env.apply(name);
+            if (value == null || value.isBlank()) {
+                return fallback;
+            }
+            return "true".equalsIgnoreCase(value.trim())
+                || "1".equals(value.trim())
+                || "yes".equalsIgnoreCase(value.trim());
+        }
+
+        private static int intValue(Function<String, String> env, String name, int fallback) {
+            long parsed = longValue(env, name, fallback);
+            return parsed > Integer.MAX_VALUE ? fallback : (int) parsed;
+        }
     }
 }

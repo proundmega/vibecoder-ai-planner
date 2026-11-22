@@ -7,8 +7,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HarnessConfigTest {
 
@@ -26,6 +28,28 @@ class HarnessConfigTest {
             config.protectedPaths());
         assertNull(config.modelOverride());
         assertEquals("restart", config.resumeMode());
+        assertFalse(config.questionLoop().enabled());
+        assertEquals(Duration.ofMinutes(60), config.questionLoop().timeout());
+        assertEquals(Duration.ofSeconds(5), config.questionLoop().pollInterval());
+    }
+
+    @Test
+    void parsesTheQuestionLoopFlags() {
+        Map<String, String> env = Map.of(
+            "HARNESS_QUESTION_LOOP", "true",
+            "HARNESS_QUESTION_TIMEOUT_MINUTES", "15",
+            "HARNESS_QUESTION_POLL_SECONDS", "2",
+            "HARNESS_DOOM_LOOP_MAX", "4",
+            "HARNESS_DOOM_LOOP_CONTINUES", "2"
+        );
+
+        HarnessConfig config = HarnessConfig.from(env::get);
+
+        assertTrue(config.questionLoop().enabled());
+        assertEquals(Duration.ofMinutes(15), config.questionLoop().timeout());
+        assertEquals(Duration.ofSeconds(2), config.questionLoop().pollInterval());
+        assertEquals(4, config.questionLoop().doomLoopMax());
+        assertEquals(2, config.questionLoop().doomLoopContinues());
     }
 
     @Test

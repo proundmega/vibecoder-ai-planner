@@ -79,7 +79,11 @@ public final class OpenCodeConfigWriter {
         root.put("autoupdate", false);
         root.put("share", "disabled");
         root.put("snapshot", false);
-        root.put("permission", permissions(sandboxedBash));
+        root.put("permission", permissions(
+            sandboxedBash,
+            config != null
+                && config.questionLoop() != null
+                && config.questionLoop().enabled()));
 
         Map<String, Object> providers = new LinkedHashMap<>();
         providers.put(mapping.providerId, providerEntry(mapping));
@@ -182,7 +186,10 @@ public final class OpenCodeConfigWriter {
         return entry;
     }
 
-    private static Map<String, Object> permissions(boolean sandboxedBash) {
+    private static Map<String, Object> permissions(
+        boolean sandboxedBash,
+        boolean questionLoopEnabled
+    ) {
         Map<String, Object> permission = new LinkedHashMap<>();
         // Built-in edit/write tools only apply a lexical external-directory
         // deny, so a workspace symlink can redirect a write. Replace them with
@@ -211,7 +218,10 @@ public final class OpenCodeConfigWriter {
         permission.put("webfetch", "deny");
         permission.put("websearch", "deny");
         permission.put("task", "deny");
-        permission.put("question", "deny");
+        // fg-55: the human question loop is opt-in. Even when enabled, the
+        // non-portable doom_loop action stays denied; repetition is handled by
+        // the supervisor so it also works after the OpenCode V2 removal.
+        permission.put("question", questionLoopEnabled ? "allow" : "deny");
         permission.put("doom_loop", "deny");
         permission.put("external_directory", "deny");
 
