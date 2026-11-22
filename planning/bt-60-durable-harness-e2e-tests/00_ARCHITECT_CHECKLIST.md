@@ -46,7 +46,7 @@ now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #111 | ☑ |
-| Phase A implemented | PR #198, merged as `19cfc33`; fixes the usage-flush defect found by E12 | ☑ |
+| Phase A implemented | PR #198, merged as `19cfc33`; exposed the usage-flush defect fixed in #200 | ☑ |
 | Phase B staged | pending — disposable repo, provider key and GitHub App installation required | ☐ |
 | Verification results | `03` Results, 2026-11-22 (Phase A) | ☑ |
 
