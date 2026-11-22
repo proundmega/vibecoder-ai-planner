@@ -69,20 +69,36 @@ effort = low
 project = <project_id>
 ```
 
-3. Size the declaration before starting. On a Docker host this also writes
-   `.env.agent-host`; for the manual `java -jar` path below, apply the same
+3. Docker Compose path: size the declaration and write the env file before
+   starting. Add `--yes` to start the stack from the same command:
+
+```bash
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh
+# or start immediately:
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --yes
+
+# if you wrote the file first:
+docker compose --env-file .env.agent-host \
+  -f agent/docker-compose.yml up -d --build
+```
+
+`host-init.sh --check` does **not** write `.env.agent-host`; use it only for
+validation.
+
+4. Manual `java -jar` path: validate without writing, then apply the printed
    `SUPERVISOR_*`/`AGENT_HOST_*` values to the environment:
 
 ```bash
-AGENT_INI_PATH=agent.ini \
-agent/scripts/host-init.sh --check
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --check
 ```
 
-`host-init.sh` fails closed if the declared fleet does not fit. Re-run it after
-changing a `count`; the supervisor also enforces `AGENT_HOST_MAX_RUNTIMES`
-(default 50).
+Use the summary's `SUPERVISOR_CPUS`, `SUPERVISOR_MEMORY_LIMIT`,
+`SUPERVISOR_MEMORY_BUDGET_MB`, `AGENT_HOST_MAX_RUNTIMES` and
+`AGENT_RUNTIME_HEAP_MB` below. The supervisor also enforces
+`AGENT_HOST_MAX_RUNTIMES` (default 50); re-run host-init after changing a
+`count`.
 
-4. Start the supervisor with the node settings:
+Then start the supervisor with the node settings (use the values from step 3 or 4):
 
 ```bash
 BACKEND_URL='https://planner.example.com' \

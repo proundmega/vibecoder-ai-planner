@@ -183,7 +183,7 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 
 | ID | Item | Exit criteria | Depends on |
 |----|------|---------------|------------|
-| **fg-43-D1** | Dynamic per-role autoscaling: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts. | The 7-runtime reference case is reproduced from capacity alone, with a reviewed declaration. | fg-43, fg-38 |
+| **fg-43-D1** | Dynamic per-role autoscaling: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts. | The 48-thread, 6-worker + 1-planner, 90%-utilization example is reproduced from capacity alone, with a reviewed declaration. | fg-43, fg-38 |
 | **fg-43-D6** | Per-child cgroups and PID limits for supervisor runtime children. | Each child is capped by cgroup/PID limits and the limits are observable. | fg-43, fg-34 |
 | **fg-43-D7** | Supervisor-level backend `/health` startup gate. | A down backend prevents child spawn; recovery is automatic after health returns. | fg-43, fg-54 |
 

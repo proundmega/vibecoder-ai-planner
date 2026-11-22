@@ -19,7 +19,7 @@ depends_on: ["fg-33", "fg-54"]
 | Claim | Evidence | Checked |
 |---|---|---|
 | Implementation merged | PR #197, squash `ccf5d6a` | ☑ |
-| Verification results | `03` → Results (shell 65/65; Java 41 focused / full agent suite 929 tests; Compose base+sandbox) | ☑ |
+| Verification results | `03` → Results (shell 68/68; Java 41 focused / full agent suite 929 tests; Compose base+sandbox) | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).

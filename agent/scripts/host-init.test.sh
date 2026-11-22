@@ -87,6 +87,9 @@ else
 fi
 assert_contains "$TMP_DIR/check.out" "Check passed" "check reports success"
 assert_contains "$TMP_DIR/check.out" "binding: cpu" "check reports the binding limit"
+assert_contains "$TMP_DIR/check.out" "SUPERVISOR_CPUS=7.00" "check prints the manual CPU value"
+assert_contains "$TMP_DIR/check.out" "SUPERVISOR_MEMORY_LIMIT=7G" "check prints the manual memory value"
+assert_contains "$TMP_DIR/check.out" "AGENT_HOST_MAX_RUNTIMES=50" "check prints the cap"
 
 if env "${REFERENCE_ENV[@]}" bash "$HOST_INIT" >"$TMP_DIR/write.out" 2>&1; then
     pass "env file write succeeds"
