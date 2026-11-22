@@ -25,8 +25,10 @@ the as-built files are listed in §1 and in `03`'s matrix.
   were not used.
 - `readiness_requirement_ids TEXT[] NOT NULL DEFAULT '{}'` is present.
 - The action `CHECK` and `idx_readiness_events_action` are present.
-- `ON DELETE SET NULL` is used on user/agent columns; acceptance-criteria text
-  has `CHECK (char_length(text) > 0)`.
+- `ON DELETE SET NULL` is used on the user columns (`plan_approved_by`,
+  `ready_by`, `small_fix_by`, `readiness_override_by`, `actor_user_id`,
+  `created_by`); `actor_agent_id` has no FK. Acceptance-criteria text has
+  `CHECK (char_length(text) > 0)`.
 - The backfill uses a `CASE` for `planning_status` and
   `AND readiness_grandfathered_at IS NULL`; the rollback drops the columns for
   every ticket, not only pre-backfill rows.
