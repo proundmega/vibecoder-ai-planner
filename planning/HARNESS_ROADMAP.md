@@ -36,7 +36,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-41 | `DONE/fg-41-harness-observability` | Merged (#163) | Event stream, traces, replay, dashboards, audit | fg-33 |
 | fg-42 | `DONE/fg-42-harness-privacy` | Merged (#166) | Classification, redaction, provider policy, retention | fg-34, fg-41 |
 | fg-54 | `DONE/fg-54-agent-fleet` | Merged (#179, #184, #190, #191) | Node/grant/runtime/lease identity, credential+model registry with roles, static host supervisor (one Compose stack), replicated manager service; approved clean cut is the default migration, ledgered; generated client refreshed in #190 | fg-53 |
-| fg-55 | `fg-55-human-question-loop` | In review | Question tool → ticket question → notification → human answer → resume; doom-loop escalation/cap; in-app bell and question inbox; run outcome notifications | fg-30 Phase 1, fg-33, fg-41, fg-42, fg-54 |
+| fg-55 | `fg-55-human-question-loop` | In review (PR #195) | Question tool → ticket question → notification → human answer → resume; doom-loop escalation/cap; in-app bell and question inbox; run outcome notifications | fg-30 Phase 1, fg-33, fg-41, fg-42, fg-54 |
 
 fg-55 implements fg-30 Phase 2 (human loop); Phases 3-4 (autonomy, hardening)
 remain unticketed. The cross-cutting tickets above fill the gaps that were not
@@ -56,7 +56,7 @@ specified there.
 5. **fg-35** GitHub App credentials
 
 ### Phase A2 - Human loop
-5b. **fg-55** question tool, notifications and doom-loop escalation (in review, 2026-11-22; prerequisite for fg-31)
+5b. **fg-55** question tool, notifications and doom-loop escalation (in review PR #195, 2026-11-22; prerequisite for fg-31)
 
 ### Phase B - Review loop
 6. **fg-31** reviewer harness (plan merged in #103; implementation pending)

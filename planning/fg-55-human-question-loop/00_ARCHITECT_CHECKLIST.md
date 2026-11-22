@@ -7,8 +7,8 @@ effort: "Large"
 scope: "Both"
 created: "2026-11-22"
 updated: "2026-11-22"
-pr: null
-branch: null
+pr: 195
+branch: "feat/fg-55-human-question-loop"
 depends_on: ["fg-30", "fg-33", "fg-41", "fg-54"]
 ---
 
