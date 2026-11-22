@@ -333,7 +333,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 `GET|PUT /harness/kill-switch` (global, super_admin). Agent events are run-scoped
 and cannot write `audit.*`.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 59 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 59 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. A ledger-less post-cut database is baselined only through 059, so newer additive migrations (060+) still run. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

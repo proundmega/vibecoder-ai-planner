@@ -405,7 +405,7 @@ The review policy defines the target formal gates before merge: deterministic ch
 
 ## Migration System
 
-Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). 59 SQL files are registered plus one data migration (`migrate_provider_api_keys.js`). Applied files are recorded in the `schema_migrations` ledger, so a re-run executes only files that are not recorded and each SQL file is recorded in the same transaction as its statements. Notable ordering:
+Migrations are SQL files in `backend/src/migrations/`, applied by `src/migrations/apply.js` in **array order** (not numeric). 59 SQL files are registered plus one data migration (`migrate_provider_api_keys.js`). Applied files are recorded in the `schema_migrations` ledger, so a re-run executes only files that are not recorded and each SQL file is recorded in the same transaction as its statements. A ledger-less post-cut database is baselined only through 059, so newer additive migrations (060+) still run. Notable ordering:
 - 057 (the agent-fleet clean cut) is registered after 059 despite its number
 - 011/012 appear after 014
 - 020 appears after 018 (no 019)
