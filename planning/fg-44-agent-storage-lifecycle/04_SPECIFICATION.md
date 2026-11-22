@@ -59,7 +59,8 @@ return Paths.get(repoCloneDir, key, "repo").toAbsolutePath().normalize();
 `generateRepoDir()` is its `repo/` child. The manager creates `tmp/` and `logs/`
 under the ticket root before clone and `cache/` under the runtime root.
 `cleanup(key)` deletes the ticket root (including `.active`); `cleanupRuntime()`
-deletes the runtime root including `cache/`. The clone is never the delete root.
+deletes the runtime root including `cache/`. The cache uses the same
+`HARNESS_WORKSPACE_RETENTION_HOURS` TTL. The clone is never the delete root.
 
 The existing `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` remain for
 the legacy `/repos/<8hex>-*` and `opencode-harness-*`/`vibecode-askpass-*` temp
