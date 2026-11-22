@@ -47,8 +47,9 @@ now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
 |---|---|---|
 | Plan merged | PR #111 | ☑ |
 | Phase A implemented | PR #198, merged as `19cfc33`; exposed the usage-flush defect fixed in #200 | ☑ |
+| Phase B automated drills | `harnessHttpE2E` E19-E21/E29; backend integration 21 suites / 167 tests | ☑ |
 | Phase B staged | pending — disposable repo, provider key and GitHub App installation required | ☐ |
-| Verification results | `03` Results, 2026-11-22 (Phase A) | ☑ |
+| Verification results | `03` Results, 2026-11-22 (Phase A + Phase B automated drills) | ☑ |
 
 ## Deferred register (canonical)
 
@@ -63,7 +64,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Idempotent publish: branch/PR detection and duplicate-PR prevention | fg-33 | Reliability | fg-33 (#110) | done |
 | D5 | Dead-letter/adoption flow for operators | fg-33 | Operations | fg-33 (#110) | done |
 | D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | fg-44-agent-storage-lifecycle | open |
-| D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B | open |
+| D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B; crash/reaper/idempotent publish now automated, finish/key-expiry remain | open |
 | D8 | Fully containerized real-agent e2e in CI | self | Testing | follow-up | open |
 | D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |
 | D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
@@ -75,7 +76,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
 | 1 | Staging project/repo/node/runtime and provider/GitHub credentials | provide now / defer | Use a dedicated disposable set, never production | Deferred until the disposable set exists (Phase B) |
-| 2 | Phase split | A only / A+B now | Both dependencies are satisfied; run A+B | Phase A now; Phase B deferred |
+| 2 | Phase split | A only / A+B now | Both dependencies are satisfied; run A+B | Phase A merged; Phase B automated drills done, real staging deferred |
 
 ## Completion gate
 

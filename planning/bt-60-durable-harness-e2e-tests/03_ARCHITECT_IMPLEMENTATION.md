@@ -35,6 +35,8 @@ assertions.
 2. **Backend HTTP/Postgres e2e** —
    `backend/src/__tests__/integration/harnessHttpE2E.test.js`
    - Use `supertest(app)` against the real app; no service mocks.
+   - [x] Phase B backend drills: E19-E21 and E29.
+   - [ ] Real OpenCode/GitHub staging path (E15-E18/E22).
    - Exercise start/claim/checkpoints/heartbeat/finish and DB assertions.
    - Cover auth, ticket assignment, duplicate start, lease conflict, step
      ordering, finish idempotency and operator read scope.
@@ -254,7 +256,8 @@ crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
 ### Verification matrix
 
 One row per scenario, tagged with the requirement it proves. E1-E22 are the
-original scenarios; E23-E28 cover the non-scenario requirements so every
+original scenarios; E29 adds the Phase B dead-letter/release guard, and
+E23-E28 cover the non-scenario requirements so every
 `FR*`/`NFR*` in `01` has a row.
 
 | Req | ID | Scenario | Layer | Expected | Phase |
@@ -278,9 +281,10 @@ original scenarios; E23-E28 cover the non-scenario requirements so every
 | FR7 | E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable; reaper reconciles | A/B |
 | FR7 | E17 | Node token revoked mid-run | Processor/manual | fatal; no push/PR; add a focused processor test or keep manual-only (D7) | A/manual |
 | FR7 | E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery; covered by `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` | A |
-| FR8 | E19 | Crash/restart mid-prompt/verify/publish | Manual | startup recovery skips fresh runs, fails/releases stale runs without evidence, adopts published runs; reaper reconciles terminal runs; no duplicate PR | B |
-| FR8 | E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
-| FR8 | E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
+| FR8 | E19 | Crash/restart mid-publish (publish evidence + expired lease) | Backend HTTP + reaper | reaper adopts the stored PR, ticket goes to `review`, one run/PR | B |
+| FR8 | E20 | Reaper fails a stale unpublished run and releases the ticket | Backend HTTP + reaper | run `failed`; only an `in_progress` ticket with no PR returns to backlog | B |
+| FR8 | E21 | Idempotent publish/duplicate PR and reconcile | Backend HTTP | repeated publish keeps one head/PR; reconcile twice does not duplicate the PR | B |
+| FR8 | E29 | Dead-letter hold and release-ticket authorization | Backend HTTP | operator dead-letters; agent release is refused; operator release returns the ticket to backlog | B |
 | FR8/NFR2 | E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
 | FR9 | E24 | No production data used | Manual/review | dedicated test project/repo/ticket/node/runtime; scoped credentials revoked; cleanup verified | A |
 | FR10 | E25 | Index updated | Docs (review-only) | `PENDING.txt` and roadmap point to bt-60 and show the satisfied fg-33 dependency; not part of the backend e2e suite because the test image ships only `backend/` | A |
@@ -319,8 +323,10 @@ keep a copy.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `19cfc33` (PR #198, merged; includes #200 `865565e`) | Phase A: `harnessHttpE2E` 16/16; backend integration 20 suites / 158 tests; backend unit 152 suites / 1788 tests; lint 0 errors (30 warnings); `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` 1/1 | Phase A green and merged. E12/E13 assert `artifacts_finalized_at`; the usage-flush UUID defect they exposed is fixed in the separate production PR #200. Phase B staging is deferred pending the disposable repo/key/App installation. |
+| 2026-11-22 | Phase B branch | `harnessHttpE2E` 20/20 (E19-E21, E29 added); backend integration 21 suites / 167 tests; backend unit 1857 tests; lint clean | Phase B backend drills green: crash-after-publish adoption, stale-run release, idempotent publish/reconcile, dead-letter/release authorization. The real OpenCode/GitHub staging run remains pending the disposable repo, provider key and GitHub App installation. |
 
 | Field | Value |
 |---|---|
 | Residual rows | none (verified `bt60_*` counts are 0 after the suite) |
-| Manual staging evidence | — (Phase B deferred) |
+| Phase B automated drills | E19-E21, E29 pass in `harnessHttpE2E`; no residual rows |
+| Manual staging evidence | — (pending disposable repo/provider key/GitHub App installation) |
