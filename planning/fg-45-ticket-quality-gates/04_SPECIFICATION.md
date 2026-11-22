@@ -14,8 +14,8 @@
 The implementation evolved from this sketch. The merged code and `03` are the
 as-built contract; these are the material differences.
 
-**Test files.** The stub names below were replaced during implementation; the
-as-built files are listed in §1 and in `03`'s matrix.
+**Test files.** The original stub names were replaced during implementation;
+the as-built files are listed in §1 and in `03`'s matrix.
 
 **Migration 061.**
 - `actor_type` is `('user','agent','system')` (not `runtime`).
