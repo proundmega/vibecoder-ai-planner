@@ -15,7 +15,7 @@ storage policy, host script, verify the existing supervisor logs, docs.
 | `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` | idle/max-lifetime/watermarks/runtime-root + legacy sweep/active safety/budget |
 | `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` | cleanup order, `.active` preserved on failure, budget breach |
 | `agent/src/test/java/.../harness/HarnessEventStorageTest.java` | workspace bytes/inodes, free bytes/inodes, log bytes, refresh/cleanup/orphan counts |
-| `agent/scripts/host-storage.test.sh` | Bash fixtures for dry-run/apply/recovery, stopped-supervisor and `.active`/PID guards |
+| `agent/scripts/host-storage.test.sh` | Bash fixtures for dry-run/apply/`--legacy` over `/repos` and `AGENT_TMPDIR`, stopped-supervisor and `.active`/PID guards |
 
 ## Test-First Requirement
 
@@ -62,11 +62,17 @@ under the ticket root before clone and `cache/` under the runtime root.
 deletes the runtime root including `cache/`. The cache uses the same
 `HARNESS_WORKSPACE_RETENTION_HOURS` TTL. The clone is never the delete root.
 
-The existing `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` remain for
-the legacy `/repos/<8hex>-*` and `opencode-harness-*`/`vibecode-askpass-*` temp
-dirs; the supervisor sweep and `host-storage.sh --legacy` call them with the
-same retention. Do not remove `pruneStaleTempDirectories`: the temp dirs may
-contain credentials.
+The existing Java prune methods remain for the child/startup path:
+`pruneStaleWorkspaces()` scans the clone root (`/repos`) for the
+`WORKSPACE_DIR_PATTERN` (`<8hex>-*`); `pruneStaleTempDirectories()` scans
+`java.io.tmpdir` for `TEMP_DIR_PREFIXES`
+(`opencode-harness-*`/`vibecode-askpass-*`). The supervisor runtime-root sweep
+uses the Java methods for the normal path. `host-storage.sh --legacy`
+reimplements the same find/prefix/retention rules in bash over `/repos` and
+`${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; it does not call Java. Do not remove
+`pruneStaleTempDirectories`: the temp dirs may contain credentials. In Docker
+mode, `AGENT_TMPDIR` must point at the host path the child sees as
+`java.io.tmpdir`, or rely on the in-container child/startup prune.
 
 `assertSafeToDelete` currently uses `toAbsolutePath().normalize()`. fg-44 must
 change it to `toRealPath(LinkOption.NOFOLLOW_LINKS)` for existing paths and a
@@ -183,10 +189,12 @@ Exit codes:
   supervisor PID/slot or a `.active` marker (`exit 4`). The supervisor remains
   the lease-safe cleanup owner during normal operation.
 - `--orphans` sweeps runtime roots with no live supervisor/PID/marker and older
-  than `HARNESS_WORKSPACE_RETENTION_HOURS`; `--legacy` runs the existing
-  `pruneStaleWorkspaces()`/`pruneStaleTempDirectories()` over `/repos` with the
-  `<8hex>-*`, `opencode-harness-*` and `vibecode-askpass-*` prefixes. The
-  child/startup prune remains until D10; `--images` prunes dangling images only.
+  than `HARNESS_WORKSPACE_RETENTION_HOURS`; `--legacy` reimplements the same
+  find/prefix/retention rules in bash over `/repos` (`<8hex>-*`,
+  `WORKSPACE_DIR_PATTERN`) and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`
+  (`opencode-harness-*`/`vibecode-askpass-*`, `TEMP_DIR_PREFIXES`). It does not
+  call Java; the child/startup Java prune remains until D10. `--images` prunes
+  dangling images only.
 - `--json` prints a machine-readable summary.
 - It never reads or prints provider keys or a control token. It cannot see
   backend leases, so it does not claim lease-safe deletion while the supervisor

@@ -155,23 +155,26 @@ The supervisor's storage sweep:
 2. keep roots for active runtimes/leases/processes;
 3. remove runtime roots older than `HARNESS_WORKSPACE_RETENTION_HOURS` (default
    24h) with no active owner;
-4. run the existing `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` over
-   `/repos` with the same retention and prefixes (`<8hex>-*`,
-   `opencode-harness-*`, `vibecode-askpass-*`). This one-time legacy pass covers
-   dirs the runtime-root sweep cannot see, and the child/startup call stays
-   until D10;
+4. legacy pass: `/repos/<8hex>-*` via the Java `pruneStaleWorkspaces()`
+   (child/startup and supervisor sweep) and `java.io.tmpdir`
+   (`opencode-harness-*`/`vibecode-askpass-*`) via
+   `pruneStaleTempDirectories()`. `host-storage.sh --legacy` reimplements the
+   same find/prefix/retention rules in bash over `/repos` and
+   `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; it does not call Java. The child/startup
+   call stays until D10;
 5. move suspicious dirs to `orphans/` for `AGENT_ORPHAN_TTL_HOURS` (default
    24h), then delete;
 6. prune dangling images weekly (`docker image prune -f` only, never `-a`);
 7. report freed bytes and failures as events.
 
 `host-storage.sh` exposes the same sweep as `--dry-run`/`--apply` for manual
-recovery; `--legacy` runs the `/repos/<8hex>-*` and temp-dir pass. It has no
-backend control token and cannot read backend leases; it uses `.active` markers
-and supervisor PID/state, and `--apply` is restricted to a documented
-stopped-supervisor recovery mode (it refuses live supervisor/marker state,
-exit 4). The supervisor remains the lease-safe cleanup owner during normal
-operation.
+recovery; `--legacy` reimplements the same rules in bash over
+`/repos/<8hex>-*` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`
+(`opencode-harness-*`/`vibecode-askpass-*`). It has no backend control token and
+cannot read backend leases; it uses `.active` markers and supervisor PID/state,
+and `--apply` is restricted to a documented stopped-supervisor recovery mode (it
+refuses live supervisor/marker state, exit 4). The supervisor remains the
+lease-safe cleanup owner during normal operation.
 
 ## Logs and images
 
@@ -214,8 +217,8 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
    pool-control token.
 2. Confirm no supervisor PID/slot or `.active` marker remains.
 3. Run `agent/scripts/host-storage.sh --dry-run`, then `--apply`; add
-   `--legacy` for `/repos/<8hex>-*`/temp dirs. The script refuses live
-   supervisor/marker state (exit 4).
+   `--legacy` for `/repos/<8hex>-*` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`
+   temp dirs. The script refuses live supervisor/marker state (exit 4).
 4. `docker system df`; prune only dangling images/stopped containers.
 5. Verify free bytes/inodes.
 6. Restart the supervisor and monitor.

@@ -17,8 +17,8 @@ Create these stubs **before** production code:
    cleanup after terminal + lease, sandbox-before-delete, `.active` preserved
    on failure, budget breach.
 4. `agent/scripts/host-storage.test.sh` — dry-run/apply, stopped-supervisor and
-   `.active`/PID guards, `--legacy`, watermark actions, orphan TTL, full-disk
-   recovery.
+   `.active`/PID guards, `--legacy` over `/repos` and `AGENT_TMPDIR`, watermark
+   actions, orphan TTL, full-disk recovery.
 5. `agent/src/test/java/.../harness/HarnessEventStorageTest.java` — workspace
    bytes/inodes, free bytes/inodes, log bytes, refresh/cleanup/orphan counts.
 
@@ -52,8 +52,8 @@ Create these stubs **before** production code:
 | `agent/src/main/java/.../supervisor/StoragePolicy.java` | add | Watermarks, role/budget, orphan/refresh decisions; `RuntimeState` |
 | `agent/src/main/java/.../harness/HarnessTicketProcessor.java` | change | Destroy sandbox → finish → keyed cleanup; `.active` marker; budget event; keep the existing legacy/temp prune (do not remove) |
 | `agent/src/main/java/.../harness/HarnessEvent.java` | change | Add `storage.*` event types |
-| `agent/scripts/host-storage.sh` | add | Dry-run/apply stopped-supervisor recovery; `.active`/PID guards; `--legacy` for `/repos/<8hex>-*` and temp dirs |
-| `agent/scripts/host-storage.test.sh` | add | Bash fixtures/assertions |
+| `agent/scripts/host-storage.sh` | add | Dry-run/apply stopped-supervisor recovery; `.active`/PID guards; `--legacy` reimplements find/prefix rules over `/repos` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; no Java CLI |
+| `agent/scripts/host-storage.test.sh` | add | Bash fixtures for dry-run/apply/`--legacy` over `/repos` and `AGENT_TMPDIR`, stopped-supervisor/.active/PID |
 | `agent/scripts/host-init.sh` | change | Write `AGENT_DISK_BUDGET_GB` and `HARNESS_WORKSPACE_RETENTION_HOURS` to `.env.agent-host` when set |
 | `agent/scripts/host-init.test.sh` | change | Assert both overrides are written |
 | `agent/docker-compose.yml` | change | Pass `AGENT_DISK_BUDGET_GB` and `HARNESS_WORKSPACE_RETENTION_HOURS`; verify existing 10m/3 supervisor rotation |
@@ -80,10 +80,10 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR6 | Agent + Shell | `HarnessTicketProcessorStorageTest.java`, `host-init.test.sh` | role/override budget; retention env; breach → `storage_budget_exceeded`; env written | `mvn test -Dtest=HarnessTicketProcessorStorageTest && bash agent/scripts/host-init.test.sh` |
 | FR7 | Compose + Agent | `DockerSandboxRunnerTest.java` | supervisor 10m/3; existing sandbox/proxy 1m/1 | `docker compose -f agent/docker-compose.yml config && mvn test -Dtest=DockerSandboxRunnerTest` |
 | FR8 | Agent | `SupervisorStorageTest.java` | dangling prune keeps active tag | `mvn test` |
-| FR9 | Agent + Script | `SupervisorStorageTest.java`, `WorkspaceManagerStorageTest.java`, `host-storage.test.sh` | `HARNESS_WORKSPACE_RETENTION_HOURS` TTL; runtime-root + legacy/temp (`--legacy`); active/lease kept | `mvn test && bash agent/scripts/host-storage.test.sh` |
+| FR9 | Agent + Script | `SupervisorStorageTest.java`, `WorkspaceManagerStorageTest.java`, `host-storage.test.sh` | `HARNESS_WORKSPACE_RETENTION_HOURS` TTL; runtime-root + `/repos` legacy + `java.io.tmpdir`/`AGENT_TMPDIR` temp (`--legacy`); active/lease kept | `mvn test && bash agent/scripts/host-storage.test.sh` |
 | FR10 | Agent | `SupervisorStorageTest.java` | `.active` marker/supervisor slot skipped | `mvn test` |
 | FR11 | Agent | `HarnessEventStorageTest.java` | workspace bytes/inodes, free bytes/inodes, log bytes, refresh/cleanup/orphan counts | `mvn test -Dtest=HarnessEventStorageTest` |
-| FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
+| FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy` over `/repos` and `AGENT_TMPDIR`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
 | FR13 | Agent | `HarnessTicketProcessorStorageTest.java` | destroy before delete; failed destroy keeps dir | `mvn test` |
 
 ## Rollout
