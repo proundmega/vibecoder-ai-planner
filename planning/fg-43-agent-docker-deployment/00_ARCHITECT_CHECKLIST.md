@@ -58,4 +58,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D6 | Per-child cgroups and PID limits | self | Security | `fg-43-D6` (PENDING) | open |
 | D7 | Backend `/health` startup gate | self | Reliability | `fg-43-D7` (PENDING) | open |
 | D8 | Document `AGENT_HOST_*`/`SUPERVISOR_*` host sizing in `AGENTS.md` | self / 04 §7 | Docs | Completed in c2dde63; listed in `03` per-file changes | done |
-| D9 | Add the `host-init.sh` sizing/check step to the fg-54 enrollment runbook | self / 04 §7 | Docs | Completed in c2dde63 (runbook §4); listed in `03` per-file changes | done |
+| D9 | Add the `host-init.sh` sizing/check step to the fg-54 enrollment runbook | self / 04 §7 | Docs | Completed in c2dde63; Docker/manual split corrected in e81776c; listed in `03` per-file changes | done |
