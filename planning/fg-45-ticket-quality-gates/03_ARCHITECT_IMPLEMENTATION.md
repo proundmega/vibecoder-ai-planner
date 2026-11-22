@@ -109,4 +109,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | pending | backend unit, agent unit, frontend unit + typecheck + lint | pass (local) |
+| 2026-11-22 | 06e923d | backend unit + integration, agent unit, frontend unit + typecheck + lint, planning check | pass |
