@@ -8,6 +8,135 @@ import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class HarnessService {
     /**
+     * Ask a human a question from a running harness run
+     * @param runId
+     * @param requestBody
+     * @returns any Question persisted (or the existing idempotent row)
+     * @throws ApiError
+     */
+    public static postHarnessRunsQuestions(
+        runId: string,
+        requestBody: {
+            kind?: 'question' | 'permission' | 'doom_loop';
+            externalId?: string | null;
+            prompt: string;
+            options?: Record<string, any> | null;
+            expiresAt?: string | null;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/harness/runs/{runId}/questions',
+            path: {
+                'runId': runId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                403: `Runtime does not own this run`,
+            },
+        });
+    }
+    /**
+     * List questions for a harness run
+     * @throws ApiError
+     */
+    public static getHarnessRunsQuestions(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/harness/runs/{runId}/questions',
+        });
+    }
+    /**
+     * Read a question and its answer
+     * @param runId
+     * @param questionId
+     * @returns any Question status and answer
+     * @throws ApiError
+     */
+    public static getHarnessRunsQuestions1(
+        runId: string,
+        questionId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/harness/runs/{runId}/questions/{questionId}',
+            path: {
+                'runId': runId,
+                'questionId': questionId,
+            },
+        });
+    }
+    /**
+     * Expire a pending question (idempotent)
+     * @throws ApiError
+     */
+    public static postHarnessRunsQuestionsExpire(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/harness/runs/{runId}/questions/{questionId}/expire',
+        });
+    }
+    /**
+     * Answer a pending question as a project member
+     * @param runId
+     * @param questionId
+     * @param requestBody
+     * @returns any Question answered
+     * @throws ApiError
+     */
+    public static postHarnessRunsQuestionsAnswer(
+        runId: string,
+        questionId: NumericId,
+        requestBody: {
+            answer: string;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/harness/runs/{runId}/questions/{questionId}/answer',
+            path: {
+                'runId': runId,
+                'questionId': questionId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                409: `Already answered or expired`,
+            },
+        });
+    }
+    /**
+     * List project questions for the question inbox
+     * @throws ApiError
+     */
+    public static getHarnessProjectsQuestions(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/harness/projects/{projectId}/questions',
+        });
+    }
+    /**
+     * List questions for one ticket
+     * @throws ApiError
+     */
+    public static getHarnessTicketsQuestions(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/harness/tickets/{ticketId}/questions',
+        });
+    }
+    /**
+     * Cross-project question inbox for the current user
+     * @throws ApiError
+     */
+    public static getHarnessQuestions(): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/harness/questions',
+        });
+    }
+    /**
      * Start a durable harness run for an assigned agent ticket
      * @param requestBody
      * @returns any Harness run created

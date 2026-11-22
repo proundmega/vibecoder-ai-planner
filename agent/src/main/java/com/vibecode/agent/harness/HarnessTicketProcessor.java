@@ -5,6 +5,7 @@ import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
+import com.vibecode.agent.service.ReadinessException;
 import com.vibecode.agent.service.GitHubTokenSource;
 import com.vibecode.agent.service.TicketWorker;
 import com.vibecode.agent.service.WorkspaceManager;
@@ -751,7 +752,19 @@ public final class HarnessTicketProcessor implements TicketWorker {
         log.info("Harness processing ticket: {} - {}",
             ticket.getId(), redactWithProvider(ticket.getTitle()));
 
-        Ticket pickedUp = pickUpTicket(ticket.getId());
+        Ticket pickedUp;
+        try {
+            pickedUp = pickUpTicket(ticket.getId());
+        } catch (ReadinessException readiness) {
+            // The backend already released nothing: pickup was refused. Post
+            // the machine-readable issues and do not clone or start a harness.
+            log.warn("readiness_blocked ticket {}: {}", ticket.getId(), readiness.summary());
+            postMessage(ticket.getId(), "status",
+                "Readiness gate blocked this ticket: " + readiness.summary());
+            currentTicketId = null;
+            currentStep = null;
+            return;
+        }
         if (pickedUp == null) {
             log.warn("Could not pick up ticket {}, skipping", ticket.getId());
             return;
@@ -1900,8 +1913,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
     }
 
-    private Ticket pickUpTicket(Long ticketId) {        try {
+    private Ticket pickUpTicket(Long ticketId) throws ReadinessException {
+        try {
             return apiService.pickUpTicket(ticketId);
+        } catch (ReadinessException readiness) {
+            throw readiness;
         } catch (IOException e) {
             log.warn("Could not pick up ticket {}: {}", ticketId, e.getMessage());
             return null;

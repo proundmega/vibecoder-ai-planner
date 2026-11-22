@@ -14,6 +14,11 @@ jest.mock('../services/DependencyService', () => ({
   enrich: jest.fn(async tickets => tickets),
   assertReady: jest.fn().mockResolvedValue({ ready: true }),
 }));
+jest.mock('../services/TicketReadinessService', () => ({
+  assertReadyForExecution: jest.fn().mockResolvedValue({ ready: true }),
+  emitBlocked: jest.fn().mockResolvedValue(undefined),
+  refreshReadyState: jest.fn().mockResolvedValue(undefined),
+}));
 
 const { pool } = require('../db');
 const Ticket = require('../models/ticket');

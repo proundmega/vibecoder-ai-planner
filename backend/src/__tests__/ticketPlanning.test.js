@@ -1,4 +1,5 @@
 const TicketPlanningService = require('../services/TicketPlanningService');
+const TicketReadinessService = require('../services/TicketReadinessService');
 const TemplateService = require('../services/TemplateService');
 
 jest.mock('../db', () => ({
@@ -10,6 +11,19 @@ jest.mock('../db', () => ({
     }),
   },
   transaction: jest.fn(),
+}));
+
+jest.mock('../services/TicketReadinessService', () => ({
+  refreshReadyState: jest.fn().mockResolvedValue(undefined),
+  seedCriteriaFromPlanning: jest.fn().mockResolvedValue([]),
+}));
+
+jest.mock('../models/ticket', () => ({
+  findById: jest.fn().mockResolvedValue({ id: 'ticket-1', projectId: 'project-1' }),
+}));
+
+jest.mock('../services/ProjectAccessService', () => ({
+  assertProjectMember: jest.fn().mockResolvedValue(undefined),
 }));
 
 describe('TicketPlanningService', () => {
@@ -89,7 +103,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['architecture', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -103,7 +117,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['specification', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -116,7 +130,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['technical', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -129,7 +143,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['simple', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -189,6 +203,28 @@ describe('TicketPlanningService', () => {
       );
       expect(updateCalls.length).toBe(1);
       expect(updateCalls[0][1]).toEqual(['my-custom-template', 'ticket-1']);
+    });
+
+    it('does not fail a committed template when the criteria seed throws', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+      TicketReadinessService.seedCriteriaFromPlanning.mockRejectedValueOnce(
+        new Error('DB error')
+      );
+
+      await expect(
+        TicketPlanningService.applyTemplate('ticket-1', 'simple', 'user-1', 'member')
+      ).resolves.toBeDefined();
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it('does not re-check membership for a planner-granted agent actor', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+      const ProjectAccessService = require('../services/ProjectAccessService');
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'simple', 'runtime-owner', 'agent');
+
+      expect(ProjectAccessService.assertProjectMember).not.toHaveBeenCalled();
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
     });
 
     it('should throw NotFoundError for non-existent custom template', async () => {

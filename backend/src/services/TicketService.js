@@ -2,18 +2,87 @@ const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
 const DependencyService = require('../services/DependencyService');
-const { ValidationError, NotFoundError, ForbiddenError, ConflictError } = require('../errors/HttpError');
+const TicketReadinessService = require('../services/TicketReadinessService');
+const ProjectAccessService = require('../services/ProjectAccessService');
+const { ValidationError, NotFoundError, ForbiddenError, ConflictError, ReadinessError } = require('../errors/HttpError');
 
 class TicketService {
-  async create(projectId, title, description, priority, userId) {
+  /**
+   * fg-45: creation stays permissive. Optional template/acceptance/small-fix
+   * inputs seed planning state but never fail for readiness reasons. A failure
+   * after the draft insert is compensated by removing the draft.
+   */
+  async create(projectId, title, description, priority, userId, options = {}) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    return await Ticket.create(projectId, title, description, priority, userId);
+    const role = options.role || 'member';
+    const hasCriteria = Array.isArray(options.acceptanceCriteria)
+      && options.acceptanceCriteria.length > 0;
+
+    // Validate every member-scoped option BEFORE creating the draft. Otherwise
+    // a 403 after Ticket.create() leaves an orphan draft for a rejected
+    // request. Template application keeps its pre-existing create policy; the
+    // optional criteria seed is best-effort and does not fail the create.
+    if (hasCriteria) {
+      await ProjectAccessService.assertProjectMember(userId, projectId, { role });
+    }
+    if (options.smallFix && options.smallFix.reason) {
+      const canOverride = await PermissionService.hasPermission(role, 'TICKET_READINESS_OVERRIDE');
+      if (!canOverride) {
+        throw new ForbiddenError('TICKET_READINESS_OVERRIDE is required to record a small-fix exemption');
+      }
+      await ProjectAccessService.assertProjectMember(userId, projectId, { role });
+    }
+
+    const ticket = await Ticket.create(projectId, title, description, priority, userId);
+
+    try {
+      // Criteria are inserted before applying a template so a specification's
+      // seed step sees a non-empty table and does not duplicate them.
+      if (hasCriteria) {
+        await TicketReadinessService.addCriteria(ticket.id, options.acceptanceCriteria, {
+          type: 'user',
+          userId,
+          role,
+        });
+      }
+      if (options.template) {
+        await TicketPlanningService.applyTemplate(ticket.id, options.template, userId, role);
+      }
+      if (options.smallFix && options.smallFix.reason) {
+        await TicketReadinessService.smallFix(ticket.id, options.smallFix.reason, {
+          type: 'user',
+          userId,
+          role,
+        });
+      }
+    } catch (error) {
+      // The prechecks cover authorization, but a DB/template failure can still
+      // happen after the insert. Compensate so a rejected create does not leave
+      // a visible draft. Fall back to a soft delete if the hard delete is
+      // blocked by a foreign key.
+      try {
+        await pool.query('DELETE FROM tickets WHERE id = $1', [ticket.id]);
+      } catch (cleanupError) {
+        logger.warn(
+          `[readiness] could not delete draft ticket ${ticket.id} after create failure: ${cleanupError.message}`
+        );
+        await Ticket.delete(ticket.id).catch(softError => {
+          logger.warn(
+            `[readiness] could not soft-delete draft ticket ${ticket.id}: ${softError.message}`
+          );
+        });
+      }
+      throw error;
+    }
+
+    return ticket;
   }
 
   async findByProject(projectId, userId) {
@@ -33,7 +102,21 @@ class TicketService {
   async findBacklog(projectId) {
     const tickets = await Ticket.findByStatus(projectId, 'backlog');
     await DependencyService.enrich(tickets);
-    return tickets.filter(ticket => ticket.ready !== false);
+    const dependencyReady = tickets.filter(ticket => ticket.ready !== false);
+
+    // In enforce mode an unready ticket must not starve the queue: the agent
+    // only fetches a small batch and stops at the first rejection. Exclude
+    // unready tickets here so a ready ticket later in the list is still
+    // reached. warn/off keep the previous behaviour (the gate allows them).
+    if (TicketReadinessService.gateMode() !== 'enforce') return dependencyReady;
+
+    const ready = [];
+    for (const ticket of dependencyReady) {
+      if (await TicketReadinessService.isReadyForExecution(ticket.id)) {
+        ready.push(ticket);
+      }
+    }
+    return ready;
   }
 
   async getOne(id, userId) {
@@ -110,7 +193,7 @@ class TicketService {
     return membership.rows.length > 0;
   }
 
-  async update(id, data, userId, userRole) {
+  async update(id, data, userId, userRole, actorMeta = {}) {
     const ticket = await Ticket.findById(id);
     if (!ticket) throw new NotFoundError('Ticket not found');
 
@@ -191,13 +274,27 @@ class TicketService {
       dependsOn,
     };
 
+    const actor = {
+      type: actorMeta.type || 'user',
+      userId,
+      agentId: actorMeta.agentId || null,
+      role,
+    };
     const entersExecution = data.status === 'in_progress' && ticket.status !== 'in_progress';
     if (!entersExecution) {
       // Single SQL round-trip; returns the persisted ticket.
-      return await Ticket.update(id, updates);
+      const updated = await Ticket.update(id, updates);
+      // Content edits can satisfy or invalidate the approved plan. Approval is
+      // content-bound: a failing edit clears it and requires re-approval.
+      if (data.title !== undefined || data.description !== undefined) {
+        await TicketReadinessService.refreshReadyState(id, actor);
+      }
+      return updated;
     }
 
     const client = await pool.connect();
+    let committed = false;
+    let readiness = null;
     try {
       await client.query('BEGIN');
       const locked = await client.query(
@@ -212,11 +309,35 @@ class TicketService {
         dependsOn,
         action: 'ticket_update',
       });
-      const updated = await Ticket.update(id, updates, client);
+
+      // Apply content first, then evaluate, then start. Otherwise a request
+      // that edits the plan and sets in_progress in one round-trip would gate
+      // the old content and write the new content with a stale approval.
+      const contentUpdates = { ...updates };
+      delete contentUpdates.status;
+      const hasContentChange = [
+        'title', 'description', 'priority', 'assigneeId', 'prUrl',
+        'milestoneId', 'estimate', 'dependsOn',
+      ].some(key => contentUpdates[key] !== undefined);
+      if (hasContentChange) {
+        await Ticket.update(id, contentUpdates, client);
+      }
+
+      readiness = await TicketReadinessService.assertReadyForExecution(id, {
+        toStatus: 'in_progress',
+        source: 'ticket_update',
+        actor,
+        db: client,
+      });
+      const updated = await Ticket.update(id, { status: 'in_progress' }, client);
       await client.query('COMMIT');
+      committed = true;
+      await TicketReadinessService.refreshReadyState(id, actor);
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
       return updated;
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();
@@ -248,12 +369,13 @@ class TicketService {
     await Ticket.delete(id);
   }
 
-  async updateStatus(ticketId, status, userId) {
+  async updateStatus(ticketId, status, userId, userRole = null, actorMeta = {}) {
     if (status !== 'in_progress') {
       return await Ticket.updateStatus(ticketId, status, userId);
     }
 
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
       const locked = await client.query(
@@ -267,10 +389,24 @@ class TicketService {
         lock: true,
         action: 'status_transition',
       });
+      const readiness = await TicketReadinessService.assertReadyForExecution(ticketId, {
+        toStatus: 'in_progress',
+        source: 'status_transition',
+        actor: {
+          type: actorMeta.type || 'user',
+          userId,
+          agentId: actorMeta.agentId || null,
+          role: userRole || 'member',
+        },
+        db: client,
+      });
       await Ticket.updateStatus(ticketId, status, userId, client);
       await client.query('COMMIT');
+      committed = true;
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();
@@ -310,6 +446,7 @@ class TicketService {
     }
 
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
       const ticketResult = await client.query(
@@ -337,6 +474,18 @@ class TicketService {
         action: 'pickup',
       });
 
+      const readiness = await TicketReadinessService.assertReadyForExecution(ticketId, {
+        toStatus: 'in_progress',
+        source: 'pickup',
+        actor: {
+          type: 'agent',
+          userId: normalizedActor.operatorId || null,
+          agentId: normalizedActor.runtimeId || null,
+          role: normalizedActor.role || null,
+        },
+        db: client,
+      });
+
       const result = await client.query(
         `UPDATE tickets
          SET assigned_runtime_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
@@ -350,9 +499,12 @@ class TicketService {
       }
 
       await client.query('COMMIT');
+      committed = true;
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
       return result.rows[0];
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();

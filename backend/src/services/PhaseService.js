@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
-const { NotFoundError, ValidationError } = require('../errors/HttpError');
+const TicketReadinessService = require('./TicketReadinessService');
+const { NotFoundError, ValidationError, ReadinessError } = require('../errors/HttpError');
 
 class PhaseService {
   constructor() {
@@ -35,6 +36,7 @@ class PhaseService {
 
   async transition(ticketId, toPhase, actorType = 'system', actorId = null, metadata = null) {
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
 
@@ -59,14 +61,27 @@ class PhaseService {
 
       const newStatus = this.PHASE_TO_STATUS[toPhase] || ticket.status;
 
-      // bp-134: gate entering execution. `blocked` also maps to status
-      // in_progress but is the safe action for an already-started ticket, so
-      // it is deliberately excluded.
-      if (newStatus === 'in_progress' && toPhase !== 'blocked') {
+      // bp-134/fg-45: gate entering execution. fg-45 evaluates the target, so
+      // `assigned`, `in_progress` and `blocked` are all gated; a grandfathered
+      // or ready ticket still passes.
+      let readiness = null;
+      if (newStatus === 'in_progress') {
         await DependencyService.assertReady(ticketId, {
           client,
           lock: true,
           action: `phase_transition:${toPhase}`,
+        });
+        readiness = await TicketReadinessService.assertReadyForExecution(ticketId, {
+          toStatus: newStatus,
+          toPhase,
+          source: `phase_transition:${toPhase}`,
+          actor: {
+            type: actorType === 'agent' ? 'agent' : (actorType === 'system' ? 'system' : 'user'),
+            userId: actorType === 'human' ? actorId : null,
+            agentId: actorType === 'agent' ? actorId : null,
+            role: actorType,
+          },
+          db: client,
         });
       }
 
@@ -82,10 +97,13 @@ class PhaseService {
       );
 
       await client.query('COMMIT');
+      committed = true;
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
 
       return { ticketId, fromPhase: currentPhase, toPhase, status: newStatus };
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();

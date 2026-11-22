@@ -11,7 +11,7 @@ export class TicketsService {
     /**
      * Create a new ticket
      * @param requestBody
-     * @returns any Ticket created
+     * @returns any Ticket created as a draft (readiness is enforced at execution, not creation)
      * @throws ApiError
      */
     public static postTickets(
@@ -20,6 +20,11 @@ export class TicketsService {
             title: string;
             description?: string;
             priority?: 'low' | 'medium' | 'high' | 'critical' | 'urgent';
+            template?: 'architecture' | 'technical' | 'simple' | 'specification';
+            acceptanceCriteria?: Array<string>;
+            smallFix?: {
+                reason?: string;
+            };
         },
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
@@ -120,7 +125,7 @@ export class TicketsService {
             body: requestBody,
             mediaType: 'application/json',
             errors: {
-                409: `Ticket has incomplete dependencies`,
+                409: `Ticket has incomplete dependencies or is not ready for execution (READINESS_FAILED)`,
             },
         });
     }
@@ -167,6 +172,159 @@ export class TicketsService {
             mediaType: 'application/json',
             errors: {
                 409: `Ticket has incomplete dependencies`,
+            },
+        });
+    }
+    /**
+     * Evaluate the ticket Definition of Ready
+     * @param ticketId
+     * @returns any Readiness result with issues
+     * @throws ApiError
+     */
+    public static getTicketsReadiness(
+        ticketId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/tickets/{ticketId}/readiness',
+            path: {
+                'ticketId': ticketId,
+            },
+        });
+    }
+    /**
+     * Approve the plan (content-bound readiness approval)
+     * @param ticketId
+     * @returns any Plan approved
+     * @throws ApiError
+     */
+    public static postTicketsReadinessApprovePlan(
+        ticketId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/tickets/{ticketId}/readiness/approve-plan',
+            path: {
+                'ticketId': ticketId,
+            },
+            errors: {
+                409: `Readiness checks still fail`,
+            },
+        });
+    }
+    /**
+     * Record a small-fix template exemption
+     * @param ticketId
+     * @param requestBody
+     * @returns any Exemption recorded
+     * @throws ApiError
+     */
+    public static postTicketsReadinessSmallFix(
+        ticketId: NumericId,
+        requestBody: {
+            reason: string;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/tickets/{ticketId}/readiness/small-fix',
+            path: {
+                'ticketId': ticketId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+        });
+    }
+    /**
+     * Reopen planning and clear approval/ready state
+     * @param ticketId
+     * @returns any Planning reopened
+     * @throws ApiError
+     */
+    public static postTicketsReadinessReplan(
+        ticketId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/tickets/{ticketId}/readiness/replan',
+            path: {
+                'ticketId': ticketId,
+            },
+        });
+    }
+    /**
+     * Grant a scoped, expiring readiness waiver
+     * @param ticketId
+     * @param requestBody
+     * @returns any Override granted
+     * @throws ApiError
+     */
+    public static postTicketsReadinessOverride(
+        ticketId: NumericId,
+        requestBody: {
+            codes: Array<string>;
+            reason: string;
+            expiresAt: string;
+        },
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/tickets/{ticketId}/readiness/override',
+            path: {
+                'ticketId': ticketId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+        });
+    }
+    /**
+     * Revoke a readiness waiver
+     * @param ticketId
+     * @returns any Override revoked
+     * @throws ApiError
+     */
+    public static deleteTicketsReadinessOverride(
+        ticketId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/tickets/{ticketId}/readiness/override',
+            path: {
+                'ticketId': ticketId,
+            },
+        });
+    }
+    /**
+     * List acceptance criteria
+     * @param ticketId
+     * @returns any Acceptance criteria
+     * @throws ApiError
+     */
+    public static getTicketsAcceptanceCriteria(
+        ticketId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/tickets/{ticketId}/acceptance-criteria',
+            path: {
+                'ticketId': ticketId,
+            },
+        });
+    }
+    /**
+     * Add acceptance criteria (array or { criteria })
+     * @param ticketId
+     * @returns any Criteria created
+     * @throws ApiError
+     */
+    public static postTicketsAcceptanceCriteria(
+        ticketId: NumericId,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/tickets/{ticketId}/acceptance-criteria',
+            path: {
+                'ticketId': ticketId,
             },
         });
     }

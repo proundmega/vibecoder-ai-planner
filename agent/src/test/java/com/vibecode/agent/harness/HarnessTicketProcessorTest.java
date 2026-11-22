@@ -6,6 +6,7 @@ import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
+import com.vibecode.agent.service.ReadinessException;
 import com.vibecode.agent.service.WorkspaceManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import ch.qos.logback.classic.Logger;
@@ -805,6 +806,24 @@ class HarnessTicketProcessorTest {
         verify(verificationRunner).resolveCommands(any());
         verify(gitHubService).createPullRequest(
             anyString(), anyString(), anyString(), eq("main"));
+    }
+
+    @Test
+    void readinessFailurePostsIssuesAndStartsNoHarness() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        when(apiService.pickUpTicket(1L)).thenThrow(new ReadinessException(
+            "Ticket is not ready",
+            mapper.readTree("{\"issues\":[{\"code\":\"MISSING_TEMPLATE\"},"
+                + "{\"code\":\"PLAN_NOT_APPROVED\"}]}")));
+
+        processor.processTicket(ticket());
+
+        verify(apiService).postMessage(eq(1L), eq("status"),
+            contains("MISSING_TEMPLATE"));
+        verify(apiService).postMessage(eq(1L), eq("status"),
+            contains("PLAN_NOT_APPROVED"));
+        verify(apiService, never()).startHarnessRun(
+            any(), anyString(), any(), any(), any(), anyInt());
     }
 
     @Test

@@ -667,6 +667,30 @@
                       "critical",
                       "urgent"
                     ]
+                  },
+                  "template": {
+                    "type": "string",
+                    "enum": [
+                      "architecture",
+                      "technical",
+                      "simple",
+                      "specification"
+                    ]
+                  },
+                  "acceptanceCriteria": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "smallFix": {
+                    "type": "object",
+                    "properties": {
+                      "reason": {
+                        "type": "string",
+                        "minLength": 10
+                      }
+                    }
                   }
                 }
               }
@@ -675,7 +699,7 @@
         },
         "responses": {
           "201": {
-            "description": "Ticket created"
+            "description": "Ticket created as a draft (readiness is enforced at execution, not creation)"
           }
         }
       }
@@ -851,7 +875,7 @@
             }
           },
           "409": {
-            "description": "Ticket has incomplete dependencies",
+            "description": "Ticket has incomplete dependencies or is not ready for execution (READINESS_FAILED)",
             "content": {
               "application/json": {
                 "schema": {
@@ -943,6 +967,244 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/readiness": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Evaluate the ticket Definition of Ready",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Readiness result with issues"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/readiness/approve-plan": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Approve the plan (content-bound readiness approval)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Plan approved"
+          },
+          "409": {
+            "description": "Readiness checks still fail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/readiness/small-fix": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Record a small-fix template exemption",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exemption recorded"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/readiness/replan": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Reopen planning and clear approval/ready state",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Planning reopened"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/readiness/override": {
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Grant a scoped, expiring readiness waiver",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "codes",
+                  "reason",
+                  "expiresAt"
+                ],
+                "properties": {
+                  "codes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Override granted"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Revoke a readiness waiver",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Override revoked"
+          }
+        }
+      }
+    },
+    "/tickets/{ticketId}/acceptance-criteria": {
+      "get": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "List acceptance criteria",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acceptance criteria"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tickets"
+        ],
+        "summary": "Add acceptance criteria (array or { criteria })",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticketId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Criteria created"
           }
         }
       }

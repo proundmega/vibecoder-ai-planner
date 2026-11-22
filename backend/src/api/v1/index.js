@@ -185,7 +185,7 @@ router.get('/tickets/:ticketId/planning/:fileKey/usage', verifyToken, requireAny
 router.get('/tickets/:ticketId/planning/:fileKey', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker', 'reviewer', 'planner'), (req, res, next) => ticketPlanningController.get(req, res, next).catch(next));
 router.put('/tickets/:ticketId/planning/:fileKey', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('planner'), (req, res, next) => ticketPlanningController.upsert(req, res, next).catch(next));
 router.post('/tickets/:ticketId/planning/apply-template', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('planner'), (req, res, next) => ticketPlanningController.applyTemplate(req, res, next).catch(next));
-router.patch('/tickets/:ticketId/planning/status', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('planner'), (req, res, next) => ticketPlanningController.updateStatus(req, res, next).catch(next));
+router.patch('/tickets/:ticketId/planning/status', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('planner'), requireAnyPermission('TICKET_UPDATE'), (req, res, next) => ticketPlanningController.updateStatus(req, res, next).catch(next));
 
 // Milestone routes (under /projects/:projectId/milestones) — must be before router.use('/projects')
 router.use('/', milestonesRouter);

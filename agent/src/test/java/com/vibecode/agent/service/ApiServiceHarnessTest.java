@@ -121,6 +121,22 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void pickupSurfacesReadinessIssuesAsAStructuredException() {
+        respond("/api/v1/tickets/5/pickup", 409,
+            "{\"success\":false,\"error\":{\"code\":\"READINESS_FAILED\","
+                + "\"message\":\"Ticket is not ready\",\"details\":{\"issues\":["
+                + "{\"code\":\"MISSING_TEMPLATE\"},"
+                + "{\"code\":\"PLAN_NOT_APPROVED\"}]}}}");
+
+        ReadinessException error = assertThrows(ReadinessException.class,
+            () -> api.pickUpTicket(5L));
+
+        assertEquals("READINESS_FAILED", error.getCode());
+        assertEquals(List.of("MISSING_TEMPLATE", "PLAN_NOT_APPROVED"), error.issueCodes());
+        assertEquals("MISSING_TEMPLATE, PLAN_NOT_APPROVED", error.summary());
+    }
+
+    @Test
     void redactsCredentialsBeforePostingTicketMessages() throws Exception {
         respond("/api/v1/tickets/1/messages", 200, ok("{}"));
         String token = "custom-provider-key-123456";

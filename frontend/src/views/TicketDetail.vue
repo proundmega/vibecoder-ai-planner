@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket, dependencyBlockedMessage } from '@/api/tickets'
+import { fetchTicket, updateTicket, addComment, fetchComments, deleteTicket, dependencyBlockedMessage, fetchReadiness, readinessIssueSummary } from '@/api/tickets'
 import { getTicketApprovals, createApproval } from '@/api/approvals'
 import { fetchAttachments, uploadAttachment, deleteAttachment } from '@/api/ticketAttachments'
 import { listPlanningFiles, getPlanningFile, upsertPlanningFile, applyTemplate, updatePlanningStatus } from '@/api/ticketPlanning'
@@ -11,6 +11,7 @@ import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 import VButton from '@/components/VButton.vue'
 import TicketQuestionCard from '@/components/TicketQuestionCard.vue'
+import ReadinessPanel from '@/components/ReadinessPanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,6 +50,7 @@ const showTemplateSelect = ref(false)
 const selectedTemplate = ref('')
 const planningStatus = ref('')
 const customTemplates = ref([])
+const readiness = ref(null)
 
 // Planning usage state
 const planningUsage = ref(null)
@@ -86,6 +88,21 @@ const canDelete = () => {
   return false
 }
 
+const canApproveReadiness = () => authStore.hasPermission('TICKET_READINESS_APPROVE')
+const canOverrideReadiness = () => authStore.hasPermission('TICKET_READINESS_OVERRIDE')
+
+async function loadReadiness() {
+  try {
+    readiness.value = await fetchReadiness(ticketId)
+    if (readiness.value?.planningStatus) {
+      planningStatus.value = readiness.value.planningStatus
+    }
+  } catch (err) {
+    console.error('Failed to load readiness:', err)
+    readiness.value = null
+  }
+}
+
 onMounted(async () => {
   try {
     ticket.value = await fetchTicket(ticketId)
@@ -106,6 +123,7 @@ onMounted(async () => {
       approvals.value = await getTicketApprovals(ticketId)
       attachments.value = await fetchAttachments(ticketId)
       await loadPlanning()
+      await loadReadiness()
       await loadPlanningUsage()
     }
   } catch (e) {
@@ -140,12 +158,17 @@ async function changeStatus(newStatus) {
       ticket.value.ready = fresh.ready
       ticket.value.blockedBy = fresh.blockedBy
     }
+    await loadReadiness()
   } catch (err) {
     console.error('Failed to update status:', err)
     const blocked = dependencyBlockedMessage(err?.details)
+    const readinessIssues = readinessIssueSummary(err?.details)
     error.value = blocked
       ? `Cannot start: blocked by ${blocked}`
-      : 'Failed to update status: ' + err.message
+      : (readinessIssues
+          ? `Ticket is not ready: ${readinessIssues}`
+          : 'Failed to update status: ' + err.message)
+    await loadReadiness()
   }
 }
 
@@ -322,6 +345,7 @@ async function handleApplyTemplate() {
     await applyTemplate(ticketId, selectedTemplate.value)
     planningSuccess.value = `Template "${selectedTemplate.value}" applied successfully`
     await loadPlanning()
+    await loadReadiness()
     showTemplateSelect.value = false
     selectedTemplate.value = ''
   } catch (err) {
@@ -340,6 +364,7 @@ async function handleSaveFile() {
     await upsertPlanningFile(ticketId, editingFile.value.key, editingContent.value)
     planningSuccess.value = 'Planning file saved'
     await loadPlanning()
+    await loadReadiness()
     editingFile.value = null
     editingContent.value = ''
   } catch (err) {
@@ -355,8 +380,10 @@ async function handleUpdateStatus(status) {
     await updatePlanningStatus(ticketId, status)
     planningStatus.value = status
     planningSuccess.value = `Status updated to ${status}`
+    await loadReadiness()
   } catch (err) {
     planningError.value = err.message || 'Failed to update status'
+    await loadReadiness()
   }
 }
 
@@ -469,6 +496,16 @@ async function handleShowTemplateSelect() {
       </div>
 
       <TicketQuestionCard :ticket-id="ticketId" />
+
+      <ReadinessPanel
+        v-if="readiness"
+        :ticket-id="ticketId"
+        :readiness="readiness"
+        :can-approve="canApproveReadiness()"
+        :can-override="canOverrideReadiness()"
+        :can-edit="Boolean(readiness?.canEditCriteria) && canUpdate()"
+        @refresh="loadReadiness"
+      />
 
       <div v-if="ticket?.ready === false && ticket.blockedBy?.length" class="dependency-block">
         <h3>Blocked by dependencies</h3>
@@ -665,12 +702,20 @@ async function handleShowTemplateSelect() {
             <div class="editor-header">
               <h4>{{ editingFile.key }}</h4>
               <div class="editor-actions">
-                <select v-if="canUpdate()" v-model="planningStatus" @change="handleUpdateStatus" class="status-select">
-                  <option value="">Select Status</option>
-                  <option value="draft">Draft</option>
-                  <option value="review">Review</option>
-                  <option value="approved">Approved</option>
+                <select
+                  v-if="canUpdate()"
+                  v-model="planningStatus"
+                  :disabled="readiness?.planApproved"
+                  @change="handleUpdateStatus"
+                  class="status-select"
+                >
+                  <option value="not_started">Not started</option>
+                  <option value="template_selected">Template selected</option>
+                  <option value="in_progress">In progress</option>
                 </select>
+                <span v-if="readiness?.planApproved" class="planning-approved-note">
+                  Completed is set by Approve plan. Use Replan to reopen.
+                </span>
                 <button @click="handleSaveFile" :disabled="savingFile" class="btn-submit">
                   {{ savingFile ? 'Saving...' : 'Save' }}
                 </button>

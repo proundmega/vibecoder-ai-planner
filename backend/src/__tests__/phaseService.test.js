@@ -12,8 +12,14 @@ jest.mock('../services/DependencyService', () => ({
   assertReady: jest.fn().mockResolvedValue({ ready: true }),
 }));
 
+jest.mock('../services/TicketReadinessService', () => ({
+  assertReadyForExecution: jest.fn().mockResolvedValue({ ready: true }),
+  emitBlocked: jest.fn().mockResolvedValue(undefined),
+}));
+
 const phaseService = require('../services/PhaseService');
 const DependencyService = require('../services/DependencyService');
+const TicketReadinessService = require('../services/TicketReadinessService');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
 
 describe('PhaseService', () => {
@@ -252,7 +258,15 @@ describe('PhaseService', () => {
 
       const result = await phaseService.transition('ticket-1', 'blocked', 'agent', 'agent-1');
       expect(result.toPhase).toBe('blocked');
-      expect(DependencyService.assertReady).not.toHaveBeenCalled();
+      expect(DependencyService.assertReady).toHaveBeenCalledWith('ticket-1', {
+        client: mockClient,
+        lock: true,
+        action: 'phase_transition:blocked',
+      });
+      expect(TicketReadinessService.assertReadyForExecution).toHaveBeenCalledWith(
+        'ticket-1',
+        expect.objectContaining({ toStatus: 'in_progress', toPhase: 'blocked' })
+      );
     });
 
     test('should handle rollback from deployed to done', async () => {

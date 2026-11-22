@@ -2,7 +2,9 @@
 const { pool } = require('../db');
 const Ticket = require('../models/ticket');
 const TemplateService = require('./TemplateService');
-const { NotFoundError } = require('../errors/HttpError');
+const TicketReadinessService = require('./TicketReadinessService');
+const logger = require('../utils/logger');
+const { NotFoundError, ValidationError, PlanningStatusError } = require('../errors/HttpError');
 
 class TicketPlanningService {
   async list(ticketId, _userId) {
@@ -100,12 +102,22 @@ class TicketPlanningService {
         [ticketId, fileKey, content, newVersion, userId]
       );
 
+      // `completed` is sticky: editing a planning file after approval must not
+      // silently reopen planning. The readiness refresh below decides whether
+      // the approval survives or is invalidated.
       await client.query(
-        'UPDATE tickets SET planning_status = \'in_progress\', updated_at = NOW() WHERE id = $1',
+        `UPDATE tickets
+            SET planning_status = CASE
+                  WHEN planning_status = 'completed' THEN planning_status
+                  ELSE 'in_progress'
+                END,
+                updated_at = NOW()
+          WHERE id = $1`,
         [ticketId]
       );
 
       await client.query('COMMIT');
+      await TicketReadinessService.refreshReadyState(ticketId, { type: 'user', userId });
 
       return await this.get(ticketId, fileKey, userId);
     } catch (error) {
@@ -116,7 +128,10 @@ class TicketPlanningService {
     }
   }
 
-  async applyTemplate(ticketId, templateName, userId) {
+  async applyTemplate(ticketId, templateName, userId, role = 'member') {
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new NotFoundError('Ticket not found');
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -155,11 +170,40 @@ class TicketPlanningService {
       }
 
       await client.query(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        `UPDATE tickets
+            SET planning_status = CASE
+                  WHEN planning_status = 'completed' THEN planning_status
+                  ELSE 'template_selected'
+                END,
+                template_schema = $1,
+                updated_at = NOW()
+          WHERE id = $2`,
         [templateName, ticketId]
       );
 
       await client.query('COMMIT');
+
+      const fileContents = {};
+      for (const fileDef of templateFiles) fileContents[fileDef.key] = getContent(fileDef.key);
+      // Seeding is best-effort: applying a template is authorized by the
+      // route (JWT or planner grant), and a member-scoped criteria seed must
+      // not turn a successful template write into a partial failure. Explicit
+      // criteria writes still enforce project membership.
+      try {
+        await TicketReadinessService.seedCriteriaFromPlanning(ticketId, fileContents, {
+          type: 'user',
+          userId,
+          role,
+        });
+      } catch (error) {
+        // Best-effort by design: the template files are already committed, so
+        // any seed failure is logged and skipped rather than returned as a
+        // post-write error. Explicit criteria writes remain strict.
+        logger.warn(
+          `[readiness] skipped criteria seed for ticket ${ticketId}: ${error.message}`
+        );
+      }
+      await TicketReadinessService.refreshReadyState(ticketId, { type: 'user', userId, role });
       return templateFiles;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -170,14 +214,47 @@ class TicketPlanningService {
   }
 
   async updateStatus(ticketId, status, _userId) {
-    const validStatuses = ['not_started', 'template_selected', 'in_progress', 'review', 'completed'];
+    const validStatuses = ['not_started', 'template_selected', 'in_progress'];
+    if (status === 'completed') {
+      throw new PlanningStatusError(
+        'PLANNING_STATUS_FORBIDDEN',
+        'Planning status "completed" is set by Approve plan, not by a direct update'
+      );
+    }
     if (!validStatuses.includes(status)) {
-      throw new Error(`Invalid planning status: ${status}. Must be one of: ${validStatuses.join(', ')}`);
+      throw new ValidationError(
+        `Invalid planning status: ${status}. Must be one of: ${validStatuses.join(', ')}`
+      );
     }
 
-    await pool.query(
-      'UPDATE tickets SET planning_status = $1, updated_at = NOW() WHERE id = $2',
+    // Conditional update closes the read-then-write race with approvePlan:
+    // a concurrent approval makes this row invisible and returns
+    // REPLAN_REQUIRED instead of overwriting `completed`.
+    const updated = await pool.query(
+      `UPDATE tickets
+          SET planning_status = $1, updated_at = NOW()
+        WHERE id = $2
+          AND deleted_at IS NULL
+          AND planning_status <> 'completed'
+        RETURNING id`,
       [status, ticketId]
+    );
+    if (updated.rows.length > 0) return;
+
+    const current = await pool.query(
+      'SELECT planning_status FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      [ticketId]
+    );
+    if (current.rows.length === 0) throw new NotFoundError('Ticket not found');
+    if (current.rows[0].planning_status === 'completed') {
+      throw new PlanningStatusError(
+        'REPLAN_REQUIRED',
+        'The plan is approved. Call replan before changing the planning status.'
+      );
+    }
+    throw new PlanningStatusError(
+      'PLANNING_STATUS_FORBIDDEN',
+      'Planning status could not be updated; retry the request.'
     );
   }
 

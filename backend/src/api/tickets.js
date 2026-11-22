@@ -7,7 +7,18 @@ const { requireRuntime, requireTicketGrant, requireBodyGrant } = require('../mid
 const LIVE_RUNTIME = 'running';
 const RELEASABLE_RUNTIME = ['running', 'draining'];
 const { forBodyProject, forProjectParam, forTicketParam } = require('../middleware/agentProjectScope');
-const { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema } = require('../validators/tickets');
+const {
+  createTicketSchema,
+  updateTicketSchema,
+  statusTransitionSchema,
+  commentSchema,
+  phaseTransitionSchema,
+  postMessageSchema,
+  readinessOverrideSchema,
+  smallFixSchema,
+  acceptanceCriteriaSchema,
+  criterionSchema,
+} = require('../validators/tickets');
 const { statusFilterSchema } = require('../validators/statusFilter');
 const { paginationSchema } = require('../validators/pagination');
 const { jsonContentTypeSchema } = require('../validators/contentType');
@@ -16,6 +27,7 @@ const { pool } = require('../db');
 const ticketController = require('../controllers/ticketController');
 const phaseService = require('../services/PhaseService');
 const GitHubService = require('../services/GitHubService');
+const readinessController = require('../controllers/ticketReadinessController');
 
 /**
  * @openapi
@@ -35,9 +47,17 @@ const GitHubService = require('../services/GitHubService');
  *               title: { type: string }
  *               description: { type: string }
  *               priority: { type: string, enum: [low, medium, high, critical, urgent] }
+ *               template: { type: string, enum: [architecture, technical, simple, specification] }
+ *               acceptanceCriteria:
+ *                 type: array
+ *                 items: { type: string }
+ *               smallFix:
+ *                 type: object
+ *                 properties:
+ *                   reason: { type: string, minLength: 10 }
  *     responses:
  *       201:
- *         description: Ticket created
+ *         description: Ticket created as a draft (readiness is enforced at execution, not creation)
  */
 router.post('/', verifyTokenOrAgent, requireRuntime('running'), requireAnyPermission('TICKET_CREATE'), validate({ body: createTicketSchema }), forBodyProject('projectId'), requireBodyGrant('worker'), ticketController.createTicket);
 
@@ -139,7 +159,7 @@ router.get('/:ticketId', verifyTokenOrAgent, forTicketParam(), validatePathParam
  *                 data:
  *                   $ref: '#/components/schemas/Ticket'
  *       409:
- *         description: Ticket has incomplete dependencies
+ *         description: Ticket has incomplete dependencies or is not ready for execution (READINESS_FAILED)
  *         content:
  *           application/json:
  *             schema:
@@ -199,6 +219,226 @@ router.delete('/:ticketId', verifyToken, validatePathParams({ ticketId: pathPara
  *               $ref: '#/components/schemas/Error'
  */
 router.post('/:ticketId/status', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), requireAnyPermission('TICKET_STATUS_CHANGE'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: statusTransitionSchema }), ticketController.changeStatus);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/readiness:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: Evaluate the ticket Definition of Ready
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Readiness result with issues
+ */
+router.get(
+  '/:ticketId/readiness',
+  verifyTokenOrAgent,
+  forTicketParam(),
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READ'),
+  (req, res, next) => readinessController.get(req, res, next).catch(next)
+);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/readiness/approve-plan:
+ *   post:
+ *     tags: [Tickets]
+ *     summary: Approve the plan (content-bound readiness approval)
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Plan approved
+ *       409:
+ *         description: Readiness checks still fail
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+router.post(
+  '/:ticketId/readiness/approve-plan',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READINESS_APPROVE'),
+  (req, res, next) => readinessController.approvePlan(req, res, next).catch(next)
+);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/readiness/small-fix:
+ *   post:
+ *     tags: [Tickets]
+ *     summary: Record a small-fix template exemption
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [reason]
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200:
+ *         description: Exemption recorded
+ */
+router.post(
+  '/:ticketId/readiness/small-fix',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READINESS_OVERRIDE'),
+  validate({ headers: jsonContentTypeSchema, body: smallFixSchema }),
+  (req, res, next) => readinessController.smallFix(req, res, next).catch(next)
+);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/readiness/replan:
+ *   post:
+ *     tags: [Tickets]
+ *     summary: Reopen planning and clear approval/ready state
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Planning reopened
+ */
+router.post(
+  '/:ticketId/readiness/replan',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READINESS_APPROVE'),
+  (req, res, next) => readinessController.replan(req, res, next).catch(next)
+);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/readiness/override:
+ *   post:
+ *     tags: [Tickets]
+ *     summary: Grant a scoped, expiring readiness waiver
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [codes, reason, expiresAt]
+ *             properties:
+ *               codes: { type: array, items: { type: string } }
+ *               reason: { type: string }
+ *               expiresAt: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: Override granted
+ *   delete:
+ *     tags: [Tickets]
+ *     summary: Revoke a readiness waiver
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Override revoked
+ */
+router.post(
+  '/:ticketId/readiness/override',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READINESS_OVERRIDE'),
+  validate({ headers: jsonContentTypeSchema, body: readinessOverrideSchema }),
+  (req, res, next) => readinessController.override(req, res, next).catch(next)
+);
+router.delete(
+  '/:ticketId/readiness/override',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READINESS_OVERRIDE'),
+  (req, res, next) => readinessController.revokeOverride(req, res, next).catch(next)
+);
+
+/**
+ * @openapi
+ * /tickets/{ticketId}/acceptance-criteria:
+ *   get:
+ *     tags: [Tickets]
+ *     summary: List acceptance criteria
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       200:
+ *         description: Acceptance criteria
+ *   post:
+ *     tags: [Tickets]
+ *     summary: Add acceptance criteria (array or { criteria })
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     responses:
+ *       201:
+ *         description: Criteria created
+ */
+router.get(
+  '/:ticketId/acceptance-criteria',
+  verifyTokenOrAgent,
+  forTicketParam(),
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_READ'),
+  (req, res, next) => readinessController.listCriteria(req, res, next).catch(next)
+);
+router.post(
+  '/:ticketId/acceptance-criteria',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
+  requireAnyPermission('TICKET_UPDATE'),
+  validate({ headers: jsonContentTypeSchema, body: acceptanceCriteriaSchema }),
+  (req, res, next) => readinessController.addCriteria(req, res, next).catch(next)
+);
+router.put(
+  '/:ticketId/acceptance-criteria/:criterionId',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId, criterionId: pathParams.criterionId }),
+  requireAnyPermission('TICKET_UPDATE'),
+  validate({ headers: jsonContentTypeSchema, body: criterionSchema }),
+  (req, res, next) => readinessController.updateCriterion(req, res, next).catch(next)
+);
+router.delete(
+  '/:ticketId/acceptance-criteria/:criterionId',
+  verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId, criterionId: pathParams.criterionId }),
+  requireAnyPermission('TICKET_UPDATE'),
+  (req, res, next) => readinessController.deleteCriterion(req, res, next).catch(next)
+);
 
 /**
  * @openapi

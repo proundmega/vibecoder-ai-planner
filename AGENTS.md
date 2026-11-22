@@ -33,10 +33,10 @@ backend/src/
   index.js          → exports app (NODE_ENV=test skips listen; supertest uses app directly)
   api/routes.js     → /health, /version, /docs, /metrics, /auth/*, /v1/*
   api/v1/index.js   → 25 route modules via 29 router.use mounts (users, projects, tickets, agent-nodes, provider-registry, approvals, harness, ...) + inlined template/attachment/planning/ip-whitelist routes
-  services/         → 44 services
-  controllers/      → 11 controllers
+  services/         → 48 services
+  controllers/      → 12 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 59 registered .sql files + 1 data migration; apply.js runs in array order (not numeric) and records schema_migrations
+  migrations/       → 60 registered .sql files + 1 data migration; apply.js runs in array order (not numeric) and records schema_migrations
   middleware/       → 18 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
   validators/       → 19 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
@@ -324,9 +324,19 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 - `/api/docs` — Swagger UI; `/api/openapi.json` — raw spec (generated from JSDoc via swagger-jsdoc).
 - Agents auth via `X-API-Key` header. Mock keys: starts with `test-` or equals `mock-agent-key`.
 - `TICKET_DELETE` enforced in `TicketService.delete()` (not middleware) — `user` role can delete own tickets only.
-- 26 permissions, 4 roles: `user`(9), `member`(18), `project_admin`(20), `super_admin`(26).
+- 30 permissions, 4 roles: `user`(9), `member`(14), `project_admin`(26), `super_admin`(30).
 
 **Ticket status transitions**: `backlog→in_progress`, `in_progress→review|backlog`, `review→done|backlog`. `done` has no outgoing transitions.
+
+**Readiness gate (fg-45)**: `READINESS_GATE_MODE=off|warn|enforce`
+(default `warn`) controls the Definition-of-Ready assertion on pickup,
+`POST /status`, `PUT /tickets/:id` (status changes into `in_progress`) and phase
+transitions whose target maps to `in_progress`. `warn` audits and allows;
+`enforce` returns 409 `READINESS_FAILED` with `details.issues` and filters unready
+tickets out of the agent backlog. `READINESS_SWEEP_INTERVAL_MINUTES` (default
+60, `0` disables) expires readiness waivers. Existing `in_progress`/`review`/
+`done` tickets are grandfathered; `POST /tickets/:id/readiness/replan` clears
+the exemption.
 
 **Harness observability/budgets**: agent writes go to `POST /harness/events` and
 `POST /harness/runs/:runId/usage`; operators use
@@ -337,7 +347,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 `GET|PUT /harness/kill-switch` (global, super_admin). Agent events are run-scoped
 and cannot write `audit.*`.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 59 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. A ledger-less post-cut database is baselined only through 059, so newer additive migrations (060+) still run. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 60 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. A ledger-less post-cut database is baselined only through 059, so newer additive migrations (060+) still run. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

@@ -15,6 +15,12 @@ const createTicketSchema = Joi.object({
   }),
   description: Joi.string().max(10000).allow('').optional().default(''),
   priority: Joi.string().valid('low', 'medium', 'high', 'critical', 'urgent').optional().default('medium'),
+  // fg-45: creation stays permissive; these only seed planning state.
+  template: Joi.string().valid('architecture', 'technical', 'simple', 'specification').optional(),
+  acceptanceCriteria: Joi.array().items(Joi.string().min(1).max(2000)).optional(),
+  smallFix: Joi.object({
+    reason: Joi.string().min(10).max(2000).required(),
+  }).optional(),
 });
 
 const updateTicketSchema = Joi.object({
@@ -90,4 +96,60 @@ const postMessageSchema = Joi.object({
   metadata: Joi.object().optional(),
 });
 
-module.exports = { createTicketSchema, updateTicketSchema, statusTransitionSchema, commentSchema, phaseTransitionSchema, postMessageSchema };
+const readinessOverrideSchema = Joi.object({
+  codes: Joi.array().items(Joi.string().min(1).max(80)).min(1).required().messages({
+    'array.min': 'At least one issue code must be waived',
+    'any.required': 'Issue codes are required',
+  }),
+  reason: Joi.string().min(10).max(2000).required().messages({
+    'string.min': 'An override reason of at least 10 characters is required',
+    'any.required': 'An override reason is required',
+  }),
+  expiresAt: Joi.date().iso().required().messages({
+    'any.required': 'An override expiry is required',
+  }),
+});
+
+const smallFixSchema = Joi.object({
+  reason: Joi.string().min(10).max(2000).required().messages({
+    'string.min': 'A small-fix reason of at least 10 characters is required',
+    'any.required': 'A small-fix reason is required',
+  }),
+});
+
+const acceptanceCriteriaSchema = Joi.alternatives().try(
+  Joi.array().items(
+    Joi.alternatives().try(
+      Joi.string().min(1).max(2000),
+      Joi.object({ text: Joi.string().min(1).max(2000).required(), position: Joi.number().integer().min(0).optional() })
+    )
+  ).min(1),
+  Joi.object({
+    criteria: Joi.array().items(
+      Joi.alternatives().try(
+        Joi.string().min(1).max(2000),
+        Joi.object({ text: Joi.string().min(1).max(2000).required(), position: Joi.number().integer().min(0).optional() })
+      )
+    ).min(1).required(),
+  })
+);
+
+const criterionSchema = Joi.object({
+  text: Joi.string().min(1).max(2000).required().messages({
+    'string.empty': 'Criterion text is required',
+    'any.required': 'Criterion text is required',
+  }),
+});
+
+module.exports = {
+  createTicketSchema,
+  updateTicketSchema,
+  statusTransitionSchema,
+  commentSchema,
+  phaseTransitionSchema,
+  postMessageSchema,
+  readinessOverrideSchema,
+  smallFixSchema,
+  acceptanceCriteriaSchema,
+  criterionSchema,
+};
