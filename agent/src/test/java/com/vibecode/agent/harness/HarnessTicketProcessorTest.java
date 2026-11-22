@@ -43,6 +43,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -910,6 +911,10 @@ class HarnessTicketProcessorTest {
         verify(harness).replyToQuestion(
             "ses_test", "evt_1", "question", "Use the helper.");
         verify(apiService, never()).expireHarnessQuestion(anyString(), anyLong());
+        verify(apiService, atLeastOnce()).emitHarnessEvent(argThat(
+            (Map<String, Object> emitted) -> "question.asked".equals(emitted.get("type"))));
+        verify(apiService, atLeastOnce()).emitHarnessEvent(argThat(
+            (Map<String, Object> emitted) -> "question.answered".equals(emitted.get("type"))));
     }
 
     @Test
@@ -941,6 +946,41 @@ class HarnessTicketProcessorTest {
         verify(workspace, never()).commitAndPushStaged(anyString(), anyString());
         verify(gitHubService, never()).createPullRequest(
             anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void doomLoopEscalatesRepeatedToolCallsToAHuman() throws Exception {
+        AtomicReference<Consumer<HarnessEvent>> listener = new AtomicReference<>();
+        HarnessEvent tool = new HarnessEvent("message.part.updated",
+            new ObjectMapper().readTree(
+                "{\"type\":\"message.part.updated\",\"properties\":{\"part\":{"
+                    + "\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"call-1\","
+                    + "\"state\":{\"status\":\"running\",\"input\":{\"command\":\"npm test\"}}}}}"),
+            System.currentTimeMillis());
+        doAnswer(invocation -> {
+            listener.set(invocation.getArgument(1));
+            return null;
+        }).when(harness).subscribe(anyString(), any());
+        doAnswer(invocation -> {
+            listener.get().accept(tool);
+            listener.get().accept(tool);
+            listener.get().accept(tool);
+            return null;
+        }).when(harness).sendPrompt(anyString(), anyString());
+        when(apiService.createHarnessQuestion(
+            anyString(), anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(7L);
+        when(apiService.getHarnessQuestion("run-1", 7L))
+            .thenReturn(Map.of("status", "answered", "answer", "continue"));
+
+        processorWithQuestionLoop(2000).processTicket(ticket());
+
+        verify(apiService).createHarnessQuestion(
+            eq("run-1"), anyString(), eq("doom_loop"), contains("repeated"),
+            isNull(), any());
+        verify(apiService, atLeastOnce()).emitHarnessEvent(argThat(
+            (Map<String, Object> emitted) -> "doom_loop.escalated".equals(emitted.get("type"))));
+        verify(workspace).commitAndPushStaged(anyString(), anyString());
     }
 
     @Test

@@ -210,6 +210,22 @@ describe('TicketQuestionService (fg-55)', () => {
     expect(client.query.mock.calls.some(([sql]) => sql === 'COMMIT')).toBe(false);
   });
 
+  it('rejects a question for a run owned by another runtime', async () => {
+    clientWith([
+      {}, // BEGIN
+      { rows: [runRow({ runtime_id: 99 })] },
+      {}, // ROLLBACK
+    ]);
+
+    await expect(
+      TicketQuestionService.createForRun({
+        runId: RUN_ID,
+        runtimeId: 3,
+        prompt: 'Should not persist',
+      })
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 });
+  });
+
   it('rejects an oversized prompt', async () => {
     await expect(
       TicketQuestionService.createForRun({
