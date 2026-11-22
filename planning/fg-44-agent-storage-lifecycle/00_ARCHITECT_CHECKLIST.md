@@ -1,7 +1,7 @@
 ---
 id: "fg-44"
 title: "Agent Storage Lifecycle and Idle Refresh"
-status: in_review
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Backend"
@@ -19,7 +19,7 @@ depends_on: ["fg-43", "fg-33", "fg-54"]
 | Claim | Evidence | Checked |
 |---|---|---|
 | Implementation in review | `feat/fg-44-storage-lifecycle`; see `03` Results | ☑ |
-| Verification results | `03` → Results (agent 959 tests; storage 15; host-storage 12; host-init 78; Compose) | ☑ |
+| Verification results | `03` → Results (agent 960 tests; storage 15; host-storage 14; host-init 78; Compose) | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`),
@@ -92,3 +92,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D8 | Compression of quarantined workspaces | self | Storage | future | open |
 | D9 | Configurable sandbox/proxy log rotation (10m/3) | self | Operations | follow-up | open |
 | D10 | Retire the supervisor `/repos` legacy pass and migrate `pruneStaleTempDirectories` after the legacy dirs are gone | self | Storage | follow-up | open |
+| D11 | Supervisor storage lifecycle: idle/max refresh, inode watermarks, periodic sweep/quarantine, periodic budget, complete storage events | self | Reliability | `fg-58` | open |

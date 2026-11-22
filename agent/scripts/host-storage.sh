@@ -51,12 +51,18 @@ require_int "$ORPHAN_HOURS" AGENT_ORPHAN_TTL_HOURS
 [[ -d "$REPO_DIR" ]] || { echo "error: repo path not found: $REPO_DIR" >&2; exit 3; }
 
 live_state() {
-    if [[ -d "$PID_DIR" && -n "$(find "$PID_DIR" -maxdepth 1 -type f -name '*.pid' -print -quit 2>/dev/null)" ]]; then
-        echo "live supervisor PID file under $PID_DIR"
-        return 0
+    if [[ -d "$PID_DIR" ]]; then
+        while IFS= read -r pidfile; do
+            [[ -f "$pidfile" ]] || continue
+            pid="$(sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$pidfile" | head -1)"
+            [[ -n "$pid" ]] || continue
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "live supervisor PID $pid ($pidfile)"
+                return 0
+            fi
+        done < <(find "$PID_DIR" -maxdepth 1 -type f -name '*.pid' -print 2>/dev/null)
     fi
-    if [[ -d "$REPO_DIR/runtimes" ]] \
-        && [[ -n "$(find "$REPO_DIR/runtimes" -name '.active' -type f -print -quit 2>/dev/null)" ]]; then
+    if [[ -d "$REPO_DIR/runtimes" ]] &&         [[ -n "$(find "$REPO_DIR/runtimes" -name '.active' -type f -newermt "-${RETENTION_HOURS} hours" -print -quit 2>/dev/null)" ]]; then
         echo "live .active marker under $REPO_DIR/runtimes"
         return 0
     fi

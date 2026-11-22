@@ -37,7 +37,12 @@ else
 fi
 rm -f "$REPO/runtimes/12/34/.active"
 
-touch "$PID_DIR/worker.pid"
+# A stale marker is not live: apply is allowed after retention.
+mkdir -p "$REPO/runtimes/12/34"
+touch -d '30 hours ago' "$REPO/runtimes/12/34/.active"
+if run --apply >/dev/null 2>&1; then pass "stale .active marker does not block apply"; else fail "stale .active marker does not block apply"; fi
+
+printf '{"pid":%s}\n' "$$" > "$PID_DIR/worker.pid"
 if run --apply >/dev/null 2>&1; then
     fail "apply refuses a live supervisor PID"
 else
@@ -45,6 +50,10 @@ else
     [[ "$code" -eq 4 ]] && pass "apply refuses a live supervisor PID" || fail "apply refuses a live supervisor PID (got $code)"
 fi
 rm -f "$PID_DIR/worker.pid"
+# A stale PID is not live: apply is allowed.
+printf '{"pid":999999}\n' > "$PID_DIR/stale.pid"
+if run --apply >/dev/null 2>&1; then pass "stale PID does not block apply"; else fail "stale PID does not block apply"; fi
+rm -f "$PID_DIR/stale.pid"
 
 # Legacy and temp fixtures.
 mkdir -p "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" "$TMP_ROOT/vibecode-askpass-y"

@@ -74,18 +74,18 @@ One row per requirement from `01`. A requirement with no row is not done.
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
 | FR1 | Agent | `WorkspaceManagerStorageTest.java` | runtime 12 / ticket 34; `repo/`, `tmp/`, `logs/`, `cache/`; traversal and symlink/non-existent targets refused | `cd agent && mvn test` |
-| FR2 | Agent | `HarnessTicketProcessorStorageTest.java` | terminal + lease → keyed cleanup; `.active` preserved on failure; unclean exit retained | `mvn test` |
-| FR3 | Agent | `SupervisorStorageTest.java` | idle 2h stops/restarts child, no active harness; failed restart degraded/retried | `mvn test` |
-| FR4 | Agent | `SupervisorStorageTest.java` | 24h between tickets only | `mvn test` |
-| FR5 | Agent | `SupervisorStorageTest.java` | 70/80/85/90/95 actions; inode same | `mvn test` |
-| FR6 | Agent + Shell | `HarnessTicketProcessorStorageTest.java`, `host-init.test.sh` | role/override budget; retention env; breach → `storage_budget_exceeded`; env written | `mvn test -Dtest=HarnessTicketProcessorStorageTest && bash agent/scripts/host-init.test.sh` |
+| FR2 | Foundation + `fg-58` | `WorkspaceManagerStorageTest.java`, `fg-58` | keyed cleanup/marker done; processor terminal/lease order in `fg-58` | `mvn test`; `mvn test` (fg-58) |
+| FR3 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | idle 2h stops/restarts child, no active harness | `mvn test` (fg-58) |
+| FR4 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | 24h between tickets only | `mvn test` (fg-58) |
+| FR5 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | 70/80/85/90/95 actions and inode sampling | `mvn test` (fg-58) |
+| FR6 | Foundation + `fg-58` | `HarnessTicketProcessorStorageTest.java`, `host-init.test.sh`, `fg-58` | role/override budget and env done; periodic meter/quarantine in `fg-58` | `mvn test -Dtest=HarnessTicketProcessorStorageTest && bash agent/scripts/host-init.test.sh` |
 | FR7 | Compose + Agent | `DockerSandboxRunnerTest.java` | supervisor 10m/3; existing sandbox/proxy 1m/1 | `docker compose -f agent/docker-compose.yml config && mvn test -Dtest=DockerSandboxRunnerTest` |
-| FR8 | Agent | `SupervisorStorageTest.java` | dangling prune keeps active tag | `mvn test` |
-| FR9 | Agent + Script | `SupervisorStorageTest.java`, `WorkspaceManagerStorageTest.java`, `host-storage.test.sh` | `HARNESS_WORKSPACE_RETENTION_HOURS` TTL; runtime-root + `/repos` legacy + `java.io.tmpdir`/`AGENT_TMPDIR` temp (`--legacy`); active/lease kept | `mvn test && bash agent/scripts/host-storage.test.sh` |
-| FR10 | Agent | `SupervisorStorageTest.java` | `.active` marker/supervisor slot skipped | `mvn test` |
-| FR11 | Agent | `HarnessEventStorageTest.java` | workspace bytes/inodes, free bytes/inodes, log bytes, refresh/cleanup/orphan counts | `mvn test -Dtest=HarnessEventStorageTest` |
+| FR8 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | dangling prune keeps active tag | `mvn test` (fg-58) |
+| FR9 | Script + `fg-58` | `host-storage.test.sh`, `fg-58` | host script legacy/retention done; supervisor runtime-root sweep in `fg-58` | `bash agent/scripts/host-storage.test.sh`; `mvn test` (fg-58) |
+| FR10 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | `.active` marker/supervisor slot skipped | `mvn test` (fg-58) |
+| FR11 | Partial + `fg-58` | `HarnessEventStorageTest.java`, `fg-58` | cleanup/budget events done; workspace/refresh/watermark/orphan/image/log events in `fg-58` | `mvn test`; `mvn test` (fg-58) |
 | FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy` over `/repos` and `AGENT_TMPDIR`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
-| FR13 | Agent | `HarnessTicketProcessorStorageTest.java` | destroy before delete; failed destroy keeps dir | `mvn test` |
+| FR13 | Foundation + `fg-58` | `WorkspaceManagerStorageTest.java`, `fg-58` | runtime guard done; processor destroy-before-delete in `fg-58` | `mvn test`; `mvn test` (fg-58) |
 
 ## Rollout
 
@@ -98,7 +98,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review checklist
 
-- [ ] Every `FR*` acceptance statement has a passing row
+- [ ] Every `FR*` acceptance statement has a passing row (FR3/4/5/8/10/11 and periodic parts are `fg-58`)
 - [ ] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
 - [ ] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
 - [ ] Sandbox destroy precedes workspace deletion
@@ -110,4 +110,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-44-storage-lifecycle` | Agent 959 tests (storage 15); host-storage 12/12; host-init 78/78; Compose base+sandbox | Runtime/ticket keyed workspaces, keyed cleanup + active marker, storage policy/watermarks/log, budget guard, storage events, host-init budget/TTL env, host-storage recovery script and tests. |
+| 2026-11-22 | `feat/fg-44-storage-lifecycle` | Agent 960 tests (storage 15); host-storage 14/14; host-init 78/78; Compose base+sandbox | **Foundation split:** runtime/ticket keyed workspaces, keyed cleanup + active marker, budget helper/policy, host-init/Compose env, host-storage recovery and tests. Supervisor idle refresh, inode watermarks, periodic sweep/quarantine, periodic budget and the full event set are follow-up `fg-58`. |

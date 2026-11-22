@@ -72,6 +72,17 @@ class WorkspaceManagerStorageTest {
     }
 
     @Test
+    void refusalToDeleteTheRepositoryBaseRoot() throws Exception {
+        Path base = tempDir.resolve("repos");
+        Files.createDirectories(base);
+        WorkspaceManager manager = new WorkspaceManager(
+            base.toString(), "repo", false, null, null, "34");
+
+        assertThrows(java.io.IOException.class, manager::cleanupRuntime);
+        assertTrue(Files.exists(base));
+    }
+
+    @Test
     void refusesTraversalKeys() {
         WorkspaceManager manager = new WorkspaceManager(
             tempDir.toString(), "repo", true, null, null, "34");

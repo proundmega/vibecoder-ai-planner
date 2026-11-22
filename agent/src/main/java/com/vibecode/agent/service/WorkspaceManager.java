@@ -176,8 +176,13 @@ public class WorkspaceManager {
         cleanupPath(root);
     }
 
-    /** Delete the runtime root, including cache/. */
+    /** Delete the runtime root, including cache/. Refuses the configured base root. */
     public void cleanupRuntime() throws IOException {
+        Path name = cloneRoot.getFileName();
+        if (name == null || "repos".equals(name.toString())
+                || cloneRoot.equals(cloneRoot.getRoot())) {
+            throw new IOException("Refusing to delete the repository base root: " + cloneRoot);
+        }
         cleanupPath(cloneRoot);
     }
 
