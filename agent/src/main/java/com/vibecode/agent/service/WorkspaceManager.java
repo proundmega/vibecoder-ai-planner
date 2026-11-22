@@ -76,6 +76,7 @@ public class WorkspaceManager {
         "opencode-harness-", "vibecode-askpass-");
 
     private Path repoDir;
+    private String workspaceKey;
     private final String gitBinary;
     private final boolean dryRun;
     private final GitHubTokenSource tokenSource;
@@ -98,9 +99,16 @@ public class WorkspaceManager {
     public WorkspaceManager(
         String repoCloneDir, String repoName, boolean dryRun,
         String githubToken, GitHubTokenSource tokenSource) {
+        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, null);
+    }
+
+    public WorkspaceManager(
+        String repoCloneDir, String repoName, boolean dryRun,
+        String githubToken, GitHubTokenSource tokenSource, String workspaceKey) {
         this.repoCloneDir = repoCloneDir;
         this.cloneRoot = Paths.get(repoCloneDir).toAbsolutePath().normalize();
         this.repoName = repoName;
+        this.workspaceKey = workspaceKey;
         this.gitBinary = "git";
         this.dryRun = dryRun;
         this.tokenSource = tokenSource != null ? tokenSource : () -> githubToken;
@@ -108,9 +116,112 @@ public class WorkspaceManager {
         this.repoDir = null;
     }
 
+    /** Set the ticket id (or other key) used for the runtime-scoped layout. */
+    public void setWorkspaceKey(String workspaceKey) {
+        if (workspaceKey != null && !workspaceKey.isBlank()) {
+            safeKey(workspaceKey);
+        }
+        this.workspaceKey = workspaceKey;
+    }
+
     private Path generateRepoDir() {
-        String uniqueName = UUID.randomUUID().toString().substring(0, 8) + "-" + sanitizePath(repoName);
-        return Paths.get(repoCloneDir, uniqueName).toAbsolutePath().normalize();
+        String key = workspaceKey == null || workspaceKey.isBlank()
+            ? UUID.randomUUID().toString().substring(0, 8) + "-" + sanitizePath(repoName)
+            : safeKey(workspaceKey);
+        return Paths.get(repoCloneDir, key, "repo").toAbsolutePath().normalize();
+    }
+
+    private String safeKey(String key) {
+        String sanitized = sanitizePath(key);
+        if (sanitized.isBlank() || sanitized.equals(".") || sanitized.equals("..")
+                || key.contains("..") || key.contains("/") || key.contains("\\")) {
+            throw new IllegalArgumentException("Invalid workspace key: " + key);
+        }
+        return sanitized;
+    }
+
+    /** Ticket workspace root {@code <runtimeRoot>/<ticketId>}. */
+    public Path getWorkspaceRoot() {
+        if (workspaceKey != null && !workspaceKey.isBlank()) {
+            return Paths.get(repoCloneDir, safeKey(workspaceKey))
+                .toAbsolutePath().normalize();
+        }
+        return repoDir == null ? null : repoDir.getParent();
+    }
+
+    /** Per-runtime cache directory, outside the ticket root. */
+    public Path getCacheDir() {
+        return cloneRoot.resolve("cache");
+    }
+
+    /** Write the active-run marker used by cleanup and host recovery guards. */
+    public void writeActiveMarker(String runId) throws IOException {
+        Path root = getWorkspaceRoot();
+        if (root == null) {
+            throw new IOException("No workspace root: workspaceKey/repoDir is unset");
+        }
+        Files.createDirectories(root);
+        Path marker = root.resolve(".active");
+        Files.writeString(marker, runId == null ? "" : runId, StandardCharsets.UTF_8);
+        try {
+            Files.setPosixFilePermissions(marker, PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException ignored) {
+            // Non-POSIX filesystem.
+        }
+    }
+
+    /** Delete one ticket root (including its .active marker). */
+    public void cleanup(String key) throws IOException {
+        Path root = Paths.get(repoCloneDir, safeKey(key)).toAbsolutePath().normalize();
+        cleanupPath(root);
+    }
+
+    /** Delete the runtime root, including cache/. Refuses the configured base root. */
+    public void cleanupRuntime() throws IOException {
+        Path name = cloneRoot.getFileName();
+        if (name == null || "repos".equals(name.toString())
+                || cloneRoot.equals(cloneRoot.getRoot())) {
+            throw new IOException("Refusing to delete the repository base root: " + cloneRoot);
+        }
+        cleanupPath(cloneRoot);
+    }
+
+    /** Bytes under the current ticket workspace. */
+    public long workspaceBytes() throws IOException {
+        return measureWorkspace(true);
+    }
+
+    /** Inode count under the current ticket workspace (bounded to regular files/dirs). */
+    public long workspaceInodes() throws IOException {
+        return measureWorkspace(false);
+    }
+
+    private long measureWorkspace(boolean bytes) throws IOException {
+        Path root = getWorkspaceRoot();
+        if (root == null || !Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
+            return 0;
+        }
+        final long[] total = {0};
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                if (bytes) {
+                    total[0] += attrs.size();
+                } else {
+                    total[0]++;
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (!bytes) {
+                    total[0]++;
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return total[0];
     }
 
     public Path getRepoDir() {
@@ -151,6 +262,9 @@ public class WorkspaceManager {
             log.info("[DRY RUN] Would clone {} to {}", repoUrl, repoDir);
             return;
         }
+        Files.createDirectories(repoDir.getParent().resolve("tmp"));
+        Files.createDirectories(repoDir.getParent().resolve("logs"));
+        Files.createDirectories(getCacheDir());
         assertSafeToDelete(repoDir);
 
         // Remove existing directory if present (from failed previous attempt)
@@ -1467,18 +1581,46 @@ public class WorkspaceManager {
         }
     }
 
-    private void runDeleteFallback() {
+    private void cleanupPath(Path path) throws IOException {
+        Path normalized = path.toAbsolutePath().normalize();
+        if (normalized.equals(cloneRoot)) {
+            // Runtime-root cleanup is deliberately allowed; never allow the
+            // filesystem root or a parent outside the configured clone root.
+            if (normalized.getParent() == null) {
+                throw new IOException("Refusing to delete the filesystem root");
+            }
+        } else {
+            assertSafeToDelete(normalized);
+        }
+        if (!Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
         try {
-            ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", "--", repoDir.toString());
+            deletePath(normalized);
+        } catch (IOException e) {
+            runDeleteFallback(normalized);
+            if (Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Failed to delete " + normalized, e);
+            }
+        }
+    }
+
+    private void runDeleteFallback() {
+        runDeleteFallback(repoDir);
+    }
+
+    private void runDeleteFallback(Path path) {
+        try {
+            ProcessBuilder rmPb = new ProcessBuilder("rm", "-rf", "--", path.toString());
             rmPb.redirectErrorStream(true);
             Process rmProcess = rmPb.start();
             rmProcess.waitFor();
-            log.info("Cleaned up workspace via rm -rf: {}", repoDir);
+            log.info("Cleaned up workspace via rm -rf: {}", path);
         } catch (IOException | InterruptedException ex) {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            log.error("Failed to cleanup workspace {}: {}", repoDir, ex.getMessage());
+            log.error("Failed to cleanup workspace {}: {}", path, ex.getMessage());
         }
     }
 
@@ -1489,8 +1631,20 @@ public class WorkspaceManager {
      */
     private void assertSafeToDelete(Path path) throws IOException {
         Path normalized = path.toAbsolutePath().normalize();
-        if (!normalized.startsWith(cloneRoot) || normalized.equals(cloneRoot)) {
-            throw new IOException("Path is outside the clone root: " + normalized);
+        Path root = cloneRoot;
+        Path target = normalized;
+        try {
+            if (Files.exists(normalized, LinkOption.NOFOLLOW_LINKS)) {
+                target = normalized.toRealPath(LinkOption.NOFOLLOW_LINKS);
+            }
+            if (Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
+                root = root.toRealPath(LinkOption.NOFOLLOW_LINKS);
+            }
+        } catch (IOException e) {
+            throw new IOException("Cannot resolve delete target safely: " + normalized, e);
+        }
+        if (!target.startsWith(root) || target.equals(root)) {
+            throw new IOException("Path is outside the clone root: " + target);
         }
     }
 }

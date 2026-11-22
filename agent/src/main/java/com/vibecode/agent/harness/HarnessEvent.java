@@ -30,6 +30,11 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         return contains(type, "error");
     }
 
+    /** fg-44 storage lifecycle event (`storage.*`). */
+    public boolean isStorageEvent() {
+        return type != null && type.toLowerCase().startsWith("storage.");
+    }
+
     /**
      * A question or permission request that blocks the OpenCode session until a
      * human (or the supervisor) replies.

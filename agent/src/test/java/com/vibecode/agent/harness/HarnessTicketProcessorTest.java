@@ -910,7 +910,7 @@ class HarnessTicketProcessorTest {
         verify(apiService).updateTicketPrUrl(1L, "https://github.com/owner/repo/pull/7");
         verify(apiService).updateTicketStatus(1L, "review");
         verify(harness).close();
-        verify(workspace).cleanup();
+        verify(workspace).cleanup("1");
     }
 
     @Test
@@ -1425,7 +1425,7 @@ class HarnessTicketProcessorTest {
         verify(workspace, never()).commitAndPush(anyString(), anyString());
         verify(apiService).releaseHarnessTicket("run-1");
         verify(harness).close();
-        verify(workspace).cleanup();
+        verify(workspace).cleanup("1");
     }
 
     @Test

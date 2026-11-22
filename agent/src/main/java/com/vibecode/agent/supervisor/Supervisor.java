@@ -8,8 +8,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
@@ -74,6 +76,9 @@ public final class Supervisor implements AutoCloseable {
     private volatile RuntimeConfig config;
     private volatile boolean closed;
     private volatile java.util.function.BooleanSupplier healthGate = () -> true;
+    private volatile StoragePolicy storagePolicy = StoragePolicy.fromEnv(System.getenv());
+    private volatile StoragePolicy.Usage storageUsage = new StoragePolicy.Usage(0, 0);
+    private volatile long lastStorageCheckMs;
     private Thread loopThread;
 
     /**
@@ -174,8 +179,47 @@ public final class Supervisor implements AutoCloseable {
                 if (existing != null) {
                     stopTracked(existing);
                 }
+                if (!storageAllowsSpawn()) {
+                    log.warn("Storage pressure: not spawning runtime child {}", slot.name());
+                    continue;
+                }
                 spawn(slot);
             }
+            storageTick();
+        }
+    }
+
+    private boolean storageAllowsSpawn() {
+        StoragePolicy.Usage usage = storageUsage;
+        if (usage == null) return true;
+        double worst = Math.max(usage.usedPct(), usage.inodePct());
+        return worst < storagePolicy.stopPct();
+    }
+
+    private void storageTick() {
+        long now = System.currentTimeMillis();
+        long interval = longEnv("AGENT_STORAGE_CHECK_SECONDS", 60) * 1000L;
+        if (interval <= 0 || now - lastStorageCheckMs < interval) {
+            return;
+        }
+        lastStorageCheckMs = now;
+        try {
+            Path repo = Paths.get(System.getenv().getOrDefault("REPO_CLONE_DIR", "/repos"));
+            FileStore store = Files.getFileStore(repo);
+            long total = store.getTotalSpace();
+            long usable = store.getUsableSpace();
+            double usedPct = total <= 0 ? 0 : ((total - usable) * 100.0) / total;
+            StoragePolicy.Usage usage = new StoragePolicy.Usage(usedPct, 0);
+            setStorageUsage(usage);
+            StoragePolicy.StorageAction action = storagePolicy.evaluate(
+                usage, new StoragePolicy.RuntimeState(
+                    "worker", 0, false, false, false, false, Instant.now(), Instant.now()));
+            if (action != StoragePolicy.StorageAction.OK) {
+                log.warn("storage.watermark action={} usedPct={} freeBytes={}",
+                    action, String.format(java.util.Locale.ROOT, "%.1f", usedPct), usable);
+            }
+        } catch (IOException | RuntimeException e) {
+            log.debug("Storage watermark sample skipped: {}", e.getMessage());
         }
     }
 
@@ -432,6 +476,21 @@ public final class Supervisor implements AutoCloseable {
             slot.name(), process.pid(), slot.role().wireName());
     }
 
+    /** fg-44: install the storage policy used by the supervisor tick. */
+    public void setStoragePolicy(StoragePolicy policy) {
+        this.storagePolicy = policy == null ? StoragePolicy.fromEnv(System.getenv()) : policy;
+    }
+
+    /** fg-44: update the latest disk/inode sample. */
+    public void setStorageUsage(StoragePolicy.Usage usage) {
+        this.storageUsage = usage == null ? new StoragePolicy.Usage(0, 0) : usage;
+    }
+
+    /** fg-44: the current storage decision for a runtime state. */
+    public StoragePolicy.StorageAction storageAction(StoragePolicy.RuntimeState state) {
+        return storagePolicy.evaluate(storageUsage, state);
+    }
+
     private Map<String, String> buildEnvironment(RuntimeConfig.RuntimeSlot slot, Long runtimeId) {
         Map<String, String> env = new LinkedHashMap<>();
         putIfPresent(env, "BACKEND_URL", System.getenv("BACKEND_URL"));
@@ -450,6 +509,12 @@ public final class Supervisor implements AutoCloseable {
         }
         env.put("AGENT_RUNTIME_CONCURRENCY", String.valueOf(concurrencyFor(slot.runtimeName())));
         env.put("AGENT_RUNTIME_STOP_FILE", stopMarkerPath(slot.runtimeName()).toString());
+        String baseRoot = System.getenv().getOrDefault("REPO_CLONE_DIR", "/repos");
+        String runtimeKey = runtimeId == null ? slot.name() : String.valueOf(runtimeId);
+        env.put("REPO_CLONE_DIR", baseRoot.replaceAll("/+$", "") + "/runtimes/" + runtimeKey);
+        putIfPresent(env, "AGENT_DISK_BUDGET_GB", System.getenv("AGENT_DISK_BUDGET_GB"));
+        putIfPresent(env, "HARNESS_WORKSPACE_RETENTION_HOURS",
+            System.getenv("HARNESS_WORKSPACE_RETENTION_HOURS"));
         return env;
     }
 
@@ -648,6 +713,17 @@ public final class Supervisor implements AutoCloseable {
             command.add(MAIN_CLASS);
         }
         return command;
+    }
+
+    private static long longEnv(String name, long fallback) {
+        String value = System.getenv(name);
+        if (value == null || value.isBlank()) return fallback;
+        try {
+            long parsed = Long.parseLong(value.trim());
+            return parsed >= 0 ? parsed : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     private static String javaBinary() {
