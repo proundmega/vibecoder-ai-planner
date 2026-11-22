@@ -84,4 +84,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D7 | Cross-host workspace migration | self | Infrastructure | fg-40 | open |
 | D8 | Compression of quarantined workspaces | self | Storage | future | open |
 | D9 | Configurable sandbox/proxy log rotation (10m/3) | self | Operations | follow-up | open |
-| D10 | Retire the legacy child/startup random-dir prune after the one-time legacy sweep | self | Storage | follow-up | open |
+| D10 | Retire the legacy child/startup random-dir prune and migrate `pruneStaleTempDirectories` after the one-time legacy sweep | self | Storage | follow-up | open |

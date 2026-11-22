@@ -80,7 +80,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR6 | Agent + Shell | `HarnessTicketProcessorStorageTest.java`, `host-init.test.sh` | role/override budget; retention env; breach → `storage_budget_exceeded`; env written | `mvn test -Dtest=HarnessTicketProcessorStorageTest && bash agent/scripts/host-init.test.sh` |
 | FR7 | Compose + Agent | `DockerSandboxRunnerTest.java` | supervisor 10m/3; existing sandbox/proxy 1m/1 | `docker compose -f agent/docker-compose.yml config && mvn test -Dtest=DockerSandboxRunnerTest` |
 | FR8 | Agent | `SupervisorStorageTest.java` | dangling prune keeps active tag | `mvn test` |
-| FR9 | Agent + Script | `SupervisorStorageTest.java`, `WorkspaceManagerStorageTest.java`, `host-storage.test.sh` | `HARNESS_WORKSPACE_RETENTION_HOURS` TTL; runtime-root + legacy/temp (`--legacy`); active/lease kept | `mvn test` |
+| FR9 | Agent + Script | `SupervisorStorageTest.java`, `WorkspaceManagerStorageTest.java`, `host-storage.test.sh` | `HARNESS_WORKSPACE_RETENTION_HOURS` TTL; runtime-root + legacy/temp (`--legacy`); active/lease kept | `mvn test && bash agent/scripts/host-storage.test.sh` |
 | FR10 | Agent | `SupervisorStorageTest.java` | `.active` marker/supervisor slot skipped | `mvn test` |
 | FR11 | Agent | `HarnessEventStorageTest.java` | workspace bytes/inodes, free bytes/inodes, log bytes, refresh/cleanup/orphan counts | `mvn test -Dtest=HarnessEventStorageTest` |
 | FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
