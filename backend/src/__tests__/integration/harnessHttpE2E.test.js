@@ -854,7 +854,7 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     expect(afterRoute.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
   });
 
-  test('E21 publish is idempotent and reconcile cannot duplicate the PR', async () => {
+  test('E21 publish is idempotent and reconcile cannot duplicate identical publish evidence', async () => {
     const runId = await createActiveRun();
     expect((await claimLease({
       token: fixture.nodeToken,
