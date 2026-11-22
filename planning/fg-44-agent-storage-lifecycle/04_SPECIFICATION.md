@@ -11,10 +11,10 @@ storage policy, host script, verify the existing supervisor logs, docs.
 
 | File | Initial contents |
 |---|---|
-| `agent/src/test/java/.../service/WorkspaceManagerStorageTest.java` | Layout `<runtime>/<ticket>/repo`, `tmp/`/`logs/`, keyed cleanup/size, traversal and symlink/non-existent refusal |
-| `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` | idle/max-lifetime/watermarks/orphans/active safety/budget |
-| `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` | cleanup order, `.active` marker, budget breach |
-| `agent/src/test/java/.../harness/HarnessEventStorageTest.java` | `storage.*` event names and payload fields |
+| `agent/src/test/java/.../service/WorkspaceManagerStorageTest.java` | Layout `<runtime>/<ticket>/repo`, `tmp/`/`logs/`/`cache/`, keyed cleanup/size, traversal/symlink/non-existent and legacy-prefix refusal |
+| `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` | idle/max-lifetime/watermarks/runtime-root + legacy sweep/active safety/budget |
+| `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` | cleanup order, `.active` preserved on failure, budget breach |
+| `agent/src/test/java/.../harness/HarnessEventStorageTest.java` | workspace bytes/inodes, free bytes/inodes, log bytes, refresh/cleanup/orphan counts |
 | `agent/scripts/host-storage.test.sh` | Bash fixtures for dry-run/apply/recovery, stopped-supervisor and `.active`/PID guards |
 
 ## Test-First Requirement
@@ -38,10 +38,10 @@ public WorkspaceManager(..., String workspaceKey) { ... }
 public void setWorkspaceKey(String workspaceKey);   // ticket id or uuid
 public Path getWorkspaceRoot();                     // <repoCloneDir>/<key> (ticket root)
 public Path getRepoDir();                           // <getWorkspaceRoot()>/repo
+public Path getCacheDir();                          // <runtimeRoot>/cache
 public void writeActiveMarker(String runId);        // <ticketRoot>/.active
-public void clearActiveMarker();                    // terminal cleanup
-public void cleanup(String workspaceKey);           // delete the ticket root
-public void cleanupRuntime();                       // delete the runtime root
+public void cleanup(String workspaceKey);           // delete the ticket root incl. .active
+public void cleanupRuntime();                       // delete the runtime root incl. cache
 public long workspaceBytes();                       // du -sb of the ticket root
 public long workspaceInodes();                      // bounded walk of the ticket root
 ```
@@ -57,8 +57,15 @@ return Paths.get(repoCloneDir, key, "repo").toAbsolutePath().normalize();
 
 `getWorkspaceRoot()` is `<repoCloneDir>/<key>` (the ticket root);
 `generateRepoDir()` is its `repo/` child. The manager creates `tmp/` and `logs/`
-under the ticket root before clone. `cleanup(key)` deletes the ticket root (all
-three); the clone is never the delete root.
+under the ticket root before clone and `cache/` under the runtime root.
+`cleanup(key)` deletes the ticket root (including `.active`); `cleanupRuntime()`
+deletes the runtime root including `cache/`. The clone is never the delete root.
+
+The existing `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` remain for
+the legacy `/repos/<8hex>-*` and `opencode-harness-*`/`vibecode-askpass-*` temp
+dirs; the supervisor sweep and `host-storage.sh --legacy` call them with the
+same retention. Do not remove `pruneStaleTempDirectories`: the temp dirs may
+contain credentials.
 
 `assertSafeToDelete` currently uses `toAbsolutePath().normalize()`. fg-44 must
 change it to `toRealPath(LinkOption.NOFOLLOW_LINKS)` for existing paths and a
@@ -80,8 +87,7 @@ finish run (terminal state)
   -> destroy sandbox (DockerSandboxRunner.close/destroy)
   -> verify destroy (fail closed on failure)
   -> release lease (finish endpoint)
-  -> workspaceManager.clearActiveMarker()
-  -> workspaceManager.cleanup(ticketId)
+  -> workspaceManager.cleanup(ticketId)   // deletes the ticket root incl. .active
   -> emit storage.cleanup (freed bytes, duration, reason)
 ```
 
@@ -140,9 +146,9 @@ supervisor `DEGRADED` state and a `storage.refresh_failed` event, not a
 | `AGENT_MAX_LIFETIME_HOURS` | `24` | max runtime lifetime between tickets |
 | `AGENT_STORAGE_CHECK_SECONDS` | `60` | watermark sample interval |
 | `AGENT_STORAGE_METER_SECONDS` | `300` | `du`/inode meter interval |
-| `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | workspace retention/orphan-root TTL (existing; single TTL) |
+| `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | workspace retention/orphan-root TTL (existing; single TTL); fg-44 makes `host-init.sh` write it when set |
 | `AGENT_ORPHAN_TTL_HOURS` | `24` | quarantine TTL |
-| `AGENT_DISK_BUDGET_GB` | role profile | optional budget override; `host-init.sh` writes it; supervisor passes it to the child |
+| `AGENT_DISK_BUDGET_GB` | role profile | optional budget override; fg-44 makes `host-init.sh` write it; supervisor passes it to the child |
 | `AGENT_STORAGE_WARN_PCT` | `70` | warn |
 | `AGENT_STORAGE_STOP_PCT` | `80` | stop spawning |
 | `AGENT_STORAGE_CLEAN_PCT` | `85` | clean idle |
@@ -155,12 +161,14 @@ The role budgets come from fg-43: worker 20 GB, reviewer/planner 10 GB, light
 5 GB. `AGENT_WORKSPACE_TTL_HOURS` is **not** a new knob:
 `HARNESS_WORKSPACE_RETENTION_HOURS` is the single workspace TTL.
 `AGENT_DISK_BUDGET_GB` is the only budget override; there is no
-`AGENT_WORKSPACE_BUDGET_GB`.
+`AGENT_WORKSPACE_BUDGET_GB`. fg-44 makes `host-init.sh` write both
+`AGENT_DISK_BUDGET_GB` and `HARNESS_WORKSPACE_RETENTION_HOURS` to
+`.env.agent-host` when set, and Compose passes both to the supervisor.
 
 ## 6. `agent/scripts/host-storage.sh`
 
 ```
-Usage: host-storage.sh [--dry-run|--apply] [--orphans] [--images] [--json]
+Usage: host-storage.sh [--dry-run|--apply] [--orphans] [--legacy] [--images] [--json]
 Exit codes:
   0  success
   2  invalid arguments
@@ -174,8 +182,10 @@ Exit codes:
   supervisor PID/slot or a `.active` marker (`exit 4`). The supervisor remains
   the lease-safe cleanup owner during normal operation.
 - `--orphans` sweeps runtime roots with no live supervisor/PID/marker and older
-  than `HARNESS_WORKSPACE_RETENTION_HOURS`; `--images` prunes dangling images
-  only.
+  than `HARNESS_WORKSPACE_RETENTION_HOURS`; `--legacy` runs the existing
+  `pruneStaleWorkspaces()`/`pruneStaleTempDirectories()` over `/repos` with the
+  `<8hex>-*`, `opencode-harness-*` and `vibecode-askpass-*` prefixes. The
+  child/startup prune remains until D10; `--images` prunes dangling images only.
 - `--json` prints a machine-readable summary.
 - It never reads or prints provider keys or a control token. It cannot see
   backend leases, so it does not claim lease-safe deletion while the supervisor
@@ -191,7 +201,8 @@ Add to `HarnessEvent`/the sink:
 - `storage.cleanup_failed` `{ runtimeId, ticketId, error }`
 - `storage.refresh` `{ runtimeId, reason, freedBytes }`
 - `storage.refresh_failed` `{ runtimeId, error }`
-- `storage.watermark` `{ level, usedPct, inodePct }`
+- `storage.watermark` `{ level, freeBytes, usedPct, freeInodes, inodePct }`
+- `storage.log_bytes` `{ component, bytes }`
 - `storage.budget_exceeded` `{ runtimeId, ticketId, budgetGb, usedGb }`
 - `storage.orphan` `{ path, bytes, action }`
 - `storage.image_prune` `{ removed, reclaimedBytes }`
@@ -211,7 +222,7 @@ logging:
 The supervisor Compose service already has this rotation (10m/3); this ticket
 verifies it. Sandbox/proxy containers are created by `DockerSandboxRunner` with
 bounded 1m/1 log options; there is no sandbox Compose service. Configurable
-sandbox rotation is out of scope.
+sandbox rotation is deferred as D9.
 
 ## 9. Verification commands
 

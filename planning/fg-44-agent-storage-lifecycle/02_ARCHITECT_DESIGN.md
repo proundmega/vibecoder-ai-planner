@@ -19,8 +19,9 @@
 - `HarnessTicketProcessor` owns the clone, the sandbox and the finish path, so
   it is the natural cleanup caller.
 - There is no idle-refresh timer, disk/inode watermark, role budget meter,
-  runtime-root sweep or `host-storage.sh`; the existing random-dir prune must be
-  folded into the new sweep.
+  runtime-root sweep or `host-storage.sh`. The existing child/startup random-dir
+  and temp-dir prune stays for legacy and crash-left dirs; the supervisor adds
+  runtime roots and a one-time legacy pass (D10 retires the old path).
 - The supervisor Compose service already has `json-file` rotation 10m/3; the
   sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
   1m/1 and are not Compose services.
@@ -38,7 +39,8 @@ Supervisor
        -> stop child, destroy sandbox, remove runtime root, restart child
        -> same runtime id + refreshed node credential
   -> periodic storage sweep:
-       -> du/inode meter, watermarks, orphan reaper, dangling images
+       -> du/inode meter, watermarks, runtime-root + legacy/temp pass, orphan
+          reaper, dangling images
   -> host-storage.sh (dry-run/apply) for manual recovery
 ```
 
@@ -76,8 +78,9 @@ Supervisor
 2. `HarnessTicketProcessor` destroys the sandbox (if any) and verifies the
    destroy/close result.
 3. It records the final checkpoint/finish (lease release).
-4. Only after the lease release, it clears the `.active` marker and calls
-   `WorkspaceManager.cleanup(ticketId)`.
+4. Only after the lease release, it calls `WorkspaceManager.cleanup(ticketId)`;
+   cleanup deletes the ticket root including `.active`. On failure, the marker
+   remains for the sweep.
 5. On failure, it preserves the workspace and `.active` marker and emits a
    `storage.cleanup_failed` event; the orphan sweep retries after TTL. A marker
    whose run is terminal and whose lease has expired is stale only after the
@@ -86,10 +89,11 @@ Supervisor
    run terminal and the lease expires; the storage sweep then removes it.
 
 Cleanup is idempotent and never touches a directory with an active workspace
-lock. `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start and
-removes it in the terminal cleanup; the supervisor slot and the marker are both
-checked. `host-storage.sh` uses the same marker/PID state in stopped-supervisor
-mode.
+lock. `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start; the
+successful `cleanup(ticketId)` deletes the ticket root including the marker. A
+failed cleanup leaves the marker for the sweep. The supervisor slot and the
+marker are both checked. `host-storage.sh` uses the same marker/PID state in
+stopped-supervisor mode.
 
 ## Idle refresh and max lifetime
 
@@ -132,10 +136,11 @@ the existing heartbeat/status payload so the fleet UI can show it.
   needed).
 - Compare against the resolved per-runtime budget: the role default (worker
   20 GB, reviewer/planner 10 GB, light 5 GB) or the fg-43 override
-  `AGENT_DISK_BUDGET_GB`. `host-init.sh` writes the override to
-  `.env.agent-host`; the supervisor passes the resolved value to the child.
-  `StoragePolicy`/`RuntimeState` carry the role and budget; do not add a second
-  `AGENT_WORKSPACE_BUDGET_GB` knob.
+  `AGENT_DISK_BUDGET_GB`. fg-44 makes `host-init.sh` write the override to
+  `.env.agent-host`; it also writes `HARNESS_WORKSPACE_RETENTION_HOURS`, so the
+  supervisor sees the operator TTL. The supervisor passes the resolved budget
+  to the child. `StoragePolicy`/`RuntimeState` carry the role and budget; do
+  not add a second `AGENT_WORKSPACE_BUDGET_GB` knob.
 - On breach: send `SIGTERM` to the workspace child/sandbox, fail the run with
   `storage_budget_exceeded`, move the ticket dir to `orphans/`, emit an event
   and alert.
@@ -148,32 +153,40 @@ The supervisor's storage sweep:
 
 1. list `/repos/runtimes/*`;
 2. keep roots for active runtimes/leases/processes;
-3. remove roots older than `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h)
-   with no active owner;
-4. move suspicious dirs to `orphans/` for `AGENT_ORPHAN_TTL_HOURS` (default
+3. remove runtime roots older than `HARNESS_WORKSPACE_RETENTION_HOURS` (default
+   24h) with no active owner;
+4. run the existing `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` over
+   `/repos` with the same retention and prefixes (`<8hex>-*`,
+   `opencode-harness-*`, `vibecode-askpass-*`). This one-time legacy pass covers
+   dirs the runtime-root sweep cannot see, and the child/startup call stays
+   until D10;
+5. move suspicious dirs to `orphans/` for `AGENT_ORPHAN_TTL_HOURS` (default
    24h), then delete;
-5. prune dangling images weekly (`docker image prune -f` only, never `-a`);
-6. report freed bytes and failures as events.
+6. prune dangling images weekly (`docker image prune -f` only, never `-a`);
+7. report freed bytes and failures as events.
 
 `host-storage.sh` exposes the same sweep as `--dry-run`/`--apply` for manual
-recovery. It has no backend control token and cannot read backend leases; it
-uses `.active` markers and supervisor PID/state, and `--apply` is restricted to
-a documented stopped-supervisor recovery mode (it refuses live supervisor/marker
-state, exit 4). The supervisor remains the lease-safe cleanup owner during
-normal operation.
+recovery; `--legacy` runs the `/repos/<8hex>-*` and temp-dir pass. It has no
+backend control token and cannot read backend leases; it uses `.active` markers
+and supervisor PID/state, and `--apply` is restricted to a documented
+stopped-supervisor recovery mode (it refuses live supervisor/marker state,
+exit 4). The supervisor remains the lease-safe cleanup owner during normal
+operation.
 
 ## Logs and images
 
 - The supervisor Compose service already uses `json-file` 10m/3; keep it.
 - Sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
   1m/1 log options; they are not Compose services. Configurable sandbox
-  rotation is out of scope for this ticket.
+  rotation is deferred as D9.
 - Keep the current `vibecode-agent`/sandbox tags; prune dangling images only.
 - Keep at most N old tags for rollback when the deployment supports it.
 
 ## Caches
 
-- Per-runtime caches under `<runtimeRoot>/cache` with a TTL.
+- Per-runtime caches under `<runtimeRoot>/cache`; `WorkspaceManager.getCacheDir()`
+  creates it, `cleanupRuntime()` deletes it, and the TTL is
+  `HARNESS_WORKSPACE_RETENTION_HOURS`.
 - Never share a writable cache between runtimes; a read-only shared cache is
   D5.
 - Clear `~/.npm`, `~/.m2`, OpenCode temp and `/tmp` on refresh.
@@ -189,7 +202,8 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 - `storage.cleanup_failed` `{runtimeId, ticketId, error}`
 - `storage.refresh` `{runtimeId, reason, freedBytes}`
 - `storage.refresh_failed` `{runtimeId, error}`
-- `storage.watermark` `{level, usedPct, inodePct}`
+- `storage.watermark` `{level, freeBytes, usedPct, freeInodes, inodePct}`
+- `storage.log_bytes` `{component, bytes}`
 - `storage.budget_exceeded` `{runtimeId, ticketId, budgetGb, usedGb}`
 - `storage.orphan` `{path, bytes, action}`
 - `storage.image_prune` `{removed, reclaimedBytes}`
@@ -199,8 +213,9 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 1. Stop the supervisor (stopped-supervisor recovery mode). There is no
    pool-control token.
 2. Confirm no supervisor PID/slot or `.active` marker remains.
-3. Run `agent/scripts/host-storage.sh --dry-run`, then `--apply`; the script
-   refuses live supervisor/marker state (exit 4).
+3. Run `agent/scripts/host-storage.sh --dry-run`, then `--apply`; add
+   `--legacy` for `/repos/<8hex>-*`/temp dirs. The script refuses live
+   supervisor/marker state (exit 4).
 4. `docker system df`; prune only dangling images/stopped containers.
 5. Verify free bytes/inodes.
 6. Restart the supervisor and monitor.
@@ -217,6 +232,7 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 | Orphan dir has a live marker/slot | Skip; log |
 | Inode exhaustion | Same as disk pressure; no new claims |
 | Cleanup after an unclean exit | Preserve until the fg-33 reaper, then sweep |
+| Legacy/temp dirs | Keep the child/startup prune; run the one-time supervisor/host `--legacy` pass; D10 retires the old path |
 
 ## Security considerations
 
@@ -252,6 +268,7 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 4. Enable idle refresh at 2h.
 5. Enable stop-spawn/emergency recycle.
 6. Tune budgets per role.
+7. Run the one-time legacy/temp sweep; keep the child/startup prune until D10.
 
 ## Deferred scope
 

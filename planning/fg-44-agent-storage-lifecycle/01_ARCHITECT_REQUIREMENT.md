@@ -25,7 +25,8 @@ accumulate:
 - an idle runtime keeps its caches and temp files for days;
 - sandbox containers and Docker logs add to the same disk;
 - there is no disk/inode watermark, role budget meter, runtime-root sweep or
-  storage events.
+  storage events; the existing random-dir/temp-dir prune remains for legacy and
+  crash-left dirs.
 
 On a 2 TB SSD this is manageable at first, but long-running fleets eventually
 hit disk-full, inode exhaustion or slow I/O. Disk pressure then looks like a
@@ -66,10 +67,10 @@ code failure.
 | FR6 | Budget meter: a periodic `du -sb` + inode count per runtime/ticket; a breach stops the workspace processes, fails the run with `storage_budget_exceeded`, quarantines the workspace and emits an event. | Fixture writes past the worker 20 GB budget; the run fails before the host fills. |
 | FR7 | Logs: the supervisor already uses Docker `json-file` rotation (`max-size=10m`, `max-file=3`); sandbox/proxy containers are created by `DockerSandboxRunner` with bounded `1m/1` log options and remain unchanged by this ticket. No unbounded log. | Verify the supervisor Compose config; assert the existing `1m/1` sandbox log options. |
 | FR8 | Images: prune dangling images only; never prune the current `vibecode-agent`/sandbox tags. | Dry-run lists only dangling images; the active tag remains. |
-| FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h, the existing retention TTL); suspicious dirs move to `orphans/` for a short TTL. | Orphan fixture is reaped after TTL; active/lease-owned dirs are kept. |
+| FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h, the existing retention TTL); a one-time legacy pass covers `/repos/<8hex>-*` and `opencode-harness-*`/`vibecode-askpass-*` temp dirs; suspicious dirs move to `orphans/` for a short TTL. The existing child/startup prune stays until the legacy dirs are gone (D10). | Orphan fixture is reaped after TTL; active/lease-owned and temp/credential dirs are handled with the same prefixes/retention; the existing tests remain. |
 | FR10 | Active safety: never delete a workspace or stop a runtime with an unexpired lease or an active harness/OpenCode process. | Active lease/harness tests skip cleanup and log why. |
 | FR11 | Metrics/events: emit workspace bytes, host free bytes/inodes, log size, refresh/cleanup counts and orphan count as fg-41 events or structured logs. | Event/log assertions for each field. |
-| FR12 | Recovery: `agent/scripts/host-storage.sh --dry-run|--apply` is a stopped-supervisor recovery path; it refuses live supervisor/marker state, cleans idle workspaces, verifies free space/inodes and never exposes a control token to agents. | Dry-run lists actions; apply frees space only with the supervisor stopped; a full-disk fixture recovers. |
+| FR12 | Recovery: `agent/scripts/host-storage.sh --dry-run|--apply` is a stopped-supervisor recovery path; it refuses live supervisor/marker state, cleans idle workspaces, includes a `--legacy` pass for `/repos/<8hex>-*` and temp dirs, verifies free space/inodes and never exposes a control token to agents. | Dry-run lists actions; apply frees space only with the supervisor stopped; the legacy/temp fixtures use the existing prefixes; a full-disk fixture recovers. |
 | FR13 | Sandbox cleanup: destroy the fg-34 sandbox before deleting its workspace; a failed destroy keeps the runtime tracked and fails closed. | Failed-destroy test keeps the dir; successful test removes it. |
 
 ## Storage budget
@@ -84,9 +85,11 @@ Use fg-43's per-runtime disk budget. The role defaults are:
 | light | 5 GB | small repos/pollers |
 
 The optional override is fg-43's `AGENT_DISK_BUDGET_GB` — one name; do not add a
-second `AGENT_WORKSPACE_BUDGET_GB` knob. `host-init.sh` writes it to
-`.env.agent-host` when set, and the supervisor passes the resolved per-runtime
-budget to the child. Without the override, the role default above is used.
+second `AGENT_WORKSPACE_BUDGET_GB` knob. fg-44 makes `host-init.sh` write it to
+`.env.agent-host` when set; it also writes `HARNESS_WORKSPACE_RETENTION_HOURS`
+when set, so the supervisor sees the operator override. The supervisor passes
+the resolved per-runtime budget to the child. Without the override, the role
+default above is used.
 
 Enforce the budget with a periodic `du -sb` plus inode count per runtime/ticket.
 On breach: stop the workspace processes, fail the run with
@@ -141,6 +144,10 @@ is a host incident.
     `storage_budget_exceeded` before the host fills.
 11. Sandbox destroy runs before workspace deletion; a failed destroy keeps the
     workspace and fails closed.
+12. The one-time legacy sweep handles `/repos/<8hex>-*` and
+    `opencode-harness-*`/`vibecode-askpass-*` temp dirs with the existing
+    prefixes/retention; the existing child/startup prune tests still pass until
+    D10 retires that path.
 
 ## Out of scope
 
