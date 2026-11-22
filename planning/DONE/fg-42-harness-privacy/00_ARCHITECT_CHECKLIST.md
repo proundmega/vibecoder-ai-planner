@@ -1,14 +1,14 @@
 ---
 id: "fg-42"
 title: "Harness Privacy and Data Governance"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-17"
+updated: "2026-11-22"
 pr: 166
-branch: "feat/fg-42-harness-privacy"
+branch: null
 depends_on: ["fg-30", "fg-34", "fg-41"]
 ---
 
@@ -22,6 +22,13 @@ depends_on: ["fg-30", "fg-34", "fg-41"]
 ## Why this ticket exists
 
 The harness sends ticket text, planning docs, source files, diffs and test output to an external model. There is no classification, redaction, provider policy, tenant isolation or retention control for that data.
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Implementation merged | PR #166 (`f6e9464`) | ☑ |
+| Verification results | `03` → Results; backend 146 suites / 1858 tests at merge | ☑ |
 
 ## Deferred register (canonical)
 

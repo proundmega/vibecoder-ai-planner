@@ -1,6 +1,6 @@
 # 00_ARCHITECT_CHECKLIST.md — Pre-Implementation Checklist
 
-**Status**: Phase 1 implemented (review hardening in progress)
+**Status**: Phase 1 implemented (review hardening in progress); Phase 2 ticketed as `fg-55`
 **Date started**: 2026-10-31
 **Date completed**: 2026-11-01 (Phase 1)
 **Author**: AI Assistant

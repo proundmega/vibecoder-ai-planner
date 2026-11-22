@@ -78,3 +78,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-16 | stacked PRs #163/#164/#165 | fg-38 | Implemented; backend 144/144 suites (1815 tests), agent 728 tests and frontend 571 tests green; pending review/merge |
+| 2026-11-22 | `65a1c9b` (#164) | fg-38 | Merged; implementation and verification matrix complete; #165 added the replay/dashboard follow-up. |

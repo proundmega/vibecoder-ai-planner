@@ -11,12 +11,12 @@ This index groups the autonomous coding harness work. It links the execution pla
 
 | ID | Directory | Status | Focus | Depends on |
 |---|---|---|---|---|
-| fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phases 2-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
+| fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phase 2 ticketed as fg-55; Phases 3-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
 | fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
 | fg-32 | `fg-32-review-feedback-loop` | Plan merged (#104); implementation pending | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
-| bt-60 | `bt-60-durable-harness-e2e-tests` | Plan merged (#111); ready for implementation (staging credentials pending) | Full harness e2e: real backend HTTP + Postgres, agent contract, disposable staging run | fg-33 (merged) |
-| fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138) | Sandbox isolation, limits, egress, secretless execution, read/grep and guarded edit/write isolation; D13 (real-Docker CI) merged (#140); D14 (freeze-and-verify sweep) merged (#139); D21-D23 merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 deployment wiring merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) with fg-39 profile plumbing in review (#161); D12, D24, D25, D26 remain; D29 is in review (#162, stacked on #161) | fg-30 Phase 1 |
+| bt-60 | `bt-60-durable-harness-e2e-tests` | Plan merged (#111); runbook updated for fg-54; staging credentials pending | Full harness e2e: real backend HTTP + Postgres, node runtime contract, disposable staging run | fg-33 (merged) |
+| fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138) | Sandbox isolation, limits, egress, secretless execution, read/grep and guarded edit/write isolation; D13 (real-Docker CI) merged (#140); D14 (freeze-and-verify sweep) merged (#139); D21-D23 merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 deployment wiring merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) with fg-39 profile plumbing merged (#161); D12, D24, D25, D26 remain; D29 merged (#162) | fg-30 Phase 1 |
 | fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
 | fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
@@ -30,14 +30,17 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-35 | `DONE/fg-35-github-app-credentials` | Merged (#143) | GitHub App installation tokens, least privilege | fg-30 Phase 1 |
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
-| fg-38 | `fg-38-harness-budgets-routing` | In progress (implementation pending merge) | Live budgets, hard stops, quotas, model routing/fallback | fg-30 Phase 1 |
-| fg-39 | `fg-39-repo-environment-profiles` | In review (#167, Slices 2 & 5) | Slice 1 merged (#161); services/health checks and the Project Settings profile editor in review; caches/flaky/per-stack images planned | fg-34 |
+| fg-38 | `DONE/fg-38-harness-budgets-routing` | Merged (#164) | Live budgets, hard stops, quotas, model routing/fallback | fg-30 Phase 1 |
+| fg-39 | `fg-39-repo-environment-profiles` | In progress (slices 1/2/5 merged #167) | Slice 1 merged (#161); services/health checks and the Project Settings profile editor merged (#167); caches/flaky/per-stack images (FR3/FR4/FR8) planned | fg-34 |
 | fg-40 | `fg-40-multi-agent-orchestration` | Planned | Roles, task graph, worktrees, handoffs, integrator | fg-33, fg-36, fg-38, fg-39 |
-| fg-41 | `fg-41-harness-observability` | In progress (implementation pending merge) | Event stream, traces, replay, dashboards, audit | fg-33 |
-| fg-42 | `fg-42-harness-privacy` | In review (#166) | Classification, redaction, provider policy, retention | fg-34, fg-41 |
+| fg-41 | `DONE/fg-41-harness-observability` | Merged (#163) | Event stream, traces, replay, dashboards, audit | fg-33 |
+| fg-42 | `DONE/fg-42-harness-privacy` | Merged (#166) | Classification, redaction, provider policy, retention | fg-34, fg-41 |
 | fg-54 | `DONE/fg-54-agent-fleet` | Merged (#179, #184, #190, #191) | Node/grant/runtime/lease identity, credential+model registry with roles, static host supervisor (one Compose stack), replicated manager service; approved clean cut is the default migration, ledgered; generated client refreshed in #190 | fg-53 |
+| fg-55 | `fg-55-human-question-loop` | Planned | Question tool → ticket question → notification → human answer → resume; doom-loop escalation/cap; in-app bell and question inbox; run outcome notifications | fg-30 Phase 1, fg-33, fg-41, fg-42, fg-54 |
 
-fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 implementation plan; the cross-cutting tickets above fill the gaps that were not specified there.
+fg-55 implements fg-30 Phase 2 (human loop); Phases 3-4 (autonomy, hardening)
+remain unticketed. The cross-cutting tickets above fill the gaps that were not
+specified there.
 
 ## Recommended order
 
@@ -47,6 +50,9 @@ fg-30 Phases 2-4 (human loop, autonomy, hardening) remain part of the fg-30 impl
 3. **fg-43** Docker agent host sizing and deployment
 4. **fg-44** agent storage lifecycle and idle refresh
 5. **fg-35** GitHub App credentials
+
+### Phase A2 - Human loop
+5b. **fg-55** question tool, notifications and doom-loop escalation (planned; prerequisite for fg-31)
 
 ### Phase B - Review loop
 6. **fg-31** reviewer harness (plan merged in #103; implementation pending)

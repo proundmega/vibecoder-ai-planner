@@ -1,13 +1,13 @@
 ---
 id: "fg-41"
 title: "Harness Observability, Replay and Audit"
-status: in_progress
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-10-31"
-updated: "2026-11-16"
-pr: null
+updated: "2026-11-22"
+pr: 163
 branch: null
 depends_on: ["fg-30", "fg-33"]
 ---
@@ -22,6 +22,13 @@ depends_on: ["fg-30", "fg-33"]
 ## Why this ticket exists
 
 The harness emits sparse logs and heartbeat steps. There is no structured per-run event stream, no trace correlation, no replay, and no immutable audit trail. Debugging a failed ticket means reading interleaved container logs.
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Implementation merged | PR #163 (`5dff931`); replay/dashboards/audit follow-up #165 (`7726a28`) | ☑ |
+| Verification results | `03` → Results; backend, agent and frontend green at merge | ☑ |
 
 ## Deferred register (canonical)
 

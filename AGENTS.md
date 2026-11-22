@@ -262,10 +262,11 @@ The bundle must contain public certificate material only, never a private key,
 is scoped to those hosts, and does not relax `Host == SNI` or any other D16
 check. The supervisor logs the trusted hosts and a SHA-256 fingerprint and
 surfaces the proxy's configured/used audit lines when the sandbox is destroyed;
-"used" is recorded only after an origin response. Do not enable Docker
-mode for untrusted repos until D14 (the
-descendant-sweep fork race) is closed, and do not treat the allowlist as a
-hard host boundary until D16 is closed.
+"used" is recorded only after an origin response. D14 (the freeze-and-verify
+descendant sweep) is merged (#139), so Docker mode can be used for untrusted
+repositories with that gate in place; do not treat the allowlist as a hard host
+boundary until D16 is closed (`sni-only` remains the default, `terminate` is
+opt-in).
 Verification and harness children receive proxy/registry variables only after
 URL userinfo is stripped, and `MAVEN_OPTS` is not inherited. Authenticated
 enterprise proxies and private npm registries must be configured at the
@@ -297,8 +298,9 @@ vulnerabilities (trivy/grype) and optionally verifies a cosign signature. CI
 scans the supervisor, sandbox and proxy images and archives the SBOMs; set
 `SANDBOX_SCAN_REQUIRED=1` in CI to make the scan mandatory.
 Phase 1 is blocking
-prompt mode and denies the `question` and `doom_loop` tools; autonomy and the
-human question loop are later phases.
+prompt mode and denies the `question` and `doom_loop` tools. The human question
+loop, in-app notifications and doom-loop escalation are planned in `fg-55`;
+until it lands, an agent must decide or fail rather than ask.
 See `planning/fg-30-autonomous-coding-harness/`.
 
 ## API

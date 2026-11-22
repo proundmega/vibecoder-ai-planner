@@ -23,11 +23,11 @@ new file. Do not duplicate `ApiServiceHarnessTest` or `harnessRuns.test.js`
 assertions.
 
 1. **Fixture helper** — `backend/src/__tests__/integration/harnessE2EFixtures.js`
-   - Create a disposable owner/project/agent/ticket with a unique suffix.
-   - Create the agent through `AgentService.create` so `api_key_hash`,
-     `api_key_hash_prefix` and expiry are all set.
+   - Create a disposable owner/project/enrolled node/worker runtime/ticket with
+     a unique suffix.
+   - Mint a node access token and return the runtime id for `X-Agent-Runtime`.
    - Create a member user + `project_memberships` row for the operator read
-     tests, a second tenant for cross-tenant tests, and an expired-key agent
+     tests, a second tenant for cross-tenant tests, and a revoked-node token
      for E5.
    - Expose idempotent cleanup; use the real `pool`.
    - *Depends on*: nothing.
@@ -52,7 +52,7 @@ assertions.
    - *Depends on*: Steps 1-2.
 
 4. **Manual staging runbook** — `05_RUNBOOK.md`
-   - Dedicated test project/repo/ticket/agent, isolated host, scoped
+   - Dedicated test project/repo/ticket/node/runtime, isolated host, scoped
      credentials.
    - Happy path + failure cases + cleanup.
    - *Depends on*: Steps 1-3 for the automated checks; manual prerequisites
@@ -74,16 +74,18 @@ Create `harnessE2EFixtures.js` following existing integration-test patterns:
 - Create:
   - owner user (`role='project_admin'`) and other owner;
   - project owned by each;
-  - agent for each owner via `AgentService.create(name, apiKey, ownerId, ...)`
-    (sets hash, prefix and expiry) or by setting both `api_key_hash` (bcrypt)
-    and `api_key_hash_prefix` (SHA-256, first 20 hex chars);
-  - an expired-key agent for E5;
+  - enrolled node plus worker runtime for each owner, with an active
+    `agent_node_grants` row; mint the node access tokens through
+    `AgentNodeService`;
+  - a revoked-node token for E5;
   - a member user plus `project_memberships` row for E14;
-  - ticket assigned to the owner, `status='in_progress'` for the happy path;
+  - ticket assigned to the runtime (`assigned_runtime_id`), `status='in_progress'`
+    for the happy path;
   - optional `backlog`/review tickets for authorization tests.
-- Return IDs and the plaintext test API keys (never real keys).
+- Return IDs and the plaintext test node tokens plus runtime IDs (never real
+  credentials).
 - Cleanup:
-  - delete test users/projects/agents/tickets by IDs;
+  - delete test users/projects/nodes/runtimes/tickets by IDs;
   - rely on `ON DELETE CASCADE` for harness runs/checkpoints/leases;
   - if a failed test leaves rows, run the cleanup SQL in `05_RUNBOOK.md`.
 - Never use existing product rows.
@@ -103,9 +105,9 @@ Required cases (details in the Verification matrix):
   after finish 404.
 - Heartbeat: 200; `agent_step`/`heartbeat_at`; wrong agent/after finish 404.
 - Finish: 200; status/`head_sha`/`pr_url`; lease deleted; idempotent second
-  finish; wrong agent 403.
-- Reads: project owner/member JWT 200; user/outside 403; super_admin 200; agent
-  own run 200, other agent 403.
+  finish; wrong runtime 403.
+- Reads: project owner/member JWT 200; user/outside 403; super_admin 200;
+  runtime own run 200, other runtime 403.
 - Phase B: publish/reconcile/dead-letter/adopt/release-ticket guards and
   idempotency.
 - Cleanup: no residual test rows.
@@ -153,18 +155,17 @@ crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
 ### `backend/src/__tests__/integration/harnessE2EFixtures.js` (CREATE)
 
 - **Exports**:
-  - `createHarnessFixture()` → `{ ownerId, projectId, agentId, agentApiKey,
-    memberUserId, ticketId, ticketIds, otherOwnerId, otherProjectId,
-    otherAgentId, otherAgentApiKey, otherTicketId, expiredAgentApiKey,
-    cleanup }`
-  - `cleanupHarnessFixture(fixture)` → deletes users/projects/agents/tickets by
-    ID; idempotent.
+  - `createHarnessFixture()` → `{ ownerId, projectId, nodeId, runtimeId,
+    nodeToken, memberUserId, ticketId, ticketIds, otherOwnerId, otherProjectId,
+    otherNodeId, otherRuntimeId, otherNodeToken, otherTicketId,
+    revokedNodeToken, cleanup }`
+  - `cleanupHarnessFixture(fixture)` → deletes users/projects/nodes/runtimes/
+    tickets by ID; idempotent.
 - **Patterns**:
   - Follow `backend/src/__tests__/integration/harnessRuns.test.js` fixture
     style.
-  - Prefer `AgentService.create(name, apiKey, ownerId, ...)`; otherwise set
-    both `api_key_hash` (bcrypt) and `api_key_hash_prefix` (SHA-256 first 20
-    hex chars). A hash-only fixture returns 401.
+  - Mint node tokens through `AgentNodeService` (prefix + hash); an arbitrary
+    token returns 401.
   - Use `RETURNING id` and parameterized SQL.
 - **Do not** delete unrelated rows; filter by IDs/suffix.
 - **Cleanup** in `try/finally` or `afterAll`; log IDs on failure for manual
@@ -179,8 +180,9 @@ crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
 - **Tests**:
   - `describe('harness HTTP e2e')` with `beforeAll` fixture and `afterAll`
     cleanup.
-  - Use `request(app).post('/api/v1/harness/runs').set('X-API-Key',
-    fixture.agentApiKey)`.
+  - Use `request(app).post('/api/v1/harness/runs')
+    .set('X-API-Key', fixture.nodeToken)
+    .set('X-Agent-Runtime', String(fixture.runtimeId))`.
   - Assert `/harness/runs`, `/leases`, `/checkpoints`, `/heartbeat`, `/finish`,
     `/publish`, `/reconcile`, `/dead-letter`, `/adopt`, `/release-ticket`.
   - DB assertions via `pool.query('SELECT ... FROM harness_runs WHERE id=$1')`.
@@ -219,16 +221,17 @@ crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
   routes (merged, #110).
 - Postgres from `docker compose`/integration config.
 - Existing split-layer tests.
-- Test project/repo/agent and provider/GitHub credentials for the manual stage.
+- Test project/repo/node/runtime and provider/GitHub credentials for the
+  manual stage.
 - No production code changes.
 
 ## Risks & edge cases
 
 1. **Reaper timing** — the reaper is interval-based; tests must invoke the
    sweep directly or poll/wait, and staging must allow the interval to elapse.
-2. **Agent key fixture** — the auth path looks up `api_key_hash_prefix` and
-   then bcrypt-compares `api_key_hash`. Use `AgentService.create`; a fixture
-   that sets only the hash returns 401.
+2. **Node token fixture** — the auth path looks up `token_prefix` and verifies
+   the stored hash. Mint the token through `AgentNodeService`; an arbitrary
+   token returns 401.
 3. **JWT project scope** — the operator route requires `OPERATOR_ROLES`
    (super_admin/project_admin/member) plus `AGENT_READ` and project
    owner/member; the `user` role must be denied. Set up project membership
@@ -257,11 +260,11 @@ original scenarios; E23-E28 cover the non-scenario requirements so every
 | Req | ID | Scenario | Layer | Expected | Phase |
 |---|---|---|---|---|---|
 | FR1 | E23 | Fixture creation and cleanup | Backend HTTP | all test rows removed; cleanup runs after failure | A |
-| FR2 | E1 | Agent starts a run for its assigned `in_progress` ticket | Backend HTTP | 201; run `running/created`; attempt 1 | A |
+| FR2 | E1 | Node runtime starts a run for its assigned `in_progress` ticket | Backend HTTP | 201; run `running/created`; attempt 1 | A |
 | FR5 | E2 | Duplicate start while run active | Backend HTTP | 409 CONFLICT; one active run | A |
-| FR4 | E3 | Wrong agent/owner or wrong ticket status | Backend HTTP | 403; no run | A |
+| FR4 | E3 | Wrong runtime/owner or wrong ticket status | Backend HTTP | 403; no run | A |
 | FR4 | E4 | JWT mutation | Backend HTTP | 403 | A |
-| FR7 | E5 | Start with invalid/expired agent key | Client/processor + route | 401; fatal; no publish | A |
+| FR7 | E5 | Start with invalid/revoked node token | Client/processor + route | 401; fatal; no publish | A |
 | FR3 | E6 | Claim lease and block another run | Backend HTTP | 201; second claim 409 | A |
 | FR3 | E7 | Renew/release lease | Backend HTTP | renew 200; renew missing/mismatched 409; release 200; release missing 404 | A |
 | FR3/FR5 | E8 | Checkpoint sequence and context columns | Backend HTTP | 201 each; `workspace_path`/`session_id`/`base_sha` populated | A |
@@ -273,13 +276,13 @@ original scenarios; E23-E28 cover the non-scenario requirements so every
 | FR4 | E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
 | FR6 | E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
 | FR7 | E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable; reaper reconciles | A/B |
-| FR7 | E17 | Key expired/revoked mid-run | Processor/manual | fatal; no push/PR; add a focused processor test or keep manual-only (D7) | A/manual |
+| FR7 | E17 | Node token revoked mid-run | Processor/manual | fatal; no push/PR; add a focused processor test or keep manual-only (D7) | A/manual |
 | FR7 | E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery | A |
 | FR8 | E19 | Crash/restart mid-prompt/verify/publish | Manual | startup recovery skips fresh runs, fails/releases stale runs without evidence, adopts published runs; reaper reconciles terminal runs; no duplicate PR | B |
 | FR8 | E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
 | FR8 | E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
 | FR8/NFR2 | E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
-| FR9 | E24 | No production data used | Manual/review | dedicated test project/repo/ticket/agent; scoped credentials revoked; cleanup verified | A |
+| FR9 | E24 | No production data used | Manual/review | dedicated test project/repo/ticket/node/runtime; scoped credentials revoked; cleanup verified | A |
 | FR10 | E25 | Index updated | Docs | `PENDING.txt` and roadmap point to bt-60 and show the satisfied fg-33 dependency | A |
 | NFR1 | E26 | Test-only change | Review | no production source, migration or behavior change | A |
 | NFR2 | E27 | Suites and lint | CI | backend unit + integration, agent `mvn test`, lint pass | A/B |

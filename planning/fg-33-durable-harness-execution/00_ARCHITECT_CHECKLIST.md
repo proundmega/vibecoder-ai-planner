@@ -44,11 +44,11 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Structured harness event stream and replay | fg-30 | Observability | fg-41-harness-observability | open |
-| D2 | Run workspaces inside an isolated sandbox | fg-34 | Security | fg-34-harness-sandbox | open |
+| D1 | Structured harness event stream and replay | fg-30 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
+| D2 | Run workspaces inside an isolated sandbox | fg-34 | Security | fg-34-harness-sandbox | done (fg-34 #126-#132) |
 | D3 | Parallel worktrees and multi-agent leases | fg-40 | Agent | fg-40-multi-agent-orchestration | open |
 | D4 | Ship run/lease events to log aggregation | bp-106 | Observability | bp-106 follow-up | open |
-| D5 | Budget-aware retry policy | fg-38 | Billing | fg-38-harness-budgets-routing | open |
+| D5 | Budget-aware retry policy | fg-38 | Billing | DONE/fg-38-harness-budgets-routing | done (#164) |
 | D6 | CI process-kill matrix and live-session resume | self | Testing | none | open |
 | D7 | Scheduled workspace pruning during long-lived runs | self | Storage | fg-44-agent-storage-lifecycle | open |
 | D8 | Full workspace inventory (sizes/ages/disk metrics) | self | Storage | fg-44-agent-storage-lifecycle | open |

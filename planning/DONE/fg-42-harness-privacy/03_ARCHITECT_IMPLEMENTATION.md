@@ -97,3 +97,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-17 | `64a409c` (#166) | Backend 146 suites / 1858 tests; Agent 788 tests (9 skipped); Frontend 62 files / 575 tests; real-Postgres integration 17 suites / 159 tests | Review fixes: key-aware redacted export, deterministic export ordering, offset pagination (independent page snapshots, D10), member-safe privacy panel, PII log redaction, transactional/full-snapshot policy audit, provider-start audit with dedupe, dead-letter/checkpoint redaction. On-disk workspace/artifact retention is deferred in `00` D8. |
+| 2026-11-22 | `f6e9464` (#166) | fg-42 | Merged; privacy policy, redaction, retention/deletion and the tenant-scoped privacy API are complete. |
