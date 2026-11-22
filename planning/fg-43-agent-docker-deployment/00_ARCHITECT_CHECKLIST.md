@@ -50,10 +50,10 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Queue-based autoscaling and dynamic per-role counts: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts (e.g. 48 threads, 6 workers + 1 planner at 90%, then fill spare capacity). | fg-30/self | Infrastructure | fg-38-harness-budgets-routing follow-up or a dedicated autoscaling ticket | open |
+| D1 | Queue-based autoscaling and dynamic per-role counts: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts (e.g. 48 threads, 6 workers + 1 planner at 90%, then fill spare capacity). | fg-30/self | Infrastructure | `fg-43-D1` (PENDING) | open |
 | D2 | Durable leases across restarts | fg-33 | Reliability | fg-33-durable-harness-execution | open |
 | D3 | Sandboxed agent containers | fg-34 | Security | fg-34-harness-sandbox | open |
 | D4 | Multi-host/multi-agent orchestration | fg-40 | Agent | fg-40-multi-agent-orchestration | open |
 | D5 | Storage lifecycle and idle refresh | fg-44 | Infrastructure | fg-44-agent-storage-lifecycle | open |
-| D6 | Per-child cgroups and PID limits | self | Security | fg-34/supervisor follow-up | open |
-| D7 | Backend `/health` startup gate | self | Reliability | separate supervisor/lifecycle ticket | open |
+| D6 | Per-child cgroups and PID limits | self | Security | `fg-43-D6` (PENDING) | open |
+| D7 | Backend `/health` startup gate | self | Reliability | `fg-43-D7` (PENDING) | open |

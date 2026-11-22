@@ -69,7 +69,20 @@ effort = low
 project = <project_id>
 ```
 
-3. Start the supervisor with the node settings:
+3. Size the declaration before starting. On a Docker host this also writes
+   `.env.agent-host`; for the manual `java -jar` path below, apply the same
+   `SUPERVISOR_*`/`AGENT_HOST_*` values to the environment:
+
+```bash
+AGENT_INI_PATH=agent.ini \
+agent/scripts/host-init.sh --check
+```
+
+`host-init.sh` fails closed if the declared fleet does not fit. Re-run it after
+changing a `count`; the supervisor also enforces `AGENT_HOST_MAX_RUNTIMES`
+(default 50).
+
+4. Start the supervisor with the node settings:
 
 ```bash
 BACKEND_URL='https://planner.example.com' \
