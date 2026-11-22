@@ -42,7 +42,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D1 | Quality metrics from evaluation | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
 | D2 | Cost/budget metrics | fg-38 | Billing | fg-38-harness-budgets-routing | open |
 | D3 | Structured harness events and replay | fg-41 | Observability | fg-41-harness-observability | open |
-| D4 | Readiness and blocked-ticket metrics | fg-45 | Quality | fg-45-ticket-quality-gates | open |
+| D4 | Readiness and blocked-ticket metrics | fg-45 | Quality | DONE/fg-45-ticket-quality-gates | open |
 
 ## Important design decisions
 

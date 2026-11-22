@@ -43,7 +43,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Run recovery with sandbox state | fg-33 | Reliability | fg-33-durable-harness-execution | open |
+| D1 | Run recovery with sandbox state | fg-33 | Reliability | DONE/fg-33-durable-harness-execution | open |
 | D2 | Short-lived GitHub App tokens instead of PATs | fg-35 | Security | fg-35-github-app-credentials | resolved (#143) |
 | D3 | Repo-specific images and caches | fg-39 | Infrastructure | fg-39-repo-environment-profiles | open |
 | D4 | Data redaction before model calls | fg-42 | Privacy | DONE/fg-42-harness-privacy | done (#166) |

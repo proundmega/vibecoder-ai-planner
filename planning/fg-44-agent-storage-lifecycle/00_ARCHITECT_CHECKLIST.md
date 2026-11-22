@@ -75,10 +75,10 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Durable leases across restarts | fg-33 | Reliability | fg-33-durable-harness-execution | done (#110) |
+| D1 | Durable leases across restarts | fg-33 | Reliability | DONE/fg-33-durable-harness-execution | done (#110) |
 | D2 | Sandboxed workspaces | fg-34 | Security | fg-34-harness-sandbox | done for the slices fg-44 needs; fg-34 D12/D24-D26 hardening remains |
 | D3 | Per-agent worktrees | fg-40 | Agent | fg-40-multi-agent-orchestration | open |
-| D4 | Host sizing and limits | fg-43 | Infrastructure | fg-43-agent-docker-deployment | done (#197) |
+| D4 | Host sizing and limits | fg-43 | Infrastructure | DONE/fg-43-agent-docker-deployment | done (#197) |
 | D5 | Read-only shared dependency cache (npm/Maven) | self | Performance | after the pilot | open |
 | D6 | Object-store migration and backup/restore of workspaces | self | Storage | future | open |
 | D7 | Cross-host workspace migration | self | Infrastructure | fg-40 | open |
