@@ -13,19 +13,32 @@ Tickets that have planning docs in `planning/` but have NOT been implemented yet
 > tickets were merged while their docs still said "planned" (bp-120, bp-121, bp-123, fg-14);
 > all four are reconciled below as of 2026-11-03.
 
-## Current focus (as of 2026-11-06)
+## Current focus (as of 2026-11-22)
 
-| Order | Ticket | State | Blocker |
-|-------|--------|-------|---------|
-| 1 | **fg-34** — harness sandbox | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138); D21-D23 merged (#144) | Sandbox runtime, egress allowlist, OpenCode bash bridge, prompt-injection defenses, supply-chain hardening, artifact redaction, read/grep isolation and guarded edit/write are merged; D13 (real-Docker CI) merged (#140); D14 (freeze-and-verify descendant sweep) merged (#139); D21-D23 (write locks, secure-stream opt-in, FIFO rejection) merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) and its fg-39 profile plumbing merged (#161); D12, D24, D25, D26 remain; D29 merged (#162). |
-| 2 | **bt-60** — durable-harness e2e | Ready, blocked | Disposable staging project/repo/node/runtime, provider key and GitHub App installation. |
-| 3 | **fg-31** — automatic review harness | Blocked | fg-55 (Phase 2) and fg-32. |
-| 4 | **fg-32** — review feedback loop | Blocked | fg-31, fg-30, fg-33. |
-| 5 | **fg-55** — human question loop | Planned | Phase 2 question/notification loop; Phases 3-4 (autonomy, hardening) still need ticket IDs. |
+**Pilot goal:** define a ticket in a disposable project, wait, and get either a
+PR-ready notification or a question. Work this order; it is the canonical queue.
 
-`fg-34` (sandbox) has slices 1-2 merged (#126, #127) and slices 3a-3d merged (#128, #129, #130, #132), including read/grep isolation; D20 (guarded edit/write) merged (#138); D13 (real-Docker CI) merged (#140); D14 (freeze-and-verify descendant sweep) merged (#139); D21-D23 (guarded-write locks, secure-file opt-in, FIFO rejection) merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) and its fg-39 profile plumbing merged (#161); D12, D24, D25, D26 remain; D29 merged (#162). `fg-35` (GitHub App credentials) depends only on fg-30 Phase 1 and is merged (#143). `fg-36` onward have unmet
-prerequisites, and `fg-46` is deferred. Do not start a roadmap suite until its
-"Depends on" column is satisfied.
+| Order | Ticket | State | Exit / why |
+|-------|--------|-------|------------|
+| 1 | **fg-55** — human question loop and notifications | Planned | Question tool → ticket question → bell/inbox → answer → resume; doom-loop escalation/cap. Exit: a run asks, you answer, it resumes; PR/failure alerts appear. |
+| 2 | **fg-45** — ticket quality gates | Planned | Definition of Ready, acceptance criteria, assumptions/risk. Exit: tickets are specific enough for an unattended run. |
+| 3 | **fg-43** — Docker agent deployment | Planned | One-command host, role profiles, per-container limits. Exit: a node you can leave running. |
+| 4 | **fg-44** — agent storage lifecycle | Planned | Per-agent workspaces, cleanup, disk/inode watermarks. Exit: unattended runs do not fill the host. |
+| 5 | **bt-60** — durable-harness e2e | Plan merged (#111); runbook updated for fg-54; staging credentials pending | Run the disposable staging path and failure drills. Exit: one clean end-to-end run with evidence. |
+| 6 | **fg-31** — automatic review harness | Plan merged (#103) | Optional. Only if you stop reviewing PRs yourself. |
+| 7 | **fg-36** — merge lifecycle | Planned | Optional. Only if the agent should update/merge branches. |
+| 8 | **fg-37 / fg-52 / fg-40 / fg-46** | Planned | Later: evaluation, auto-merge, multi-agent, flow metrics. |
+
+**Already closed:** fg-38 (#164), fg-41 (#163), fg-42 (#166).
+
+**Sequencing note:** fg-45 currently lists fg-31 as a dependency. The pilot uses
+human review (no fg-31), so before starting fg-45 either narrow that dependency
+to its fg-31 integration slice or move fg-45 after fg-31.
+
+**Background, not on the pilot critical path:** fg-34 remains in progress for
+D12/D24/D25/D26 hardening; fg-39 remains in progress for FR3 (D7), FR4 (D9)
+and FR8 (D6), which are optional for the first repo. fg-32 is blocked by
+fg-31.
 
 ## Suggested Implementation Order
 

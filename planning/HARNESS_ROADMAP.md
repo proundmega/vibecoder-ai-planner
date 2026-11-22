@@ -44,6 +44,10 @@ specified there.
 
 ## Recommended order
 
+> **Pilot focus (2026-11-22):** fg-55 → fg-45 → fg-43 → fg-44 → bt-60, with
+> fg-31/fg-36 optional and fg-37/fg-52/fg-40/fg-46 later. The canonical queue,
+> states and exit criteria live in `PENDING.txt` → **Current focus**.
+
 ### Phase A - Reliability and security foundations
 1. **fg-33** durable execution and recovery (validation: **bt-60**; fg-33 slices 1-3 merged, Phase A/B unblocked)
 2. **fg-34** sandbox and supply-chain security
