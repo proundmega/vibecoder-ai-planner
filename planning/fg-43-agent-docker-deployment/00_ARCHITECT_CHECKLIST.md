@@ -6,10 +6,10 @@ priority: "P1"
 effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
-updated: "2026-11-03"
+updated: "2026-11-22"
 pr: null
 branch: null
-depends_on: ["fg-33", "fg-34", "fg-54"]
+depends_on: ["fg-33", "fg-54"]
 ---
 
 # 00 — Agent Docker Deployment and Host Sizing (fg-43)
@@ -19,7 +19,7 @@ depends_on: ["fg-33", "fg-34", "fg-54"]
 
 **Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
 
-## Relationship to fg-54 (planned)
+## Relationship to fg-54 (merged)
 
 `fg-54` replaces the container-per-agent pool with a **supervisor** that runs
 runtimes in one host stack. This ticket keeps the host sizing, reservations,
@@ -31,6 +31,9 @@ poller" profiles become worker/planner variants.
 
 `01` FR4, FR7 and FR9 are read with this replacement; the sizing formula and
 safety rules are unchanged.
+
+Sandboxed agent containers remain fg-34's scope (D3). fg-34 hardening is
+recommended for a production host but is not a hard dependency of this ticket.
 
 ## Why this ticket exists
 

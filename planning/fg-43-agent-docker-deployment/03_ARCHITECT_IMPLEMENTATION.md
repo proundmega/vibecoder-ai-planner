@@ -35,7 +35,7 @@ To be filled in when implementation starts.
 
 ## Dependencies
 
-- fg-33, fg-34
+- fg-33, fg-54 (fg-34 recommended)
 
 ## Verification matrix (canonical)
 
