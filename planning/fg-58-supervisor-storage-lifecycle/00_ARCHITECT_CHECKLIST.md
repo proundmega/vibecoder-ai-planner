@@ -7,7 +7,7 @@ effort: "Large"
 scope: "Agent"
 created: "2026-11-22"
 updated: "2026-11-22"
-pr: null
+pr: 212
 branch: "feat/fg-58-supervisor-storage-lifecycle"
 depends_on: ["fg-44", "fg-43", "fg-54"]
 ---
@@ -32,7 +32,7 @@ event path remain here.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Split recorded | fg-44 03/00; this suite | ☑ |
-| Implementation merged | pending | ☐ |
+| Implementation in progress | PR #212 | ☐ |
 | Verification results | `03` → Results | ☐ |
 
 ## Deferred register (canonical)
