@@ -568,6 +568,13 @@ public final class OpenCodeClient implements HarnessClient {
         Duration budget = config == null || config.maxDuration() == null
             ? Duration.ofMinutes(45)
             : config.maxDuration();
+        // A human answer may arrive after the wall-clock budget has been paused
+        // for up to HARNESS_QUESTION_TIMEOUT_MINUTES. Keep the prompt connection
+        // alive for that wait instead of cutting it off at the active budget.
+        if (config != null && config.questionLoop() != null
+            && config.questionLoop().enabled()) {
+            budget = budget.plus(config.questionLoop().timeout());
+        }
         call.timeout().timeout(budget.toMillis(), TimeUnit.MILLISECONDS);
     }
 
