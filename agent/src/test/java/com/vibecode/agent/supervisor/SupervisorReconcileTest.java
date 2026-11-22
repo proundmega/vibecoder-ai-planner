@@ -325,6 +325,9 @@ class SupervisorReconcileTest {
             Thread.sleep(100);
             assertEquals(0, launcher.launchCount.get(),
                 "no child may spawn while unhealthy");
+            supervisor.reconcile();
+            assertEquals(0, launcher.launchCount.get(),
+                "a direct reconcile (SIGHUP path) must also pause while unhealthy");
 
             healthy.set(true);
             waitFor(() -> launcher.launchCount.get() == 1, 2_000);

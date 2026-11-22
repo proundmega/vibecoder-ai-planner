@@ -42,8 +42,9 @@ unhealthy, logs once, and waits with exponential backoff (base interval,
 doubling up to the max). Success resets the interval and logs recovery. Both
 the scheduled declaration/retry tick and `Supervisor.runLoop()`'s reconcile
 tick check `isHealthy()` and skip while the backend is down, so neither spawns
-a missing child against an unavailable API. Existing healthy children keep
-running. The monitor never stops the supervisor.
+a missing child against an unavailable API. Direct `Supervisor.reconcile()`
+callers (including the SIGHUP reload path) also honor the gate. Existing
+healthy children keep running. The monitor never stops the supervisor.
 `SUPERVISOR_HEALTH_REQUIRED=false` disables monitoring along with the startup
 gate.
 

@@ -25,9 +25,6 @@ final class BackendHealthGate {
     static final String HEALTH_PATH = "/api/health";
 
     private static final Logger log = LoggerFactory.getLogger(BackendHealthGate.class);
-    private static final HttpClient CLIENT = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build();
 
     private BackendHealthGate() {
     }
@@ -110,7 +107,8 @@ final class BackendHealthGate {
             probe(url, Duration.ofSeconds(5));
             return true;
         } catch (IOException | RuntimeException e) {
-            log.debug("Backend health monitor probe failed for {}: {}", url, e.getMessage());
+            log.debug("Backend health monitor probe failed for {}: {}",
+                safeUrl(url), e.getMessage());
             return false;
         }
     }
@@ -179,7 +177,13 @@ final class BackendHealthGate {
             .build();
         HttpResponse<Void> response;
         try {
-            response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
+            // Bind connect and request timeouts to the remaining startup budget;
+            // a static 5s connect timeout could overshoot a short configured
+            // SUPERVISOR_HEALTH_TIMEOUT_SECONDS.
+            HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(requestTimeout)
+                .build();
+            response = client.send(request, HttpResponse.BodyHandlers.discarding());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Backend health check interrupted", e);

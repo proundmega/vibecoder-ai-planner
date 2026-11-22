@@ -43,8 +43,9 @@ read once at startup; a missing/invalid value falls back to the defaults.
 interval, doubles on each consecutive failure up to the max, and resets on
 success. `SupervisorMain` skips the declaration/retry tick while unhealthy and
 sets `Supervisor.setHealthGate(monitor::isHealthy)` so the main reconcile loop
-does not spawn a missing child. The monitor is closed in the run loop's
-`finally` and is created only after auth/declaration succeed.
+and direct `reconcile()` callers (SIGHUP reload) do not spawn a missing child.
+The monitor is closed in the run loop's `finally` and is created only after
+auth/declaration succeed.
 
 ## 4. Configuration
 

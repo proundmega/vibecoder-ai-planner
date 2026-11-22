@@ -101,6 +101,12 @@ assert_contains "$ENV_FILE" "AGENT_RUNTIME_HEAP_MB=768" "writes the child heap"
 assert_contains "$ENV_FILE" "SUPERVISOR_MEMORY_BUDGET_MB=5376" "budget is declared x heap"
 assert_contains "$ENV_FILE" "SUPERVISOR_MEMORY_LIMIT=7G" "container memory covers the heap budget"
 assert_contains "$ENV_FILE" "SUPERVISOR_CPUS=7.00" "container cpus is the orchestration limit"
+assert_contains "$ENV_FILE" "SUPERVISOR_HEALTH_REQUIRED=true" "health gate defaults on"
+assert_contains "$ENV_FILE" "SUPERVISOR_HEALTH_TIMEOUT_SECONDS=120" "health gate timeout is written"
+assert_contains "$ENV_FILE" "SUPERVISOR_HEALTH_INTERVAL_SECONDS=2" "health gate interval is written"
+assert_contains "$ENV_FILE" "SUPERVISOR_HEALTH_MONITOR_ENABLED=true" "health monitor defaults on"
+assert_contains "$ENV_FILE" "SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS=10" "health monitor interval is written"
+assert_contains "$ENV_FILE" "SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS=60" "health monitor backoff is written"
 assert_contains "$ENV_FILE" "SANDBOX_CPUS=2.0" "writes sandbox CPU"
 assert_contains "$ENV_FILE" "SANDBOX_MEMORY_MB=2048" "writes sandbox RAM"
 assert_contains "$ENV_FILE" "SANDBOX_DISK_MB=5120" "writes sandbox disk"
@@ -271,6 +277,7 @@ exit 0
 EOS
 cat > "$TMP_DIR/bin/curl" <<'EOS'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_CURL_LOG:-/dev/null}"
 exit 0
 EOS
 chmod +x "$TMP_DIR/bin/docker" "$TMP_DIR/bin/curl"
@@ -283,6 +290,7 @@ SANDBOX_ENV=(
     BACKEND_URL=http://backend.test
     COMPOSE_PROJECT_NAME=fg43-test
     FAKE_DOCKER_LOG="$TMP_DIR/docker.log"
+    FAKE_CURL_LOG="$TMP_DIR/curl.log"
     PATH="$TMP_DIR/bin:$PATH"
 )
 if env "${SANDBOX_ENV[@]}" bash "$HOST_INIT" --yes >"$TMP_DIR/sandbox.out" 2>&1; then
@@ -295,6 +303,7 @@ assert_contains "$TMP_DIR/docker.log" "--env-file" "compose receives the env fil
 assert_contains "$TMP_DIR/docker.log" "agent/docker-compose.sandbox.yml" "sandbox overlay is included"
 assert_contains "$TMP_DIR/docker.log" "AGENT_INI_PATH=$TMP_DIR/agent.ini" "compose receives the canonical ini path"
 assert_contains "$TMP_DIR/sandbox.out" "Backend healthy" "health wait succeeds"
+assert_contains "$TMP_DIR/curl.log" "/api/health" "health wait uses /api/health"
 
 # Docker mode without the host workspace root fails before writing.
 SANDBOX_MISSING=(

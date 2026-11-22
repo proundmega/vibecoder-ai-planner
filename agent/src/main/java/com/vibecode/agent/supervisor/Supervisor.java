@@ -143,6 +143,12 @@ public final class Supervisor implements AutoCloseable {
         synchronized (lock) {
             ensureOpen();
             this.config = desired;
+            // fg-56: direct callers (SIGHUP reload, manual reconcile) also
+            // honor the health gate, not only runLoop().
+            if (!healthGate.getAsBoolean()) {
+                log.debug("Backend is unhealthy; reconcile paused");
+                return;
+            }
             List<RuntimeConfig.RuntimeSlot> slots = activeSlots(desired);
             Map<String, RuntimeConfig.RuntimeSlot> desiredByName = byName(slots);
 
