@@ -50,11 +50,14 @@ non-blocking finding goes to the owning suite's deferred register or the
 and no known storage, health-gate or question-loop regressions.
 
 Review defects already fixed and covered by regression tests are not open work:
-fg-55 permission-answer mapping, runtime-scoped reads, JWT run-question scoping,
-terminal-run answers and doom-loop counting; fg-43 profile/light sizing, relative
-`AGENT_INI_PATH`, the heap budget, sandbox overlay, docs and the 68-test
-evidence. The fg-45 `04`/status closeout and the fg-44 spec are tracked in
-#205/#204.
+
+- **fg-55:** `planning/fg-55-human-question-loop/03_ARCHITECT_IMPLEMENTATION.md`
+  → Results; `OpenCodeClientTest`, `api-questions.test.js`,
+  `DoomLoopDetectorTest`.
+- **fg-43:** `planning/fg-43-agent-docker-deployment/03_ARCHITECT_IMPLEMENTATION.md`
+  → Results; `host-init.test.sh`, `SupervisorCapacityTest`, `RuntimeConfigTest`.
+
+The fg-45 `04`/status closeout and the fg-44 spec are tracked in #205/#204.
 
 ## Definition of done (pilot)
 

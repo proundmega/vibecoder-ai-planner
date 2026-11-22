@@ -6,8 +6,9 @@
 
 > **Status:** this is the **pre-implementation specification**. The merged code
 > and `03` are the as-built contract; §0 records the material deviations that
-> landed during implementation. Do not read §1/§2/§5/§7/§9 as a literal
-> as-built reference.
+> landed during implementation. Do not read §2/§7 as a literal as-built
+> reference; §1/§5/§9 were updated to the merged contract and §0 lists the
+> deviations.
 
 ## 0. As-built deviations
 
