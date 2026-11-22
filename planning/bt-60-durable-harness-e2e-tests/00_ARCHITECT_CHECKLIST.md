@@ -1,7 +1,7 @@
 ---
 id: "bt-60"
 title: "Durable Harness End-to-End Tests"
-status: in_review
+status: in_progress
 priority: "P1"
 effort: "Medium"
 scope: "Both"
@@ -46,7 +46,7 @@ now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #111 | ☑ |
-| Phase A implemented | PR #198 (in review); fixes the usage-flush defect found by E12 | ☑ |
+| Phase A implemented | PR #198, merged as `19cfc33`; fixes the usage-flush defect found by E12 | ☑ |
 | Phase B staged | pending — disposable repo, provider key and GitHub App installation required | ☐ |
 | Verification results | `03` Results, 2026-11-22 (Phase A) | ☑ |
 
@@ -68,7 +68,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |
 | D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
 | D11 | Redaction and retention for captured test artifacts | fg-42 | Privacy | DONE/fg-42-harness-privacy | done (#166) |
-| D12 | Harness usage flush failed with `could not determine data type of parameter $1`, leaving `artifacts_finalized_at` NULL and the reaper retrying forever (found by Phase A E12) | self | Reliability | PR #200 (separate production fix) | in review (#200) |
+| D12 | Harness usage flush failed with `could not determine data type of parameter $1`, leaving `artifacts_finalized_at` NULL and the reaper retrying forever (found by Phase A E12) | self | Reliability | PR #200 (separate production fix) | done (#200, `865565e`) |
 
 ## Decisions needed from the user
 
