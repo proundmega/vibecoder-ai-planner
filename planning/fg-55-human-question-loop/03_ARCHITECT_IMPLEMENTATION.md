@@ -126,5 +126,5 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `c953174` (PR #195) | backend 152/1781, integration 19/139, agent 920 (10 skipped), frontend 68/589 + typecheck, ESLint, `planning/check-planning.js` | Implemented the opt-in question loop: migration 060, question/notification services and routes, OpenCode config/flag, question bridge, budget pause/resume, doom-loop detector, recovery expiry, bell/inbox/ticket card. `HARNESS_QUESTION_LOOP` defaults off, so flag-off behavior matches Phase 1. Reply endpoint assumption recorded in `04` §9; it fails closed when the pinned server does not support it. |
+| 2026-11-22 | `c953174` (PR #195) | backend 152/1781, integration 19/140, agent 920 (10 skipped), frontend 68/589 + typecheck, ESLint, `planning/check-planning.js` | Implemented the opt-in question loop: migration 060, question/notification services and routes, OpenCode config/flag, question bridge, budget pause/resume, doom-loop detector, recovery expiry, bell/inbox/ticket card. `HARNESS_QUESTION_LOOP` defaults off, so flag-off behavior matches Phase 1. Reply endpoint assumption recorded in `04` §9; it fails closed when the pinned server does not support it. |
 | — | — | — | Pilot drill in the fg-54 runbook not yet executed (staging). |
