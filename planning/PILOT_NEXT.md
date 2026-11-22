@@ -21,6 +21,9 @@ staging-blocked.
 | 4 | First real pilot run | fg-54 runbook: mint → enroll → declare → sandbox → build → question loop → PR → review → merge | One clean end-to-end run with evidence; the question is answered and resumed; readiness warnings are visible |
 | 5 | Post-pilot | fg-46 observability; optional fg-31/fg-36; fg-51/fg-52; deferred follow-ups | Choose the next autonomy tier; no orphaned workspaces |
 
+Each milestone closes with a defect triage. Blocking findings stop the
+milestone; non-blocking findings follow the intake below.
+
 ## Dependencies and blockers
 
 - **Staging credentials:** a disposable repository, provider key and GitHub
@@ -38,12 +41,27 @@ staging-blocked.
 - **Host sizing:** run `agent/scripts/host-init.sh` for the declared fleet and
   keep the 7-runtime reference case as the baseline.
 
+## Defect intake
+
+Every defect found during a milestone follows the repo bug-fix protocol: add a
+regression test, then fix it. A blocking defect stops the milestone; a
+non-blocking finding goes to the owning suite's deferred register or the
+`FUTURE_IDEAS.txt` intake. The pilot exit requires zero open blocker defects
+and no known storage, health-gate or question-loop regressions.
+
+Review defects already fixed and covered by regression tests are not open work:
+fg-55 permission-answer mapping, runtime-scoped reads, JWT run-question scoping,
+terminal-run answers and doom-loop counting; fg-43 profile/light sizing, relative
+`AGENT_INI_PATH`, the heap budget, sandbox overlay, docs and the 68-test
+evidence. The fg-45 `04`/status closeout and the fg-44 spec are tracked in
+#205/#204.
+
 ## Definition of done (pilot)
 
 A real ticket runs in a sandbox, asks a question, gets a human answer, opens a
 PR, is reviewed and merged. The run, question, review and merge evidence are
 recorded; storage stays within the watermarks; the health gate and readiness
-warnings are visible.
+warnings are visible. No open blocker defects remain.
 
 ## Deferred (not blocking the pilot)
 
