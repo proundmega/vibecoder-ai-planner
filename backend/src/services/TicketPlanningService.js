@@ -3,8 +3,8 @@ const { pool } = require('../db');
 const Ticket = require('../models/ticket');
 const TemplateService = require('./TemplateService');
 const TicketReadinessService = require('./TicketReadinessService');
-const ProjectAccessService = require('./ProjectAccessService');
-const { NotFoundError, ValidationError, PlanningStatusError } = require('../errors/HttpError');
+const logger = require('../utils/logger');
+const { NotFoundError, ValidationError, PlanningStatusError, ForbiddenError } = require('../errors/HttpError');
 
 class TicketPlanningService {
   async list(ticketId, _userId) {
@@ -131,7 +131,6 @@ class TicketPlanningService {
   async applyTemplate(ticketId, templateName, userId, role = 'member') {
     const ticket = await Ticket.findById(ticketId);
     if (!ticket) throw new NotFoundError('Ticket not found');
-    await ProjectAccessService.assertProjectMember(userId, ticket.projectId, { role });
 
     const client = await pool.connect();
     try {
@@ -186,11 +185,22 @@ class TicketPlanningService {
 
       const fileContents = {};
       for (const fileDef of templateFiles) fileContents[fileDef.key] = getContent(fileDef.key);
-      await TicketReadinessService.seedCriteriaFromPlanning(ticketId, fileContents, {
-        type: 'user',
-        userId,
-        role,
-      });
+      // Seeding is best-effort: applying a template is authorized by the
+      // route (JWT or planner grant), and a member-scoped criteria seed must
+      // not turn a successful template write into a partial failure. Explicit
+      // criteria writes still enforce project membership.
+      try {
+        await TicketReadinessService.seedCriteriaFromPlanning(ticketId, fileContents, {
+          type: 'user',
+          userId,
+          role,
+        });
+      } catch (error) {
+        if (!(error instanceof ForbiddenError)) throw error;
+        logger.warn(
+          `[readiness] skipped criteria seed for ticket ${ticketId}: ${error.message}`
+        );
+      }
       await TicketReadinessService.refreshReadyState(ticketId, { type: 'user', userId, role });
       return templateFiles;
     } catch (error) {

@@ -23,7 +23,12 @@ class TicketReadinessController {
     // same capability so the panel does not offer controls that return 403.
     let canEditCriteria = false;
     const userId = ProjectAccessService.actorUserId(req.user || {});
-    if (userId && readiness.projectId) {
+    // The write path uses assertProjectMember(), which explicitly bypasses
+    // super_admin. The capability flag must use the same policy or the UI hides
+    // controls the API accepts.
+    if (req.user?.role === 'super_admin') {
+      canEditCriteria = true;
+    } else if (userId && readiness.projectId) {
       canEditCriteria = await ProjectAccessService.isProjectMember(userId, readiness.projectId);
     }
     res.json({ success: true, data: { ...readiness, canEditCriteria } });

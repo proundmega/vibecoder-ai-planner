@@ -204,6 +204,16 @@ describe('TicketPlanningService', () => {
       expect(updateCalls[0][1]).toEqual(['my-custom-template', 'ticket-1']);
     });
 
+    it('does not re-check membership for a planner-granted agent actor', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+      const ProjectAccessService = require('../services/ProjectAccessService');
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'simple', 'runtime-owner', 'agent');
+
+      expect(ProjectAccessService.assertProjectMember).not.toHaveBeenCalled();
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    });
+
     it('should throw NotFoundError for non-existent custom template', async () => {
       const Ticket = require('../models/ticket');
       Ticket.findById = jest.fn().mockResolvedValue({ id: 't1', project_id: 1, title: 'Test' });

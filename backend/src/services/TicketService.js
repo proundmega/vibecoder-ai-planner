@@ -23,9 +23,11 @@ class TicketService {
     const hasCriteria = Array.isArray(options.acceptanceCriteria)
       && options.acceptanceCriteria.length > 0;
 
-    // Validate every scoped option BEFORE creating the draft. Otherwise a 403
-    // after Ticket.create() leaves an orphan draft for a rejected request.
-    if (hasCriteria || options.template) {
+    // Validate every member-scoped option BEFORE creating the draft. Otherwise
+    // a 403 after Ticket.create() leaves an orphan draft for a rejected
+    // request. Template application keeps its pre-existing create policy; the
+    // optional criteria seed is best-effort and does not fail the create.
+    if (hasCriteria) {
       await ProjectAccessService.assertProjectMember(userId, projectId, { role });
     }
     if (options.smallFix && options.smallFix.reason) {

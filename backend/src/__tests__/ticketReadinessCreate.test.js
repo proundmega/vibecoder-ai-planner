@@ -121,20 +121,20 @@ describe('fg-45 permissive ticket creation', () => {
     expect(TicketReadinessService.addCriteria).not.toHaveBeenCalled();
   });
 
-  test('a template seed validates the actor role before the parent insert', async () => {
-    ProjectAccessService.assertProjectMember.mockRejectedValueOnce(
-      Object.assign(new Error('Not a project member'), { statusCode: 403 })
+  test('template-only creation keeps the pre-existing create policy (no membership gate)', async () => {
+    await TicketService.create('1', 'Title', 'description', 'medium', '900', {
+      template: 'specification',
+      role: 'project_admin',
+    });
+
+    expect(ProjectAccessService.assertProjectMember).not.toHaveBeenCalled();
+    expect(Ticket.create).toHaveBeenCalled();
+    expect(TicketPlanningService.applyTemplate).toHaveBeenCalledWith(
+      '10',
+      'specification',
+      '900',
+      'project_admin'
     );
-
-    await expect(
-      TicketService.create('1', 'Title', 'description', 'medium', '900', {
-        template: 'specification',
-        role: 'project_admin',
-      })
-    ).rejects.toMatchObject({ statusCode: 403 });
-
-    expect(Ticket.create).not.toHaveBeenCalled();
-    expect(TicketPlanningService.applyTemplate).not.toHaveBeenCalled();
   });
 
   test('an unknown project still fails before creation', async () => {
