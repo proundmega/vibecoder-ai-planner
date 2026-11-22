@@ -37,6 +37,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import {
   getUnreadCount,
   listNotifications,
@@ -46,6 +47,7 @@ import {
 
 const POLL_MS = 30_000
 
+const authStore = useAuthStore()
 const unread = ref(0)
 const items = ref<NotificationItem[]>([])
 const open = ref(false)
@@ -78,6 +80,15 @@ function previewFor(item: NotificationItem): string {
 }
 
 async function refresh(): Promise<void> {
+  // The bell lives in the authenticated shell, but the app can mount it for a
+  // moment before the router resolves /login or /register. Never call an
+  // authenticated endpoint without a token: a 401 would log the user out and
+  // hijack the public route they are opening.
+  if (!authStore.token.value) {
+    unread.value = 0
+    items.value = []
+    return
+  }
   try {
     unread.value = await getUnreadCount()
     if (open.value) {
@@ -91,7 +102,7 @@ async function refresh(): Promise<void> {
 
 async function toggle(): Promise<void> {
   open.value = !open.value
-  if (!open.value) return
+  if (!open.value || !authStore.token.value) return
   loading.value = true
   try {
     items.value = await listNotifications({ limit: 10 })
@@ -125,6 +136,9 @@ function stopPolling(): void {
 
 function startPolling(): void {
   stopPolling()
+  if (!authStore.token.value) {
+    return
+  }
   if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
     return
   }

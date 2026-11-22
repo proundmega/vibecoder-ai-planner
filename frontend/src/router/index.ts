@@ -54,7 +54,8 @@ const routes = [
     name: 'QuestionInbox',
     component: () => import('../views/QuestionInbox.vue'),
     meta: { requiresAuth: true },
-  },  {
+  },
+  {
     path: '/billing',
     name: 'BillingDashboard',
     component: () => import('../views/BillingDashboard.vue'),

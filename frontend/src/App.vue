@@ -51,7 +51,7 @@ const router = useRouter()
 const route = useRoute()
 
 onMounted(async () => {
-  if (authStore.user.value?.role) {
+  if (authStore.token.value && authStore.user.value?.role) {
     try {
       await authStore.syncPermissions((role) => get(`/api/v1/permissions/${role}`, { validate: validateApiResponse }))
     } catch (e) {

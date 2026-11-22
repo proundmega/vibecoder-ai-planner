@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
 vi.mock('@/api/notifications', () => api)
 
 import NotificationBell from '@/components/NotificationBell.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const RouterLinkStub = {
   props: ['to'],
@@ -25,6 +26,7 @@ function mountBell() {
 describe('NotificationBell (fg-55)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useAuthStore().setToken('test-token')
     api.getUnreadCount.mockResolvedValue(3)
     api.listNotifications.mockResolvedValue([
       {
@@ -40,6 +42,15 @@ describe('NotificationBell (fg-55)', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('does not call the API without a token', async () => {
+    useAuthStore().setToken('')
+    const wrapper = mountBell()
+    await flushPromises()
+
+    expect(api.getUnreadCount).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="notification-badge"]').exists()).toBe(false)
   })
 
   it('renders the unread badge from the count endpoint', async () => {

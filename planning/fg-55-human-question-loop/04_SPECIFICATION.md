@@ -253,3 +253,6 @@ requirements in `01` remain the source of truth.
   call, not two repeats.
 - **Inbox audience.** The cross-project inbox query requires project ownership
   or a membership role carrying `AGENT_READ`, matching the answer permission.
+- **Bell on public routes.** The bell calls no authenticated endpoint and starts
+  no poll without a token, so the authenticated shell mounting briefly before
+  `/register`/`/login` resolves cannot trigger a 401 logout.
