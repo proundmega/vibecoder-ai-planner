@@ -281,9 +281,9 @@ E23-E28 cover the non-scenario requirements so every
 | FR7 | E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable; reaper reconciles | A/B |
 | FR7 | E17 | Node token revoked mid-run | Processor/manual | fatal; no push/PR; add a focused processor test or keep manual-only (D7) | A/manual |
 | FR7 | E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery; covered by `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` | A |
-| FR8 | E19 | Crash/restart mid-publish (publish evidence + expired lease) | Backend HTTP + reaper | reaper adopts the stored PR, ticket goes to `review`, one run/PR | B |
-| FR8 | E20 | Reaper fails a stale unpublished run and releases the ticket | Backend HTTP + reaper | run `failed`; only an `in_progress` ticket with no PR returns to backlog | B |
-| FR8 | E21 | Idempotent publish/duplicate PR and reconcile | Backend HTTP | repeated publish keeps one head/PR; reconcile twice does not duplicate the PR | B |
+| FR8 | E19 | Crash-equivalent mid-publish (publish evidence + expired lease; not a real supervisor restart) | Backend HTTP + reaper | reaper adopts the stored PR, ticket goes to `review`, one run/PR; real restart remains staging | B |
+| FR8 | E20 | Reaper fails a stale unpublished run and releases only an in_progress ticket | Backend HTTP + reaper | run `failed`; in_progress ticket returns to backlog; a review ticket with the same failed run stays put | B |
+| FR8 | E21 | Idempotent publish/reconcile with identical evidence | Backend HTTP | repeated publish keeps one head/PR; reconcile twice does not duplicate; different-PR/agent-side duplicate detection remains staging | B |
 | FR8 | E29 | Dead-letter hold and release-ticket authorization | Backend HTTP | operator dead-letters; agent release is refused; operator release returns the ticket to backlog | B |
 | FR8/NFR2 | E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
 | FR9 | E24 | No production data used | Manual/review | dedicated test project/repo/ticket/node/runtime; scoped credentials revoked; cleanup verified | A |

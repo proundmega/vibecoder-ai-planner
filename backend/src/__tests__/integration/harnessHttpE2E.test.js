@@ -19,11 +19,11 @@ const {
 } = require('./harnessE2EFixtures');
 
 /**
- * bt-60 Phase A — real Express app + real Postgres round trip for the durable
+ * bt-60 Phase A+B — real Express app + real Postgres round trip for the durable
  * harness. No route or service is mocked.
  *
- * Covered automatically: E1-E14, E19-E21 and E23-E24; E29-E30 cover the
- * dead-letter/release and publish/reconcile route guards. E15-E18 and E22 are
+ * Covered automatically: E1-E14, E19-E21, E23-E24 and E29. E29 covers the
+ * dead-letter/release guard; E21 covers publish/reconcile. E15-E18 and E22 are
  * the real OpenCode/GitHub/PR and containerized staging rows, which still need
  * the disposable staging project/repo/provider key/GitHub App installation.
  * E25-E28 are review/verification rows: this change adds test files only
@@ -726,7 +726,7 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     expect(siblingWrite.body.error.code).toBe('FORBIDDEN');
   });
 
-  test('E19 crash/restart adopts publish evidence and keeps one PR', async () => {
+  test('E19 crash-equivalent lease expiry adopts publish evidence and keeps one PR', async () => {
     const runId = await createActiveRun();
     expect((await claimLease({
       token: fixture.nodeToken,
@@ -801,6 +801,42 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     expect(ticket.rows[0].status).toBe('backlog');
     expect(ticket.rows[0].assigned_runtime_id).toBeNull();
     expect(ticket.rows[0].pr_url).toBeNull();
+
+    // Negative case: a failed run attached to a review ticket must not release
+    // it. The reaper only returns in_progress tickets to backlog.
+    await pool.query(
+      `UPDATE tickets
+       SET status = 'in_progress', assigned_runtime_id = $2, locked_at = NULL, pr_url = NULL
+       WHERE id = $1`,
+      [fixture.ticketId, fixture.runtimeId]
+    );
+    const reviewRunId = await createActiveRun();
+    const failed = await finishRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId: reviewRunId,
+      status: 'failed',
+      error: 'review ticket must not be released',
+    });
+    expect(failed.statusCode).toBe(200);
+    await pool.query(
+      `UPDATE tickets SET status = 'review' WHERE id = $1`,
+      [fixture.ticketId]
+    );
+
+    const refused = await releaseRunTicket({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId: reviewRunId,
+    });
+    expect(refused.statusCode).toBe(200);
+    expect(refused.body.data.released).toBe(false);
+    const stillReview = await pool.query(
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(stillReview.rows[0].status).toBe('review');
+    expect(stillReview.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
   });
 
   test('E21 publish is idempotent and reconcile cannot duplicate the PR', async () => {
