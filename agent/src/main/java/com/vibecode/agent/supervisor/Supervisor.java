@@ -73,6 +73,7 @@ public final class Supervisor implements AutoCloseable {
 
     private volatile RuntimeConfig config;
     private volatile boolean closed;
+    private volatile java.util.function.BooleanSupplier healthGate = () -> true;
     private Thread loopThread;
 
     /**
@@ -172,11 +173,22 @@ public final class Supervisor implements AutoCloseable {
         }
     }
 
+    /**
+     * fg-56 slice B: pause spawn/drain reconciliation while the backend is
+     * unhealthy. The supplier is checked on every tick; a healthy child keeps
+     * running, a dead child is not respawned until health returns.
+     */
+    public void setHealthGate(java.util.function.BooleanSupplier gate) {
+        this.healthGate = gate == null ? () -> true : gate;
+    }
+
     /** Reconcile in a loop until {@link #close()} or thread interruption. */
     public void runLoop() {
         while (!closed) {
             try {
-                reconcile();
+                if (healthGate.getAsBoolean()) {
+                    reconcile();
+                }
             } catch (RuntimeException e) {
                 log.warn("Supervisor reconcile failed: {}", e.getMessage());
             }

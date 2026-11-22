@@ -82,7 +82,9 @@ final class BackendHealthMonitor implements AutoCloseable {
 
     void start() {
         if (!active) return;
-        schedule(baseInterval);
+        // Probe immediately: the retry tick starts before the first delayed
+        // probe otherwise, leaving a window where a dead child can respawn.
+        schedule(Duration.ZERO);
     }
 
     boolean isHealthy() {
@@ -103,14 +105,15 @@ final class BackendHealthMonitor implements AutoCloseable {
         Duration delay;
         if (ok) {
             if (!healthy) {
-                log.info("Backend health restored: {}", backendUrl);
+                log.info("Backend health restored: {}", BackendHealthGate.safeUrl(backendUrl));
             }
             healthy = true;
             backoff = baseInterval;
             delay = baseInterval;
         } else {
             if (healthy) {
-                log.warn("Backend health lost; pausing declaration/reconcile: {}", backendUrl);
+                log.warn("Backend health lost; pausing declaration/reconcile: {}",
+                    BackendHealthGate.safeUrl(backendUrl));
             }
             healthy = false;
             delay = backoff;

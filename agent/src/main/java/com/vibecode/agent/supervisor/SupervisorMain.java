@@ -56,11 +56,6 @@ public final class SupervisorMain {
         } else {
             log.info("Backend health gate disabled by SUPERVISOR_HEALTH_REQUIRED");
         }
-        // fg-56 slice B: keep watching health after startup. The retry loop
-        // pauses while unhealthy so it does not declare/reconcile against a
-        // backend that is down; children are left to their own retry logic.
-        BackendHealthMonitor healthMonitor = BackendHealthMonitor.fromEnv(agentConfig.getBackendUrl());
-        healthMonitor.start();
         AgentCredentialStore store = new AgentCredentialStore(Path.of(agentConfig.getCredentialsFile()));
         AgentAuthManager auth = new AgentAuthManager(agentConfig, store, new AgentEnrollmentClient(agentConfig));
         auth.initialize();
@@ -101,6 +96,13 @@ public final class SupervisorMain {
         log.info("Supervisor reconciled: desired={} running={}",
             desired.runtimes().size(),
             supervisor.snapshot().size());
+
+        // fg-56 slice B: keep watching health after startup. The monitor is
+        // created only after auth/declaration succeeded, so a startup failure
+        // cannot leak its daemon thread.
+        BackendHealthMonitor healthMonitor = BackendHealthMonitor.fromEnv(agentConfig.getBackendUrl());
+        healthMonitor.start();
+        supervisor.setHealthGate(healthMonitor::isHealthy);
 
         // A backend restart or a transient failure is retried with the current
         // desired set. The supervisor never spawns id-less children.

@@ -29,26 +29,26 @@
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Java | `BackendHealthGateTest` | unhealthy server does not proceed; healthy server proceeds | `mvn test -Dtest=BackendHealthGateTest` |
-| FR2 | Java | `BackendHealthGateTest` | bounded timeout and retry interval | same |
+| FR1 | Java | `BackendHealthGateTest` | 2xx/503 probe and bounded retry; the `SupervisorMain` call order is code-reviewed (no `run()` harness test) | `mvn test -Dtest=BackendHealthGateTest` |
+| FR2 | Java | `BackendHealthGateTest` | bounded timeout, retry interval and per-request remaining-time cap | same |
 | FR3 | Java | `BackendHealthGateTest` | default required, explicit opt-out | same |
-| FR4 | Java | `BackendHealthGateTest` | success/failure log message | same |
-| FR5 | Java | `SupervisorMainTest`, `SupervisorIntegrationTest` | existing flow remains green | `mvn test -Dtest=SupervisorMainTest,SupervisorIntegrationTest` |
+| FR4 | Java | `BackendHealthGateTest` | success/failure path; log text is code-reviewed (no appender assertion) | same |
+| FR5 | Java | `SupervisorMainTest`, `SupervisorIntegrationTest` | existing helper and crash-adoption flows remain green | `mvn test -Dtest=SupervisorMainTest,SupervisorIntegrationTest` |
 | FR6 | Docs | review | env vars and D7 closeout recorded | `node planning/check-planning.js` |
-| NFR1 | Java | `BackendHealthGateTest` | no callback/child work before health | same |
-| NFR2 | Java | `BackendHealthGateTest` | URL/status only, no credentials | same |
-| FR7 | Java | `BackendHealthMonitorTest` | Detects outage/recovery, bounded backoff, disabled/no-URL | `mvn test -Dtest=BackendHealthMonitorTest` |
+| NFR1 | Java | `BackendHealthGateTest`, `SupervisorReconcileTest` | probe gate is checked before reconcile; a dead child is not respawned while unhealthy | `mvn test -Dtest=BackendHealthGateTest,SupervisorReconcileTest` |
+| NFR2 | Java | `BackendHealthGateTest` | `safeUrl` strips userinfo; monitor logs the sanitized URL | same |
+| FR7 | Java | `BackendHealthMonitorTest`, `SupervisorReconcileTest` | Detects outage/recovery, bounded backoff, disabled/no-URL; runLoop pauses spawn while unhealthy | `mvn test -Dtest=BackendHealthMonitorTest,SupervisorReconcileTest` |
 
 ## Review checklist
 
-- [ ] Every `FR*`/`NFR*` has a passing row
-- [ ] Gate runs before any child construction
-- [ ] Timeout fails closed
-- [ ] Docs updated; no secret in logs
+- [x] Every `FR*`/`NFR*` has a passing row
+- [x] Gate runs before any child construction (code-reviewed; no `run()` harness test)
+- [x] Timeout fails closed
+- [x] Docs updated; no secret in logs
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-56-supervisor-health-gate` (PR #203) | BackendHealthGate 6 tests; SupervisorMain + SupervisorIntegration 20 | Pass. Healthy/503/timeout/opt-out covered; the gate runs before enrollment/declaration. |
-| 2026-11-22 | `81ad3b6` | BackendHealthMonitor 4 tests; focused supervisor 30; full agent 955 (10 skipped) | Pass. Outage/recovery, bounded backoff, disabled and missing-URL cases covered; the reconcile tick pauses while unhealthy. |
+| 2026-11-22 | `feat/fg-56-supervisor-health-gate` (PR #203) | BackendHealthGate 6 tests; SupervisorMain + SupervisorIntegration 20 | Pass. Healthy/503/timeout/opt-out and URL-userinfo sanitization covered. The `SupervisorMain.run` ordering is code-reviewed; there is no harness test that runs `run()`. |
+| 2026-11-22 | `81ad3b6` | BackendHealthMonitor 4 + SupervisorReconcile health-gate test; full agent suite 941 run / 10 skipped | Pass. Outage/recovery, bounded backoff, disabled/missing-URL, and no child respawn while unhealthy. |

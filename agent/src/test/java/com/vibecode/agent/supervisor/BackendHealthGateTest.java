@@ -27,6 +27,13 @@ class BackendHealthGateTest {
     }
 
     @Test
+    void stripsUserInfoBeforeLogging() {
+        assertEquals("https://api.example.com:8443/api/health",
+            BackendHealthGate.safeUrl("https://user:secret@api.example.com:8443/api/health"));
+        assertEquals("http://api:3001", BackendHealthGate.safeUrl("http://api:3001"));
+    }
+
+    @Test
     void parsesRequiredTimeoutAndInterval() {
         assertTrue(BackendHealthGate.required(null));
         assertTrue(BackendHealthGate.required("true"));
@@ -42,7 +49,7 @@ class BackendHealthGateTest {
     @Test
     void retriesUntilTheProbeSucceeds() throws Exception {
         AtomicInteger attempts = new AtomicInteger();
-        BackendHealthGate.await("test", () -> {
+        BackendHealthGate.await("test", remaining -> {
             if (attempts.incrementAndGet() < 3) {
                 throw new IOException("not yet");
             }
@@ -55,7 +62,7 @@ class BackendHealthGateTest {
     void failsClosedAfterTheTimeout() {
         AtomicInteger attempts = new AtomicInteger();
         IOException error = assertThrows(IOException.class, () ->
-            BackendHealthGate.await("test", () -> {
+            BackendHealthGate.await("test", remaining -> {
                 attempts.incrementAndGet();
                 throw new IOException("backend down");
             }, Duration.ofMillis(25), Duration.ofMillis(5)));

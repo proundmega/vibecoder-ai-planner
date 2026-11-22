@@ -19,7 +19,8 @@ depends_on: ["fg-43", "fg-54"]
 > file operations (`04`).
 
 **Related code:** `agent/src/main/java/com/vibecode/agent/supervisor/SupervisorMain.java`,
-`BackendHealthGate.java`, `agent/README.md`, `AGENTS.md`.
+`BackendHealthGate.java`, `BackendHealthMonitor.java`, `Supervisor.java`,
+`agent/README.md`, `AGENTS.md`.
 
 This ticket is the actionable follow-up `fg-43-D7`: the supervisor must not
 enroll, declare runtimes or spawn children before the backend `/api/health`
@@ -37,7 +38,7 @@ endpoint is green.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | Implemented in slice B (`BackendHealthMonitor`); startup gate remains unchanged | done |
+| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | Implemented in slice B (`BackendHealthMonitor`); startup gate remains unchanged | scheduled (PR #203) |
 | D2 | Health-gated restarts without Compose restart policy | self | Operations | follow-up if needed | open |
 
 ## Decisions needed from the user

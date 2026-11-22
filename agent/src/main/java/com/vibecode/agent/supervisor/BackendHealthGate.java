@@ -34,7 +34,20 @@ final class BackendHealthGate {
 
     @FunctionalInterface
     interface Prober {
-        void probe() throws IOException;
+        void probe(Duration remaining) throws IOException;
+    }
+
+    /** Never log URL userinfo; it may contain credentials. */
+    static String safeUrl(String url) {
+        try {
+            java.net.URI uri = java.net.URI.create(url);
+            if (uri.getUserInfo() == null) return url;
+            return new java.net.URI(
+                uri.getScheme(), null, uri.getHost(), uri.getPort(),
+                uri.getPath(), uri.getQuery(), uri.getFragment()).toString();
+        } catch (Exception e) {
+            return "<invalid-url>";
+        }
     }
 
     static String healthUrl(String backendUrl) {
@@ -84,7 +97,7 @@ final class BackendHealthGate {
     static void awaitHealth(String backendUrl, Duration timeout, Duration interval)
         throws IOException {
         String url = healthUrl(backendUrl);
-        await(url, () -> probe(url), timeout, interval);
+        await(safeUrl(url), remaining -> probe(url, remaining), timeout, interval);
     }
 
     /**
@@ -94,7 +107,7 @@ final class BackendHealthGate {
     static boolean probeOnce(String backendUrl) {
         String url = healthUrl(backendUrl);
         try {
-            probe(url);
+            probe(url, Duration.ofSeconds(5));
             return true;
         } catch (IOException | RuntimeException e) {
             log.debug("Backend health monitor probe failed for {}: {}", url, e.getMessage());
@@ -114,9 +127,14 @@ final class BackendHealthGate {
         IOException last = null;
         int attempt = 0;
         while (true) {
+            Instant beforeProbe = Instant.now();
+            if (!beforeProbe.isBefore(deadline)) {
+                break;
+            }
+            Duration remaining = Duration.between(beforeProbe, deadline);
             attempt++;
             try {
-                prober.probe();
+                prober.probe(remaining);
                 log.info("Backend health gate passed: {}", label);
                 return;
             } catch (IOException e) {
@@ -132,8 +150,8 @@ final class BackendHealthGate {
             if (!now.isBefore(deadline)) {
                 break;
             }
-            long remaining = Duration.between(now, deadline).toMillis();
-            long sleep = Math.min(remaining, pause.toMillis());
+            long sleepRemaining = Duration.between(now, deadline).toMillis();
+            long sleep = Math.min(sleepRemaining, pause.toMillis());
             try {
                 Thread.sleep(Math.max(1, sleep));
             } catch (InterruptedException e) {
@@ -147,9 +165,16 @@ final class BackendHealthGate {
             last);
     }
 
-    private static void probe(String url) throws IOException {
+    private static void probe(String url, Duration remaining) throws IOException {
+        Duration requestTimeout = Duration.ofSeconds(5);
+        if (remaining != null && remaining.compareTo(requestTimeout) < 0) {
+            requestTimeout = remaining;
+        }
+        if (requestTimeout.isNegative() || requestTimeout.isZero()) {
+            requestTimeout = Duration.ofMillis(1);
+        }
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-            .timeout(Duration.ofSeconds(5))
+            .timeout(requestTimeout)
             .GET()
             .build();
         HttpResponse<Void> response;

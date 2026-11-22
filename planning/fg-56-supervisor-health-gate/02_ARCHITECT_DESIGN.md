@@ -39,12 +39,13 @@ skips only the gate, not declaration/reconcile.
 After the startup gate, `BackendHealthMonitor` keeps probing the same endpoint
 on a daemon scheduler. A 2xx response is healthy; a failure flips the state to
 unhealthy, logs once, and waits with exponential backoff (base interval,
-doubling up to the max). Success resets the interval and logs recovery. The
-existing declaration/reconcile tick checks `isHealthy()` and skips while the
-backend is down, so it does not declare or spawn against an unavailable API.
-Existing children keep their own retry/heartbeat behavior; the monitor never
-stops the supervisor. `SUPERVISOR_HEALTH_REQUIRED=false` disables monitoring
-along with the startup gate.
+doubling up to the max). Success resets the interval and logs recovery. Both
+the scheduled declaration/retry tick and `Supervisor.runLoop()`'s reconcile
+tick check `isHealthy()` and skip while the backend is down, so neither spawns
+a missing child against an unavailable API. Existing healthy children keep
+running. The monitor never stops the supervisor.
+`SUPERVISOR_HEALTH_REQUIRED=false` disables monitoring along with the startup
+gate.
 
 ## Configuration
 
@@ -74,7 +75,7 @@ node token or provider secret. Logs contain the URL and status only.
 
 ## Rollout
 
-1. Add the gate and unit tests (fake clock/sleeper, no real backend).
+1. Add the gate and unit tests (real local `HttpServer`, short real sleeps).
 2. Enable by default; local offline users can set
    `SUPERVISOR_HEALTH_REQUIRED=false`.
 3. Run the fg-54 runbook with the gate enabled and record evidence.

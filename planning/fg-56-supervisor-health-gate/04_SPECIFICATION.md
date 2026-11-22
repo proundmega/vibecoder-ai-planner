@@ -14,7 +14,7 @@ with `@Test` placeholders before the production class.
 ```java
 final class BackendHealthGate {
     static final long DEFAULT_TIMEOUT_SECONDS = 120;
-    static final long DEFAULT_INTERVAL_SECONDS = 2;
+    static final long DEFAULT_INTERVAL_MILLIS = 2_000;
 
     static String healthUrl(String backendUrl);
     static boolean required(String value);
@@ -41,8 +41,10 @@ read once at startup; a missing/invalid value falls back to the defaults.
 `BackendHealthGate.probeOnce(BACKEND_URL)` on a daemon scheduler, exposes
 `isHealthy()`, and logs loss/recovery. Failure delay starts at the base
 interval, doubles on each consecutive failure up to the max, and resets on
-success. `SupervisorMain` skips the declaration/reconcile tick while unhealthy
-and closes the monitor in the run loop's `finally`.
+success. `SupervisorMain` skips the declaration/retry tick while unhealthy and
+sets `Supervisor.setHealthGate(monitor::isHealthy)` so the main reconcile loop
+does not spawn a missing child. The monitor is closed in the run loop's
+`finally` and is created only after auth/declaration succeed.
 
 ## 4. Configuration
 
