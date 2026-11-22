@@ -2162,7 +2162,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
         currentRunId = String.valueOf(run.get("id"));
 
-        HarnessConfig.QuestionLoopConfig questionLoop = activeHarnessConfig().questionLoop();
+        HarnessConfig effectiveQuestionConfig = activeHarnessConfig();
+        HarnessConfig.QuestionLoopConfig questionLoop = effectiveQuestionConfig == null
+            ? null
+            : effectiveQuestionConfig.questionLoop();
         if (questionLoop != null && questionLoop.enabled()) {
             questionBridge = new QuestionBridge(apiService, currentRunId, questionLoop);
             doomLoopDetector = new DoomLoopDetector(
