@@ -323,7 +323,7 @@ keep a copy.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `19cfc33` (PR #198, merged; includes #200 `865565e`) | Phase A: `harnessHttpE2E` 16/16; backend integration 20 suites / 158 tests; backend unit 152 suites / 1788 tests; lint 0 errors (30 warnings); `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` 1/1 | Phase A green and merged. E12/E13 assert `artifacts_finalized_at`; the usage-flush UUID defect they exposed is fixed in the separate production PR #200. Phase B staging is deferred pending the disposable repo/key/App installation. |
-| 2026-11-22 | Phase B branch | `harnessHttpE2E` 20/20 (E19-E21, E29 added); backend integration 21 suites / 167 tests; backend unit 1857 tests; lint clean | Phase B backend drills green: crash-after-publish adoption, stale-run release, idempotent publish/reconcile, dead-letter/release authorization. The real OpenCode/GitHub staging run remains pending the disposable repo, provider key and GitHub App installation. |
+| 2026-11-22 | `985bd56` | `harnessHttpE2E` 20/20 (E19-E21, E29 added); backend integration 21 suites / 167 tests; backend unit 1857 tests; lint clean | Phase B backend drills green: crash-after-publish adoption, stale-run release, idempotent publish/reconcile, dead-letter/release authorization. The real OpenCode/GitHub staging run remains pending the disposable repo, provider key and GitHub App installation. |
 
 | Field | Value |
 |---|---|
