@@ -20,7 +20,7 @@ PR-ready notification or a question. Work this order; it is the canonical queue.
 
 | Order | Ticket | State | Exit / why |
 |-------|--------|-------|------------|
-| 1 | **fg-55** — human question loop and notifications | Planned | Question tool → ticket question → bell/inbox → answer → resume; doom-loop escalation/cap. Exit: a run asks, you answer, it resumes; PR/failure alerts appear. |
+| 1 | **fg-55** — human question loop and notifications | In review (PR #195) | Question tool → ticket question → bell/inbox → answer → resume; doom-loop escalation/cap. Exit: a run asks, you answer, it resumes; PR/failure alerts appear. |
 | 2 | **fg-45** — ticket quality gates | Planned | Definition of Ready, acceptance criteria, assumptions/risk. Exit: tickets are specific enough for an unattended run. |
 | 3 | **fg-43** — Docker agent deployment | Planned | One-command host, role profiles, per-container limits. Exit: a node sized and deployed in one command. |
 | 4 | **fg-44** — agent storage lifecycle | Planned | Per-agent workspaces, cleanup, disk/inode watermarks. Exit: unattended runs do not fill the host. |
@@ -183,7 +183,7 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-55** | `fg-55-human-question-loop` | P1 | fg-30 Phase 1, fg-33, fg-41, fg-42, fg-54 | Question tool → ticket question → notification → human answer → resume; doom-loop escalation and cap; in-app bell/question inbox; run success/failure/budget notifications. |
+| **fg-55** | `fg-55-human-question-loop` | P1 | fg-30 Phase 1, fg-33, fg-41, fg-42, fg-54 | Question tool → ticket question → notification → human answer → resume; doom-loop escalation and cap; in-app bell/question inbox; run success/failure/budget notifications. **In review (PR #195, 2026-11-22).** |
 
 ## Quality and Observability (fg-45..fg-52)
 

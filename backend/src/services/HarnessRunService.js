@@ -516,6 +516,51 @@ class HarnessRunService {
   }
 
   /**
+   * Mark a running run as waiting for a human answer (fg-55). Idempotent: a
+   * second question on the same run keeps the original `waiting_since`.
+   */
+  async markWaiting(runId) {
+    const id = requiredUuid(runId, 'runId');
+    const result = await pool.query(
+      `UPDATE harness_runs
+       SET waiting_since = COALESCE(waiting_since, NOW()),
+           heartbeat_at = NOW()
+       WHERE id = $1 AND status = 'running'
+       RETURNING id, waiting_since`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Active harness run not found');
+    }
+    return result.rows[0];
+  }
+
+  /**
+   * Clear the waiting marker and add the elapsed wait to `waited_ms`, so the
+   * wall-clock budget excludes human latency. Idempotent when not waiting.
+   */
+  async clearWaiting(runId) {
+    const id = requiredUuid(runId, 'runId');
+    const result = await pool.query(
+      `UPDATE harness_runs
+       SET waited_ms = waited_ms
+             + CASE
+                 WHEN waiting_since IS NULL THEN 0
+                 ELSE GREATEST(0,
+                   ROUND(EXTRACT(EPOCH FROM (NOW() - waiting_since)) * 1000))::bigint
+               END,
+           waiting_since = NULL
+       WHERE id = $1
+       RETURNING id, waiting_since, waited_ms`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      throw new NotFoundError('Harness run not found');
+    }
+    return result.rows[0];
+  }
+
+  /**
    * Finish a run and release its lease. Repeated finishes are idempotent and
    * return the already-terminal row, which makes crash recovery safe.
    */
@@ -536,12 +581,62 @@ class HarnessRunService {
              pr_url = COALESCE(NULLIF(BTRIM($5), ''), pr_url),
              budget_reserved_usd = 0,
              heartbeat_at = NOW(),
-             finished_at = NOW()
+             finished_at = NOW(),
+             waiting_since = NULL,
+             waited_ms = waited_ms
+               + CASE
+                   WHEN waiting_since IS NULL THEN 0
+                   ELSE GREATEST(0,
+                     ROUND(EXTRACT(EPOCH FROM (NOW() - waiting_since)) * 1000))::bigint
+                 END
          WHERE id = $1 AND status = 'running'
          RETURNING *
        ),
        released AS (
          DELETE FROM harness_leases WHERE run_id = $1
+       ),
+       expired_questions AS (
+         UPDATE ticket_questions q
+         SET status = 'expired'
+         FROM finished f
+         WHERE q.run_id = f.id AND q.status = 'pending'
+         RETURNING q.id
+       ),
+       recipients AS (
+         SELECT p.owner_id AS user_id
+         FROM projects p
+         JOIN finished f ON f.project_id = p.id
+         WHERE p.owner_id IS NOT NULL
+         UNION
+         SELECT pm.user_id
+         FROM project_memberships pm
+         JOIN finished f ON f.project_id = pm.project_id
+         JOIN roles r ON r.name = pm.role
+         JOIN role_permissions rp ON rp.role_id = r.id
+         JOIN permissions perm ON perm.id = rp.permission_id
+         WHERE perm.code = 'AGENT_READ'
+       ),
+       notified AS (
+         INSERT INTO notifications
+           (user_id, project_id, ticket_id, run_id, question_id, type, payload)
+         SELECT recipients.user_id,
+                f.project_id,
+                f.ticket_id,
+                f.id,
+                NULL,
+                CASE f.status
+                  WHEN 'succeeded' THEN 'run_succeeded'
+                  WHEN 'budget_exceeded' THEN 'budget_exceeded'
+                  ELSE 'run_failed'
+                END,
+                jsonb_build_object(
+                  'status', f.status,
+                  'error', f.error,
+                  'prUrl', f.pr_url,
+                  'ticketId', f.ticket_id)
+         FROM finished f
+         CROSS JOIN recipients
+         RETURNING id
        )
        SELECT * FROM finished`,
       [id, status, error == null ? null : redactText(String(error)), headSha, prUrl]
@@ -1227,6 +1322,7 @@ class HarnessRunService {
              END,
              budget_reserved_usd = 0,
              finished_at = NOW(),
+             waiting_since = NULL,
              error = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error
                ELSE COALESCE(r.error, 'run has no lease and heartbeat is stale')
@@ -1234,6 +1330,20 @@ class HarnessRunService {
          FROM orphaned o
          WHERE r.id = o.id
          RETURNING r.id, r.ticket_id, r.runtime_id, r.status
+       ),
+       expired_questions AS (
+         UPDATE ticket_questions q
+         SET status = 'expired'
+         FROM deleted d
+         WHERE q.run_id = d.run_id AND q.status = 'pending'
+         RETURNING q.id
+       ),
+       orphan_questions AS (
+         UPDATE ticket_questions q
+         SET status = 'expired'
+         FROM orphan_failed o
+         WHERE q.run_id = o.id AND q.status = 'pending'
+         RETURNING q.id
        )
        SELECT d.ticket_id,
               d.run_id,

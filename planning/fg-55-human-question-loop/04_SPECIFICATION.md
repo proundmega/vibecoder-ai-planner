@@ -207,3 +207,52 @@ cd frontend && npm run typecheck
 cd frontend && npm run lint
 node planning/check-planning.js
 ```
+
+## 9. Implementation notes (2026-11-22)
+
+These are the deltas from the planned contract; the design in `02` and the
+requirements in `01` remain the source of truth.
+
+- **OpenCode reply contract.** `OpenCodeClient.replyToQuestion` posts a
+  question to `POST /session/{sessionId}/questions/{requestId}/reply` and a
+  permission to `POST /session/{sessionId}/permissions/{requestId}`. This is
+  the pinned-version assumption from known unknown 1. A 404/unsupported reply
+  path throws and fails the run (`question_resume_failed`); it never fakes a
+  resume.
+- **Extra read routes for the UI.** `GET /harness/tickets/:ticketId/questions`
+  feeds the ticket card and `GET /harness/questions` feeds the cross-project
+  inbox. Both reuse the same service listing and project-membership checks.
+- **Question creation transaction.** `TicketQuestionService.createForRun`
+  locks the run row, verifies it belongs to the calling runtime, inserts the
+  question, sets `waiting_since` and fans out notifications on the same client.
+  A notification failure rolls the question back.
+- **Finish transaction.** `HarnessRunService.finishRun` now clears
+  `waiting_since`, adds `waited_ms`, expires pending questions and inserts
+  per-recipient notifications in one data-modifying CTE, so a finish cannot
+  leave a pending question or a partial fanout.
+- **Recovery.** `recoverRun` treats `waiting_since` as non-fresh even when the
+  heartbeat is current, expires the run with `question_timeout` and releases
+  the ticket. Durable suspend/resume remains D3.
+- **Doom loop.** `DoomLoopDetector` lives in the supervisor; `doom_loop`
+  remains denied in the generated OpenCode config. The detector hashes
+  `tool + canonical JSON(args)` with SHA-256 and counts consecutive matches.
+- **Reply path fail-closed.** If the OpenCode event has no request id, the
+  bridge uses a generated external id for dedupe and the reply fails closed
+  instead of guessing a session id.
+- **Permission answers.** Permission requests map `allow`/`yes` to `once`,
+  `always` to `always`, and `reject`/`no`/anything unrecognised to `reject`;
+  free text can never approve. The ticket card and inbox render Allow/Always
+  allow/Reject (and Continue/Abort for doom loops) instead of a text box.
+- **Agent read isolation.** An agent may read a question only when
+  `question.runtime_id` equals its `X-Agent-Runtime`; the run-list route checks
+  the run's runtime before listing, so a same-project worker cannot read a
+  sibling's question by UUID. A JWT list call is project-scoped with
+  `ANSWER_PERMISSION`, so an outsider who knows the run UUID gets 403.
+- **Repetition counting.** The doom-loop detector ignores OpenCode lifecycle
+  updates by tracking unique `callId`s, so one running/completed pair is one
+  call, not two repeats.
+- **Inbox audience.** The cross-project inbox query requires project ownership
+  or a membership role carrying `AGENT_READ`, matching the answer permission.
+- **Bell on public routes.** The bell calls no authenticated endpoint and starts
+  no poll without a token, so the authenticated shell mounting briefly before
+  `/register`/`/login` resolves cannot trigger a 401 logout.

@@ -182,6 +182,11 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_ROLE` | Runtime role set by the supervisor | `worker` |
 | `AGENT_LLM_MODEL` | Model ref set by the supervisor | _(server config)_ |
 | `AGENT_EFFORT` | Optional runtime effort override | model default |
+| `HARNESS_QUESTION_LOOP` | Enable the fg-55 human question loop | `false` |
+| `HARNESS_QUESTION_TIMEOUT_MINUTES` | How long a waiting question blocks before it expires | `60` |
+| `HARNESS_QUESTION_POLL_SECONDS` | Poll interval while waiting for an answer | `5` |
+| `HARNESS_DOOM_LOOP_MAX` | Consecutive identical tool calls before asking a human | `3` |
+| `HARNESS_DOOM_LOOP_CONTINUES` | Human continues allowed before the run aborts | `3` |
 | `AGENT_PROJECT_ID` / `PROJECT_ID` | Optional project hint; backend grants are authoritative (`AGENT_PROJECT_ID` is supervisor-set from the runtime declaration) | _(none)_ |
 | `AGENT_RUNTIME_CONCURRENCY` | Runtime concurrency set by the supervisor | `1` |
 | `AGENT_RUNTIME_STOP_FILE` | Drain marker path set by the supervisor | _(supervisor)_ |

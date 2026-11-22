@@ -40,6 +40,11 @@ const KNOWN_EVENT_TYPES = Object.freeze(new Set([
   'routing.decided',
   'usage.recorded',
   'privacy.decision',
+  'question.asked',
+  'question.answered',
+  'question.timeout',
+  'doom_loop.escalated',
+  'notification.created',
 ]));
 const AUDIT_TYPES = Object.freeze(new Set([
   'audit.publish',

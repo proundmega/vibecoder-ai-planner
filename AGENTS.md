@@ -32,13 +32,13 @@ cd ../frontend && npm run dev      # Vite :3000, proxies /api → :3001
 backend/src/
   index.js          → exports app (NODE_ENV=test skips listen; supertest uses app directly)
   api/routes.js     → /health, /version, /docs, /metrics, /auth/*, /v1/*
-  api/v1/index.js   → 23 route modules via 27 router.use mounts (users, projects, tickets, agent-nodes, provider-registry, approvals, harness, ...) + inlined template/attachment/planning/ip-whitelist routes
-  services/         → 42 services
+  api/v1/index.js   → 25 route modules via 29 router.use mounts (users, projects, tickets, agent-nodes, provider-registry, approvals, harness, ...) + inlined template/attachment/planning/ip-whitelist routes
+  services/         → 44 services
   controllers/      → 11 controllers
   models/           → approval, project, ticket, user
-  migrations/       → 58 registered .sql files + 1 data migration; apply.js runs in array order (not numeric) and records schema_migrations
+  migrations/       → 59 registered .sql files + 1 data migration; apply.js runs in array order (not numeric) and records schema_migrations
   middleware/       → 18 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)
-  validators/       → 18 Joi schemas
+  validators/       → 19 Joi schemas
   db.js             → pg Pool (DATABASE_URL env)
 
 frontend/src/
@@ -170,6 +170,9 @@ closed), `HARNESS_PROTECTED_PATHS`, `HARNESS_MODEL`, `HARNESS_MAX_FILES`,
 `HARNESS_LEASE_SECONDS`, `HARNESS_HEARTBEAT_SECONDS`,
 `HARNESS_DURABILITY_REQUIRED`, `HARNESS_RESUME_MODE`,
 `HARNESS_REAPER_INTERVAL_SECONDS`, `HARNESS_WORKSPACE_RETENTION_HOURS`.
+Question loop (fg-55): `HARNESS_QUESTION_LOOP` (default off),
+`HARNESS_QUESTION_TIMEOUT_MINUTES`, `HARNESS_QUESTION_POLL_SECONDS`,
+`HARNESS_DOOM_LOOP_MAX`, `HARNESS_DOOM_LOOP_CONTINUES`.
 Budgets/routing (fg-38): `HARNESS_DEFAULT_MAX_DURATION_MINUTES`,
 `HARNESS_DEFAULT_MAX_INPUT_TOKENS`, `HARNESS_DEFAULT_MAX_OUTPUT_TOKENS`,
 `HARNESS_DEFAULT_MAX_COST_USD`, `HARNESS_DEFAULT_MAX_TOOL_CALLS`,
@@ -298,10 +301,15 @@ vulnerabilities (trivy/grype) and optionally verifies a cosign signature. CI
 scans the supervisor, sandbox and proxy images and archives the SBOMs; set
 `SANDBOX_SCAN_REQUIRED=1` in CI to make the scan mandatory.
 Phase 1 is blocking
-prompt mode and denies the `question` and `doom_loop` tools. The human question
-loop, in-app notifications and doom-loop escalation are planned in `fg-55`;
-until it lands, an agent must decide or fail rather than ask.
-See `planning/fg-30-autonomous-coding-harness/`.
+prompt mode and denies the `doom_loop` tool. The fg-55 human loop is opt-in via
+`HARNESS_QUESTION_LOOP=true` (default off): it allows `question`, persists a
+ticket question, pauses the wall-clock budget, polls for a member answer and
+resumes the same OpenCode session. A timeout fails the run with
+`question_timeout`. `doom_loop` stays denied; the supervisor escalates repeated
+tool signatures to a `doom_loop` question and aborts at the continue cap. With
+the flag off the Phase 1 behavior is unchanged.
+See `planning/fg-30-autonomous-coding-harness/` and
+`planning/fg-55-human-question-loop/`.
 
 ## API
 
@@ -325,7 +333,7 @@ All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ succe
 `GET|PUT /harness/kill-switch` (global, super_admin). Agent events are run-scoped
 and cannot write `audit.*`.
 
-**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 58 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
+**Migrations**: run by `src/migrations/apply.js` in **array order** (not numeric). 59 registered SQL files + 1 data migration (`migrate_provider_api_keys.js`); applied files are recorded in the `schema_migrations` ledger. A ledger-less post-cut database is baselined only through 059, so newer additive migrations (060+) still run. Notable entries: 057 (the agent-fleet clean cut) is registered after 059 despite its number; 011/012 after 014; 020 after 018 (no 019); 031 has two registered files. `029_data_migrate_provider_api_keys.sql` (and its rollback) is on disk but **not** in the apply array; the registered file is `029_provider_config_api_key.sql`. Each registered SQL has a `_rollback.sql` counterpart.
 
 **Frontend auth**: 3 localStorage keys — `vibecode_token`, `vibecode_user`, `vibecode_permissions`. Route guards read localStorage directly (no Pinia dependency).
 

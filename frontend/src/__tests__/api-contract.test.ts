@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateUser, validateProject, validateTicket, validateAgent, validateApiResponse, validateApiResponseStrict, validateSchema, validateAndExtract } from '../api/validator';
+import { validateUser, validateProject, validateTicket, validateAgent, validateQuestion, validateNotification, validateApiResponse, validateApiResponseStrict, validateSchema, validateAndExtract } from '../api/validator';
 
 describe('API Response Contract Tests', () => {
   describe('validateApiResponse', () => {
@@ -289,8 +289,60 @@ describe('API Response Contract Tests', () => {
     });
   });
 
-  describe('validateApiResponseStrict', () => {
-    it('should not throw for valid API response', () => {
+  describe('validateQuestion', () => {
+    it('should accept a pending question row', () => {
+      const question = {
+        id: '7',
+        run_id: '11111111-1111-4111-8111-111111111111',
+        ticket_id: '42',
+        project_id: '5',
+        runtime_id: '3',
+        kind: 'question',
+        status: 'pending',
+        prompt: 'Which helper?',
+        answer: null,
+      };
+      expect(validateQuestion(question)).toHaveLength(0);
+    });
+
+    it('should reject an unknown kind or status', () => {
+      const question = {
+        id: '7',
+        run_id: '11111111-1111-4111-8111-111111111111',
+        ticket_id: '42',
+        project_id: '5',
+        kind: 'approval',
+        status: 'waiting',
+        prompt: 'x',
+      };
+      expect(validateQuestion(question).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('validateNotification', () => {
+    it('should accept a question notification', () => {
+      const notification = {
+        id: '1',
+        user_id: '9',
+        type: 'question',
+        payload: { preview: 'Which helper?' },
+        read_at: null,
+      };
+      expect(validateNotification(notification)).toHaveLength(0);
+    });
+
+    it('should reject an unknown notification type', () => {
+      const notification = {
+        id: '1',
+        user_id: '9',
+        type: 'email',
+        payload: {},
+      };
+      expect(validateNotification(notification).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('validateApiResponseStrict', () => {    it('should not throw for valid API response', () => {
       const validResponse = {
         success: true,
         data: { id: '123', name: 'Test' },

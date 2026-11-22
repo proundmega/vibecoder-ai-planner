@@ -29,6 +29,8 @@ const { requireRuntime, requireTicketGrant } = require('../../middleware/agentRo
 const { pool } = require('../../db');
 const harnessRunsRouter = require('../harnessRuns');
 const harnessObservabilityRouter = require('../harnessObservability');
+const questionsRouter = require('../questions');
+const notificationsRouter = require('../notifications');
 const cspViolationsRouter = require('../csp-violations');
 const milestonesRouter = require('../milestones');
 const deploymentsRouter = require('../deployments');
@@ -215,6 +217,8 @@ router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
 router.use('/harness', harnessObservabilityRouter);
 router.use('/harness', harnessRunsRouter);
+router.use('/harness', questionsRouter);
+router.use('/notifications', notificationsRouter);
 router.use('/csp-violations', cspViolationsRouter);
 
 // IP Whitelist routes (super admin only)

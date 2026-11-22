@@ -48,8 +48,7 @@ class OpenCodeConfigWriterTest {
         assertEquals("disabled", root.path("share").asText());
         assertFalse(root.path("autoupdate").asBoolean());
         assertEquals("deny", root.path("permission").path("question").asText());
-        assertEquals("deny", root.path("permission").path("doom_loop").asText());
-        assertEquals("deny", root.path("permission").path("bash").path("git push*").asText());
+        assertEquals("deny", root.path("permission").path("doom_loop").asText());        assertEquals("deny", root.path("permission").path("bash").path("git push*").asText());
         assertEquals("deny", root.path("permission").path("edit").asText());
         assertEquals("deny", root.path("permission").path("write").asText());
         assertEquals("allow", root.path("permission").path("sandbox_write").asText());
@@ -194,6 +193,40 @@ class OpenCodeConfigWriterTest {
 
         assertEquals("http://localhost:9999/v1",
             root.path("provider").path("opencode-go").path("options").path("baseURL").asText());
+    }
+
+    private HarnessConfig configWithQuestionLoop(boolean enabled) {
+        return new HarnessConfig(
+            "opencode",
+            Duration.ofSeconds(30),
+            Duration.ofMinutes(45),
+            List.of(),
+            List.of(".env*"),
+            null,
+            "restart",
+            new HarnessConfig.QuestionLoopConfig(
+                enabled,
+                Duration.ofMinutes(60),
+                Duration.ofSeconds(5),
+                3,
+                3)
+        );
+    }
+
+    @Test
+    void questionIsAllowedOnlyWhenTheFlagIsOnAndDoomLoopStaysDenied() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
+
+        JsonNode off = mapper.readTree(OpenCodeConfigWriter.write(
+            tempDir.resolve("off"), provider, configWithQuestionLoop(false), tempDir).toFile());
+        assertEquals("deny", off.path("permission").path("question").asText());
+        assertEquals("deny", off.path("permission").path("doom_loop").asText());
+
+        JsonNode on = mapper.readTree(OpenCodeConfigWriter.write(
+            tempDir.resolve("on"), provider, configWithQuestionLoop(true), tempDir).toFile());
+        assertEquals("allow", on.path("permission").path("question").asText());
+        assertEquals("deny", on.path("permission").path("doom_loop").asText());
     }
 
     @Test

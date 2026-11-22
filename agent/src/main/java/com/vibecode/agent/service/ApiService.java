@@ -10,12 +10,15 @@ import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessPrivacyGuard;
 import com.vibecode.agent.harness.EgressMtlsMaterial;
+import com.vibecode.agent.harness.QuestionBridge;
 import com.vibecode.agent.harness.RepoProfileSnapshot;
 import com.vibecode.agent.harness.RepoProfileValidation;
+import com.fasterxml.jackson.databind.JsonNode;
 import okhttp3.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
@@ -27,7 +30,7 @@ import java.util.Map;
  * HTTP client for communicating with the Vibecode backend API.
  * Handles authentication, request/response parsing, and error handling.
  */
-public class ApiService {
+public class ApiService implements QuestionBridge.Transport {
 
     private final OkHttpClient httpClient;
     private final OkHttpClient eventHttpClient;
@@ -300,6 +303,71 @@ public class ApiService {
         );
         if (response.hasError()) {
             throw new IOException("Failed to emit harness event: " + response.getError());
+        }
+    }
+
+    /**
+     * Persist a human question for a run (fg-55). The OpenCode prompt stays
+     * blocked while the bridge polls; this call is the persistence half.
+     */
+    @Override
+    public long createHarnessQuestion(
+        String runId,
+        String externalId,
+        String kind,
+        String prompt,
+        JsonNode options,
+        Instant expiresAt
+    ) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        body.put("kind", kind == null ? "question" : kind);
+        body.put("prompt", prompt);
+        if (externalId != null && !externalId.isBlank()) {
+            body.put("externalId", externalId);
+        }
+        if (options != null && !options.isMissingNode() && !options.isNull()) {
+            body.put("options", objectMapper.convertValue(options, Object.class));
+        }
+        if (expiresAt != null) {
+            body.put("expiresAt", expiresAt.toString());
+        }
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/questions",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to create harness question: " + response.getError());
+        }
+        Object id = response.getData() == null ? null : response.getData().get("id");
+        if (id == null) {
+            throw new IOException("Harness question response had no id");
+        }
+        return Long.parseLong(String.valueOf(id));
+    }
+
+    @Override
+    public Map<String, Object> getHarnessQuestion(String runId, long questionId)
+        throws IOException {
+        ApiResponse<Map<String, Object>> response = executeGet(
+            baseUrl + "/harness/runs/" + runId + "/questions/" + questionId,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to read harness question: " + response.getError());
+        }
+        return response.getData() == null ? Map.of() : response.getData();
+    }
+
+    @Override
+    public void expireHarnessQuestion(String runId, long questionId) throws IOException {
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/harness/runs/" + runId + "/questions/" + questionId + "/expire",
+            Map.of(),
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to expire harness question: " + response.getError());
         }
     }
 

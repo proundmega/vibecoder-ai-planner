@@ -2,6 +2,7 @@
 
 const {
   isCleanCutBaselineRow,
+  isBaselineMigration,
   planMigrationRun,
 } = require('../migrations/apply');
 
@@ -47,5 +48,24 @@ describe('fg-54 migration ledger planning', () => {
     expect(isCleanCutBaselineRow({ has_runtimes: false, has_agents: true })).toBe(false);
     expect(isCleanCutBaselineRow({ has_runtimes: false, has_agents: false })).toBe(false);
     expect(isCleanCutBaselineRow(null)).toBe(false);
+  });
+
+  test('a baseline skips legacy files but runs additive migrations above the cut', () => {
+    const all = [
+      '/migrations/001_create_tables.sql',
+      '/migrations/059_harness_runtime_ownership.sql',
+      '/migrations/057_agent_fleet_clean_cut.sql',
+      '/migrations/060_ticket_questions_notifications.sql',
+    ];
+    expect(isBaselineMigration(all[0])).toBe(true);
+    expect(isBaselineMigration(all[1])).toBe(true);
+    expect(isBaselineMigration(all[2])).toBe(true);
+    expect(isBaselineMigration(all[3])).toBe(false);
+
+    const baseline = all.filter(isBaselineMigration)
+      .map((file) => file.split('/').pop());
+    const plan = planMigrationRun({ files: all, applied: new Set(baseline) });
+
+    expect(plan.toRun).toEqual(['/migrations/060_ticket_questions_notifications.sql']);
   });
 });

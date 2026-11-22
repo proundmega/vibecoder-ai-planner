@@ -29,7 +29,8 @@ public final class HarnessBudgetTracker {
         long cachedTokens,
         double costUsd,
         int toolCalls,
-        long durationMs
+        long durationMs,
+        long waitedMs
     ) {
     }
 
@@ -52,6 +53,8 @@ public final class HarnessBudgetTracker {
     private int toolCalls;
     private boolean breached;
     private String breachReason;
+    private Instant pausedAt;
+    private long pausedMs;
 
     public HarnessBudgetTracker(
         BudgetLimits limits,
@@ -155,16 +158,14 @@ public final class HarnessBudgetTracker {
             return;
         }
         Duration maxDuration = limits.maxDuration();
-        double timeRatio = ratio(
-            Duration.between(startedAt, clock.get()).toMillis(),
-            maxDuration.toMillis());
+        long activeMs = activeDurationMs();
+        double timeRatio = ratio(activeMs, maxDuration.toMillis());
         double inputRatio = ratio(inputTokens, limits.maxInputTokens());
         double outputRatio = ratio(outputTokens, limits.maxOutputTokens());
         double costRatio = ratio(costUsd, limits.maxCostUsd());
         double toolRatio = ratio(toolCalls, limits.maxToolCalls());
 
-        warn("time", timeRatio, Duration.between(startedAt, clock.get()).toMillis() / 1000.0,
-            maxDuration.toSeconds());
+        warn("time", timeRatio, activeMs / 1000.0, maxDuration.toSeconds());
         warn("input_tokens", inputRatio, inputTokens, limits.maxInputTokens());
         warn("output_tokens", outputRatio, outputTokens, limits.maxOutputTokens());
         warn("cost_usd", costRatio, costUsd, limits.maxCostUsd());
@@ -235,14 +236,57 @@ public final class HarnessBudgetTracker {
     }
 
     public synchronized UsageSnapshot snapshot() {
+        long activeMs = activeDurationMs();
         return new UsageSnapshot(
             inputTokens,
             outputTokens,
             cachedTokens,
             costUsd,
             toolCalls,
-            Math.max(0, Duration.between(startedAt, clock.get()).toMillis())
+            Math.max(0, activeMs),
+            waitedMs()
         );
+    }
+
+    /**
+     * Pause the wall-clock meter while a human answers a question (fg-55
+     * NFR2). Token/cost/tool caps stay active. Repeated pause calls are
+     * idempotent.
+     */
+    public synchronized void pause() {
+        if (pausedAt == null) {
+            pausedAt = clock.get();
+        }
+    }
+
+    /** Resume the wall-clock meter and accumulate the paused interval. */
+    public synchronized void resume() {
+        if (pausedAt == null) {
+            return;
+        }
+        pausedMs += Math.max(0, Duration.between(pausedAt, clock.get()).toMillis());
+        pausedAt = null;
+    }
+
+    public synchronized boolean paused() {
+        return pausedAt != null;
+    }
+
+    /** Total human wait time, including the current pause. */
+    public synchronized long waitedMs() {
+        long total = pausedMs;
+        if (pausedAt != null) {
+            total += Math.max(0, Duration.between(pausedAt, clock.get()).toMillis());
+        }
+        return total;
+    }
+
+    private long activeDurationMs() {
+        long total = Duration.between(startedAt, clock.get()).toMillis() - pausedMs;
+        if (pausedAt != null) {
+            total -= Math.max(0, Duration.between(pausedAt, clock.get()).toMillis());
+        }
+        return Math.max(0, total);
     }
 
     private static double ratio(double used, double limit) {

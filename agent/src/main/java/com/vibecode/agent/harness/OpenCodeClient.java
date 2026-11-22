@@ -232,6 +232,67 @@ public final class OpenCodeClient implements HarnessClient {
         postJson("/session/" + sessionId + "/message", body, true);
     }
 
+    /**
+     * Resume a blocked question (fg-55). The exact reply shape is the pinned
+     * OpenCode contract; a 404 fails closed with an IOException so the
+     * supervisor fails the run instead of pretending the human answered.
+     */
+    @Override
+    public void replyToQuestion(
+        String sessionId,
+        String requestId,
+        String kind,
+        String answer
+    ) throws IOException {
+        if (requestId == null || requestId.isBlank()) {
+            throw new IOException("OpenCode question id is missing; cannot resume");
+        }
+        if ("permission".equals(kind)) {
+            postJson("/session/" + sessionId + "/permissions/" + requestId,
+                Map.of("response", permissionResponse(answer)));
+            return;
+        }
+        postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
+            Map.of("answers", List.of(Map.of("text", answer == null ? "" : answer))));
+    }
+
+    @Override
+    public void rejectQuestion(String sessionId, String requestId, String kind)
+        throws IOException {
+        if (requestId == null || requestId.isBlank()) {
+            return;
+        }
+        if ("permission".equals(kind)) {
+            postJson("/session/" + sessionId + "/permissions/" + requestId,
+                Map.of("response", "reject"));
+            return;
+        }
+        postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
+            Map.of("reject", true));
+    }
+
+    /**
+     * Map a human answer to the OpenCode permission response. A free-text
+     * answer must never default to approval: an unrecognised value rejects.
+     */
+    static String permissionResponse(String answer) {
+        if (answer == null || answer.isBlank()) {
+            return "reject";
+        }
+        String value = answer.trim().toLowerCase(java.util.Locale.ROOT);
+        if (value.equals("always") || value.startsWith("always ")) {
+            return "always";
+        }
+        if (value.equals("allow") || value.equals("once") || value.equals("yes")
+            || value.equals("approve") || value.equals("ok")
+            || value.equals("continue") || value.startsWith("allow")
+            || value.startsWith("yes") || value.startsWith("approve")
+            || value.startsWith("ok")) {
+            return "once";
+        }
+        return "reject";
+    }
+
     @Override
     public void subscribe(String sessionId, Consumer<HarnessEvent> listener) throws IOException {
         if (listener == null) {
@@ -529,6 +590,13 @@ public final class OpenCodeClient implements HarnessClient {
         Duration budget = config == null || config.maxDuration() == null
             ? Duration.ofMinutes(45)
             : config.maxDuration();
+        // A human answer may arrive after the wall-clock budget has been paused
+        // for up to HARNESS_QUESTION_TIMEOUT_MINUTES. Keep the prompt connection
+        // alive for that wait instead of cutting it off at the active budget.
+        if (config != null && config.questionLoop() != null
+            && config.questionLoop().enabled()) {
+            budget = budget.plus(config.questionLoop().timeout());
+        }
         call.timeout().timeout(budget.toMillis(), TimeUnit.MILLISECONDS);
     }
 

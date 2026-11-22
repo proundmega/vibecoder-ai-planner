@@ -2355,6 +2355,243 @@
         }
       }
     },
+    "/harness/runs/{runId}/questions": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Ask a human a question from a running harness run",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "prompt"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "question",
+                      "permission",
+                      "doom_loop"
+                    ]
+                  },
+                  "externalId": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "maxLength": 8192
+                  },
+                  "options": {
+                    "type": "object",
+                    "nullable": true
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Question persisted (or the existing idempotent row)"
+          },
+          "403": {
+            "description": "Runtime does not own this run"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List questions for a harness run",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/harness/runs/{runId}/questions/{questionId}": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Read a question and its answer",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "questionId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Question status and answer"
+          }
+        }
+      }
+    },
+    "/harness/runs/{runId}/questions/{questionId}/expire": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Expire a pending question (idempotent)",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/harness/runs/{runId}/questions/{questionId}/answer": {
+      "post": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Answer a pending question as a project member",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "runId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "questionId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "answer"
+                ],
+                "properties": {
+                  "answer": {
+                    "type": "string",
+                    "maxLength": 8192
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Question answered"
+          },
+          "409": {
+            "description": "Already answered or expired"
+          }
+        }
+      }
+    },
+    "/harness/projects/{projectId}/questions": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List project questions for the question inbox",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/harness/tickets/{ticketId}/questions": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "List questions for one ticket",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/harness/questions": {
+      "get": {
+        "tags": [
+          "Harness"
+        ],
+        "summary": "Cross-project question inbox for the current user",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/providers/resolve": {
       "post": {
         "tags": [
@@ -2888,6 +3125,117 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "List notifications for the current user",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "unread",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification rows newest first"
+          }
+        }
+      }
+    },
+    "/notifications/unread-count": {
+      "get": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Unread notification count for the bell",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Unread count"
+          }
+        }
+      }
+    },
+    "/notifications/read-all": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark every notification read",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Number of rows marked read"
+          }
+        }
+      }
+    },
+    "/notifications/{id}/read": {
+      "post": {
+        "tags": [
+          "Notifications"
+        ],
+        "summary": "Mark one notification read",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated notification"
+          },
+          "404": {
+            "description": "Notification not found for this user"
           }
         }
       }

@@ -76,6 +76,45 @@ const schemas: Record<string, SchemaDefinition> = {
     },
     required: ['id', 'name', 'owner_id'],
   },
+  // fg-55: services return raw DB rows, so question/notification contracts are
+  // snake_case. `answer` and timestamps are nullable while pending.
+  Question: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'int64' },
+      run_id: { type: 'string', format: 'uuid' },
+      ticket_id: { type: 'string', format: 'int64' },
+      project_id: { type: 'string', format: 'int64' },
+      runtime_id: { type: 'string', format: 'int64' },
+      kind: { type: 'string', enum: ['question', 'permission', 'doom_loop'] },
+      status: { type: 'string', enum: ['pending', 'answered', 'expired', 'cancelled'] },
+      prompt: { type: 'string' },
+      answer: { type: 'string', nullable: true },
+      answered_at: { type: 'string', format: 'date-time', nullable: true },
+      expires_at: { type: 'string', format: 'date-time', nullable: true },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+    required: ['id', 'run_id', 'ticket_id', 'project_id', 'kind', 'status', 'prompt'],
+  },
+  Notification: {
+    type: 'object',
+    properties: {
+      id: { type: 'string', format: 'int64' },
+      user_id: { type: 'string', format: 'int64' },
+      project_id: { type: 'string', format: 'int64', nullable: true },
+      ticket_id: { type: 'string', format: 'int64', nullable: true },
+      run_id: { type: 'string', format: 'uuid', nullable: true },
+      question_id: { type: 'string', format: 'int64', nullable: true },
+      type: {
+        type: 'string',
+        enum: ['question', 'run_succeeded', 'run_failed', 'budget_exceeded'],
+      },
+      payload: { type: 'object' },
+      read_at: { type: 'string', format: 'date-time', nullable: true },
+      created_at: { type: 'string', format: 'date-time' },
+    },
+    required: ['id', 'user_id', 'type', 'payload'],
+  },
 };
 
 function validateValue(value: unknown, schema: SchemaDefinition, path: string = 'root'): string[] {
@@ -149,6 +188,14 @@ export function validateTicket(data: unknown): string[] {
 
 export function validateAgent(data: unknown): string[] {
   return validateValue(data, schemas.Agent);
+}
+
+export function validateQuestion(data: unknown): string[] {
+  return validateValue(data, schemas.Question);
+}
+
+export function validateNotification(data: unknown): string[] {
+  return validateValue(data, schemas.Notification);
 }
 
 export function validateApiResponse(data: unknown): string[] {

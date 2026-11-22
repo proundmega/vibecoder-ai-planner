@@ -25,6 +25,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -127,6 +128,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile boolean terminalEventEmitted;
     private volatile Instant runStartedAt;
     private volatile long lastUsageReportAt;
+    private volatile QuestionBridge questionBridge;
+    private volatile DoomLoopDetector doomLoopDetector;
+    private volatile String questionFailure;
+    private final Set<String> handledQuestions = ConcurrentHashMap.newKeySet();
 
     public HarnessTicketProcessor(
         AgentConfig config,
@@ -419,7 +424,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     private boolean recoverRun(Map<String, Object> run) {
         String runId = textValue(run.get("id"));
-        if (isRunFresh(run)) {
+        boolean waiting = textValue(run.get("waiting_since")) != null;
+        if (!waiting && isRunFresh(run)) {
             recoveryDeferred = true;
             log.info("Skipping active harness run {}: heartbeat or lease is still fresh",
                 runId);
@@ -430,6 +436,32 @@ public final class HarnessTicketProcessor implements TicketWorker {
         String branch = textValue(run.get("branch"));
         String step = textValue(run.get("step"));
         Map<String, Object> payload = mapValue(run.get("last_checkpoint_payload"));
+
+        // A question is not durable across a supervisor restart (D3): expire the
+        // pending question and fail/release the run through the normal path.
+        if (waiting) {
+            String terminal = finishRecoveredRun(
+                runId,
+                "failed",
+                "question_timeout",
+                null,
+                null
+            );
+            if (!"failed".equals(terminal)) {
+                return false;
+            }
+            boolean released = releaseRecoveredTicket(runId);
+            reconcileRecoveredRun(runId);
+            if (ticketId != null) {
+                postMessage(ticketId, "update", released
+                    ? "A harness run was waiting for a human when the agent restarted; "
+                        + "the question expired and the ticket was returned for a clean retry."
+                    : "A harness run was waiting for a human when the agent restarted; "
+                        + "the ticket was left for operator recovery.");
+            }
+            log.info("Expired a waiting harness run {} after restart", runId);
+            return true;
+        }
 
         String ticketStatus = textValue(run.get("ticket_status"));
         String ticketPrUrl = textValue(run.get("ticket_pr_url"));
@@ -739,6 +771,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
         terminalEventEmitted = false;
         runStartedAt = Instant.now();
         lastUsageReportAt = 0;
+        questionBridge = null;
+        doomLoopDetector = null;
+        questionFailure = null;
+        handledQuestions.clear();
         Instant deadline = Instant.now().plus(maxDuration());
 
         postMessage(pickedUp.getId(), "update", "Started working on: " + pickedUp.getTitle());
@@ -976,6 +1012,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     providerHealth.recordSuccess(routingDecision.model());
                 }
                 reportUsage(true);
+                if (questionFailure != null) {
+                    failAndRelease(pickedUp.getId(), questionFailure);
+                    return;
+                }
             } finally {
                 // The prompt is blocking. Close the harness before verification
                 // and publishing so no background process can keep editing the
@@ -1207,6 +1247,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             routingDecision = null;
             budgetBreached = false;
             terminalEventEmitted = false;
+            questionBridge = null;
+            doomLoopDetector = null;
+            questionFailure = null;
+            handledQuestions.clear();
         }
     }
 
@@ -1349,7 +1393,170 @@ public final class HarnessTicketProcessor implements TicketWorker {
             if (tracker != null) {
                 tracker.accept(event).ifPresent(this::emitToolEvent);
             }
+            if (questionBridge != null && event.isQuestionEvent()) {
+                handleQuestionEvent(harness, sessionId, event);
+                return;
+            }
+            DoomLoopDetector detector = doomLoopDetector;
+            if (detector != null && event.isToolEvent()) {
+                DoomLoopDetector.Decision decision = detector.observe(event);
+                if (decision == DoomLoopDetector.Decision.ESCALATE) {
+                    handleDoomLoop(harness, sessionId, detector);
+                } else if (decision == DoomLoopDetector.Decision.ABORT) {
+                    abortForDoomLoop(harness, "doom-loop continue cap reached");
+                }
+            }
         });
+    }
+
+    /**
+     * Persist a question, pause the wall-clock budget, poll for an answer and
+     * resume the OpenCode session. Runs on the SSE listener thread while the
+     * prompt call is blocked on its own connection (fg-55 FR2/FR3).
+     */
+    private void handleQuestionEvent(
+        HarnessClient harness,
+        String sessionId,
+        HarnessEvent event
+    ) {
+        QuestionBridge bridge = questionBridge;
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (bridge == null) {
+            return;
+        }
+        String requestId = event.questionRequestId();
+        String dedupe = requestId == null || requestId.isBlank()
+            ? "evt-" + UUID.randomUUID()
+            : requestId;
+        if (!handledQuestions.add(dedupe)) {
+            return;
+        }
+        String kind = event.questionKind();
+        if (tracker != null) {
+            tracker.pause();
+        }
+        try {
+            QuestionBridge.PendingQuestion pending = bridge.ask(
+                kind, dedupe, event.questionText(), event.questionOptions());
+            Map<String, Object> asked = new LinkedHashMap<>();
+            asked.put("questionId", String.valueOf(pending.id()));
+            asked.put("kind", pending.kind());
+            emitEvent("question.asked", asked);
+
+            QuestionBridge.Answer answer = bridge.waitForAnswer(pending);
+            if (!answer.answered()) {
+                questionFailure = "question_timeout";
+                emitEvent("question.timeout", Map.of(
+                    "questionId", String.valueOf(pending.id()),
+                    "kind", pending.kind(),
+                    "status", answer.status() == null ? "expired" : answer.status()));
+                safeReject(harness, sessionId, bridge, pending);
+                closeQuietly(harness);
+                return;
+            }
+
+            bridge.reply(harness, sessionId, pending, answer.text());
+            emitEvent("question.answered", Map.of(
+                "questionId", String.valueOf(pending.id()),
+                "kind", pending.kind()));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            questionFailure = "question_timeout";
+            closeQuietly(harness);
+        } catch (IOException | RuntimeException failure) {
+            questionFailure = "question_resume_failed";
+            log.warn("Harness question failed: {}", redactWithProvider(failure.getMessage()));
+            closeQuietly(harness);
+        } finally {
+            if (tracker != null) {
+                tracker.resume();
+                reportUsage(true);
+            }
+        }
+    }
+
+    /**
+     * A repeated tool signature escalates to a `doom_loop` question. A human
+     * "continue" resets the detector; the configured continue cap or "abort"
+     * fails the run without publishing.
+     */
+    private void handleDoomLoop(
+        HarnessClient harness,
+        String sessionId,
+        DoomLoopDetector detector
+    ) {
+        QuestionBridge bridge = questionBridge;
+        HarnessBudgetTracker tracker = budgetTracker;
+        if (bridge == null) {
+            abortForDoomLoop(harness, "doom loop detected");
+            return;
+        }
+        String externalId = "doom-" + UUID.randomUUID();
+        if (tracker != null) {
+            tracker.pause();
+        }
+        try {
+            QuestionBridge.PendingQuestion pending = bridge.ask(
+                "doom_loop",
+                externalId,
+                "The harness repeated the same tool call. Reply `continue` to allow "
+                    + "more attempts, or `abort` to stop the run.",
+                null);
+            emitEvent("doom_loop.escalated", Map.of(
+                "questionId", String.valueOf(pending.id()),
+                "continues", detector.continues()));
+
+            QuestionBridge.Answer answer = bridge.waitForAnswer(pending);
+            if (!answer.answered()) {
+                questionFailure = "question_timeout";
+                emitEvent("question.timeout", Map.of(
+                    "questionId", String.valueOf(pending.id()),
+                    "kind", "doom_loop"));
+                closeQuietly(harness);
+                return;
+            }
+            String text = answer.text() == null ? "" : answer.text().trim().toLowerCase();
+            if (text.startsWith("abort") || text.startsWith("stop") || text.startsWith("no")) {
+                abortForDoomLoop(harness, "operator aborted the doom loop");
+                return;
+            }
+            DoomLoopDetector.Decision next = detector.continueAfterHuman();
+            if (next == DoomLoopDetector.Decision.ABORT) {
+                abortForDoomLoop(harness, "doom-loop continue cap reached");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            questionFailure = "question_timeout";
+            closeQuietly(harness);
+        } catch (IOException | RuntimeException failure) {
+            questionFailure = "doom_loop";
+            log.warn("Doom-loop question failed: {}", redactWithProvider(failure.getMessage()));
+            closeQuietly(harness);
+        } finally {
+            if (tracker != null) {
+                tracker.resume();
+                reportUsage(true);
+            }
+        }
+    }
+
+    private void abortForDoomLoop(HarnessClient harness, String reason) {
+        questionFailure = "doom_loop";
+        emitEvent("doom_loop.escalated", Map.of("aborted", true, "reason", reason));
+        closeQuietly(harness);
+    }
+
+    private void safeReject(
+        HarnessClient harness,
+        String sessionId,
+        QuestionBridge bridge,
+        QuestionBridge.PendingQuestion pending
+    ) {
+        try {
+            bridge.reject(harness, sessionId, pending);
+        } catch (IOException | RuntimeException ignored) {
+            // The run is already failing; the prompt is closed below.
+        }
     }
 
     /**
@@ -1807,6 +2014,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private void handleFailure(Long ticketId, Throwable failure) {
+        if (questionFailure != null) {
+            log.warn("Harness stopped by the question loop for ticket {}: {}",
+                ticketId, questionFailure);
+            failAndRelease(ticketId, questionFailure);
+            return;
+        }
         if (!budgetBreached && routingDecision != null) {
             providerHealth.recordFailure(routingDecision.model(), failure);
         }
@@ -1948,6 +2161,21 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         currentRunId = String.valueOf(run.get("id"));
+
+        HarnessConfig effectiveQuestionConfig = activeHarnessConfig();
+        HarnessConfig.QuestionLoopConfig questionLoop = effectiveQuestionConfig == null
+            ? null
+            : effectiveQuestionConfig.questionLoop();
+        if (questionLoop != null && questionLoop.enabled()) {
+            questionBridge = new QuestionBridge(apiService, currentRunId, questionLoop);
+            doomLoopDetector = new DoomLoopDetector(
+                questionLoop.doomLoopMax(), questionLoop.doomLoopContinues());
+        } else {
+            questionBridge = null;
+            doomLoopDetector = null;
+        }
+        questionFailure = null;
+        handledQuestions.clear();
 
         Long projectId = longValue(run.get("project_id"));
         if (projectId == null) {

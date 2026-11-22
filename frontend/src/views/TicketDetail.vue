@@ -10,6 +10,7 @@ import { getTicketPlanningUsage, getPlanningFileUsage } from '@/api/client'
 import { listTemplates } from '@/api/templates'
 import TicketEditModal from '@/components/TicketEditModal.vue'
 import VButton from '@/components/VButton.vue'
+import TicketQuestionCard from '@/components/TicketQuestionCard.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -466,6 +467,8 @@ async function handleShowTemplateSelect() {
         <h3>Description</h3>
         <p>{{ ticket.description }}</p>
       </div>
+
+      <TicketQuestionCard :ticket-id="ticketId" />
 
       <div v-if="ticket?.ready === false && ticket.blockedBy?.length" class="dependency-block">
         <h3>Blocked by dependencies</h3>

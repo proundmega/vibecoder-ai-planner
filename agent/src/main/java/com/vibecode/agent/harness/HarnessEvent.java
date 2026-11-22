@@ -30,6 +30,99 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         return contains(type, "error");
     }
 
+    /**
+     * A question or permission request that blocks the OpenCode session until a
+     * human (or the supervisor) replies.
+     */
+    public boolean isQuestionEvent() {
+        if (contains(type, "question") || contains(type, "permission")) {
+            return true;
+        }
+        if (payload == null) {
+            return false;
+        }
+        String payloadType = payload.path("type").asText("");
+        return contains(payloadType, "question") || contains(payloadType, "permission");
+    }
+
+    /** `permission` for permission requests, `question` otherwise. */
+    public String questionKind() {
+        String source = type == null ? "" : type;
+        String payloadType = payload == null ? "" : payload.path("type").asText("");
+        return contains(source, "permission") || contains(payloadType, "permission")
+            ? "permission"
+            : "question";
+    }
+
+    /**
+     * The OpenCode request id used for deduplication. Versions differ in where
+     * the id lives, so every observed shape is checked.
+     */
+    public String questionRequestId() {
+        if (payload == null) {
+            return null;
+        }
+        String value = firstText(payload,
+            "id", "requestID", "requestId", "questionID", "questionId",
+            "permissionID", "permissionId");
+        if (value != null) {
+            return value;
+        }
+        JsonNode properties = payload.path("properties");
+        value = firstText(properties,
+            "id", "requestID", "requestId", "questionID", "questionId",
+            "permissionID", "permissionId");
+        if (value != null) {
+            return value;
+        }
+        return firstText(properties.path("info"),
+            "id", "requestID", "requestId", "questionID", "questionId");
+    }
+
+    /** Best-effort human-readable prompt carried by the event. */
+    public String questionText() {
+        if (payload == null) {
+            return null;
+        }
+        String value = firstText(payload, "prompt", "question", "text", "message", "title");
+        if (value != null) {
+            return value;
+        }
+        JsonNode properties = payload.path("properties");
+        value = firstText(properties, "prompt", "question", "text", "message", "title");
+        if (value != null) {
+            return value;
+        }
+        return firstText(properties.path("info"), "prompt", "question", "text", "message", "title");
+    }
+
+    public JsonNode questionOptions() {
+        if (payload == null) {
+            return null;
+        }
+        JsonNode options = payload.path("options");
+        if (options.isMissingNode() || options.isNull()) {
+            options = payload.path("properties").path("options");
+        }
+        if (options.isMissingNode() || options.isNull()) {
+            options = payload.path("properties").path("info").path("options");
+        }
+        return options.isMissingNode() || options.isNull() ? null : options;
+    }
+
+    private static String firstText(JsonNode node, String... names) {
+        if (node == null) {
+            return null;
+        }
+        for (String name : names) {
+            String value = node.path(name).asText("");
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     private static boolean contains(String value, String needle) {
         return value != null && value.toLowerCase().contains(needle);
     }
