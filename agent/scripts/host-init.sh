@@ -369,15 +369,6 @@ SUPERVISOR_MEMORY_LIMIT_GB="$(awk -v b="$SUPERVISOR_MEMORY_BUDGET_MB" 'BEGIN {
 }')"
 echo "Supervisor container: ${SUPERVISOR_MEMORY_LIMIT_GB}G / ${SUPERVISOR_CPUS} cpus (budget ${SUPERVISOR_MEMORY_BUDGET_MB} MB); AGENT_HOST_MAX_RUNTIMES=${HOST_MAX_RUNTIMES}"
 
-if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "Dry run: no env file written."
-    exit 0
-fi
-if [[ "$CHECK" -eq 1 ]]; then
-    echo "Check passed: the declaration fits this host (binding: ${BINDING})."
-    exit 0
-fi
-
 # Docker-mode prerequisites are validated before writing an env file.
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
 if [[ "$SANDBOX_MODE" == "docker" ]]; then
@@ -391,6 +382,16 @@ if [[ "$SANDBOX_MODE" == "docker" ]]; then
         fail "$E_HOST" "REPO_HOST_PATH is not a directory: $REPO_HOST_PATH"
     fi
     COMPOSE_FILES+=(-f "$SANDBOX_COMPOSE")
+fi
+
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "Dry run: no env file written."
+    exit 0
+fi
+if [[ "$CHECK" -eq 1 ]]; then
+    echo "Check passed: the declaration fits this host (binding: ${BINDING})."
+    exit 0
 fi
 
 if [[ "$YES" -eq 1 ]]; then
