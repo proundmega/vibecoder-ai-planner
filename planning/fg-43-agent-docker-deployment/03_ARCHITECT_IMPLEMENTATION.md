@@ -15,6 +15,7 @@
 - [x] Add the supervisor `AGENT_HOST_MAX_RUNTIMES` guard and capacity log
 - [x] Replace the pool-controller assumptions with the fg-54 supervisor model
 - [x] Document host sizing and the declaration contract
+- [x] Add the host-sizing env vars to `AGENTS.md` and the host-init step to the fg-54 enrollment runbook
 
 ## Per-file changes
 
@@ -28,6 +29,8 @@
 | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | change | 7-runtime reference expansion |
 | `agent/README.md` | change | Host sizing section |
 | `agent/agent.ini.example` | change | Note that host-init sums counts and the supervisor caps growth |
+| `AGENTS.md` | change | List `AGENT_HOST_MAX_RUNTIMES`, `SUPERVISOR_CPUS`, `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_MEMORY_BUDGET_MB` |
+| `planning/DONE/fg-54-agent-fleet/05_RUNBOOK.md` | change | Add the host-init sizing/check step before enrollment |
 
 ## Verification matrix (canonical)
 
