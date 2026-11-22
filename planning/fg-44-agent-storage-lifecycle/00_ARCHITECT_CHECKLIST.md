@@ -7,7 +7,7 @@ effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
 updated: "2026-11-22"
-pr: null
+pr: 209
 branch: "feat/fg-44-storage-lifecycle"
 depends_on: ["fg-43", "fg-33", "fg-54"]
 ---
