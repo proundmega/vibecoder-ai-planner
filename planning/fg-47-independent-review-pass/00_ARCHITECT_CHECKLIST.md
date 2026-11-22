@@ -58,7 +58,7 @@ evidence and triage, not from adding another generic reviewer to every PR.
 | D2 | Reviewer quality scoring and calibration corpus | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
 | D3 | Per-project second-reviewer policy and overrides | fg-45 | Configuration | DONE/fg-45-ticket-quality-gates | open |
 | D4 | Cost accounting and hard budget for the second pass | fg-38 | Cost | DONE/fg-38-harness-budgets-routing | open |
-| D5 | Auto-tune trigger policy from escaped defects | fg-37, fg-41 | Evaluation | fg-37-evaluation-harness / DONE/fg-41-harness-observability | open |
+| D5 | Auto-tune trigger policy from escaped defects | fg-37, fg-41 | Evaluation | fg-37-agent-evaluation-harness / DONE/fg-41-harness-observability | open |
 
 ## Decisions needed from the user
 
