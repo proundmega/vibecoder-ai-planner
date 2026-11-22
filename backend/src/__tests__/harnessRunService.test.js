@@ -514,6 +514,7 @@ describe('HarnessRunService', () => {
 
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('waiting_since = COALESCE(waiting_since, NOW())');
+      expect(sql).toContain('heartbeat_at = NOW()');
       expect(sql).toContain("status = 'running'");
       expect(params).toEqual([RUN_ID]);
     });
