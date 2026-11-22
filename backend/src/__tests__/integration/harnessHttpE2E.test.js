@@ -824,6 +824,21 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
       [fixture.ticketId]
     );
 
+    // The reaper's reconcileRun has its own released CTE and in_progress
+    // guard. Exercise that path, not only the release-ticket route.
+    const reviewSummary = await HarnessReaper.runOnce({ limit: 10 });
+    expect(reviewSummary.reconciled).toBeGreaterThanOrEqual(1);
+    const reconciledRun = await dbRun(reviewRunId);
+    expect(reconciledRun.reconciled_at).not.toBeNull();
+
+    const stillReview = await pool.query(
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(stillReview.rows[0].status).toBe('review');
+    expect(stillReview.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
+
+    // The route guard independently refuses the same review ticket.
     const refused = await releaseRunTicket({
       token: fixture.nodeToken,
       runtimeId: fixture.runtimeId,
@@ -831,12 +846,12 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     });
     expect(refused.statusCode).toBe(200);
     expect(refused.body.data.released).toBe(false);
-    const stillReview = await pool.query(
+    const afterRoute = await pool.query(
       'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
       [fixture.ticketId]
     );
-    expect(stillReview.rows[0].status).toBe('review');
-    expect(stillReview.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
+    expect(afterRoute.rows[0].status).toBe('review');
+    expect(afterRoute.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
   });
 
   test('E21 publish is idempotent and reconcile cannot duplicate the PR', async () => {
