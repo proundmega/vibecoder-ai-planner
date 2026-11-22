@@ -247,6 +247,16 @@ else
 fi
 assert_contains "$TMP_DIR/rel.env" "AGENT_INI_PATH=$REPO_ROOT/agent/agent.ini.example" "canonicalizes the ini path"
 
+# fg-44 storage overrides are written when set.
+STORAGE_ENV=("${REFERENCE_ENV[@]}" AGENT_HOST_ENV_FILE="$TMP_DIR/storage.env" AGENT_DISK_BUDGET_GB=7 HARNESS_WORKSPACE_RETENTION_HOURS=12)
+if env "${STORAGE_ENV[@]}" bash "$HOST_INIT" >"$TMP_DIR/storage.out" 2>&1; then
+    pass "storage overrides are accepted"
+else
+    fail "storage overrides are accepted"
+fi
+assert_contains "$TMP_DIR/storage.env" "AGENT_DISK_BUDGET_GB=7" "writes the disk budget"
+assert_contains "$TMP_DIR/storage.env" "HARNESS_WORKSPACE_RETENTION_HOURS=12" "writes the workspace TTL"
+
 # Global profile overrides.
 OVERRIDE_ENV=(
     "${REFERENCE_ENV[@]}"

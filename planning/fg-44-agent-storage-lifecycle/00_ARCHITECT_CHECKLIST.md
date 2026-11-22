@@ -1,18 +1,25 @@
 ---
 id: "fg-44"
 title: "Agent Storage Lifecycle and Idle Refresh"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
 updated: "2026-11-22"
 pr: null
-branch: null
+branch: "feat/fg-44-storage-lifecycle"
 depends_on: ["fg-43", "fg-33", "fg-54"]
 ---
 
 # 00 — Agent Storage Lifecycle and Idle Refresh (fg-44)
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Implementation in review | `feat/fg-44-storage-lifecycle`; see `03` Results | ☑ |
+| Verification results | `03` → Results (agent 959 tests; storage 15; host-storage 12; host-init 78; Compose) | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`),

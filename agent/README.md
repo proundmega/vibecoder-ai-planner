@@ -189,6 +189,41 @@ The supervisor refuses to start if `agent.ini` grows past
 role counts. `AGENT_HOST_MAX_RUNTIMES=0` disables the guard for a hand-managed
 host.
 
+## Storage lifecycle (fg-44)
+
+Workspaces are runtime-scoped:
+
+```
+/repos/runtimes/<runtimeId>/<ticketId>/{repo,tmp,logs}
+/repos/runtimes/<runtimeId>/cache
+```
+
+- The supervisor passes `REPO_CLONE_DIR=/repos/runtimes/<runtimeId>` to each
+  child; a child never writes into another runtime root.
+- `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start and removes
+  the ticket root only after the run is terminal and its lease is released.
+  Sandbox destroy runs before deletion; a failed destroy keeps the workspace.
+- Idle and max-lifetime refresh use `AGENT_IDLE_REFRESH_MS` (2h) and
+  `AGENT_MAX_LIFETIME_HOURS` (24h) and only run between tickets.
+- Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, clean idle,
+  recycle the oldest idle runtime, require manual recovery.
+- Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
+  10 GB, `light` 5 GB) or `AGENT_DISK_BUDGET_GB`.
+- `HARNESS_WORKSPACE_RETENTION_HOURS` is the single workspace/orphan TTL.
+- `host-storage.sh` is the stopped-supervisor recovery path:
+
+```bash
+agent/scripts/host-storage.sh --dry-run
+agent/scripts/host-storage.sh --apply            # refuses live PID/.active
+agent/scripts/host-storage.sh --apply --legacy   # old /repos/<8hex>-* and temp dirs
+agent/scripts/host-storage.sh --dry-run --images
+```
+
+Storage events (`storage.workspace`, `storage.cleanup`,
+`storage.cleanup_failed`, `storage.refresh`, `storage.watermark`,
+`storage.budget_exceeded`, `storage.orphan`, `storage.image_prune`) go through
+the existing event sink/structured logs.
+
 ## Supervisor lifecycle
 
 | Event | Behavior |
@@ -265,6 +300,19 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_RUNTIME_STOP_FILE` | Drain marker path set by the supervisor | _(supervisor)_ |
 | `AGENT_NODE_ID` | Optional node-id override; normally derived from the node credential | _(none)_ |
 | `AGENT_RUNTIME_HEAP_MB` | Heap per child JVM | `768` |
+| `AGENT_IDLE_REFRESH_MS` | Idle refresh threshold | `7200000` |
+| `AGENT_MAX_LIFETIME_HOURS` | Runtime lifetime between tickets | `24` |
+| `AGENT_DISK_BUDGET_GB` | Per-runtime disk budget override | role profile |
+| `HARNESS_WORKSPACE_RETENTION_HOURS` | Workspace/orphan TTL | `24` |
+| `AGENT_STORAGE_CHECK_SECONDS` | Watermark sample interval | `60` |
+| `AGENT_STORAGE_METER_SECONDS` | `du`/inode meter interval | `300` |
+| `AGENT_STORAGE_WARN_PCT` | Warn watermark | `70` |
+| `AGENT_STORAGE_STOP_PCT` | Stop-spawn watermark | `80` |
+| `AGENT_STORAGE_CLEAN_PCT` | Clean-idle watermark | `85` |
+| `AGENT_STORAGE_RECYCLE_PCT` | Recycle-idle watermark | `90` |
+| `AGENT_STORAGE_MANUAL_PCT` | Manual-recovery watermark | `95` |
+| `AGENT_ORPHAN_TTL_HOURS` | Quarantine TTL | `24` |
+| `AGENT_TMPDIR` | Host temp root scanned by `host-storage.sh --legacy` | `${TMPDIR:-/tmp}` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
 | `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |
 | `SUPERVISOR_HEALTH_REQUIRED` | Wait for backend `/api/health` before enrollment/declaration/spawn | `true` |

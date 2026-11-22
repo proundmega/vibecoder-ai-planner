@@ -910,6 +910,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             workspace = workspaceFactory.apply(config.getRepoName());
+            workspace.setWorkspaceKey(String.valueOf(pickedUp.getId()));
+            if (currentRunId != null) {
+                workspace.writeActiveMarker(currentRunId);
+            }
 
             if (config.isDryRun()) {
                 postMessage(pickedUp.getId(), "status",
@@ -931,6 +935,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             } else {
                 workspace.cloneRepo(repoUrl, branchName, profile.baseBranch(), cloneTimeout);
             }
+            assertStorageBudget(workspace, pickedUp);
             java.util.Map<String, Object> cloned = new java.util.HashMap<>();
             cloned.put("workspacePath", String.valueOf(workspace.getRepoDir()));
             if (workspace.getBaseCommit() != null) {
@@ -1238,15 +1243,32 @@ public final class HarnessTicketProcessor implements TicketWorker {
             closeQuietly(harness);
             closeBridge(bridge);
             deleteQuietly(tempDir);
+            boolean sandboxDestroyFailed = false;
             if (sandbox != null) {
                 try {
                     sandboxRunner.destroy(sandbox);
                 } catch (IOException | RuntimeException e) {
+                    sandboxDestroyFailed = true;
                     log.warn("Could not destroy sandbox {}: {}", sandbox.id(), e.getMessage());
+                    emitEvent("storage.cleanup_failed", Map.of(
+                        "ticketId", String.valueOf(pickedUp.getId()),
+                        "error", "sandbox destroy failed"));
                 }
             }
-            if (workspace != null) {
-                workspace.cleanup();
+            if (workspace != null && !sandboxDestroyFailed) {
+                try {
+                    long bytes = workspace.workspaceBytes();
+                    workspace.cleanup(String.valueOf(pickedUp.getId()));
+                    emitEvent("storage.cleanup", Map.of(
+                        "ticketId", String.valueOf(pickedUp.getId()),
+                        "bytes", bytes,
+                        "reason", "terminal run"));
+                } catch (IOException | RuntimeException e) {
+                    log.warn("Workspace cleanup failed for ticket {}: {}", pickedUp.getId(), e.getMessage());
+                    emitEvent("storage.cleanup_failed", Map.of(
+                        "ticketId", String.valueOf(pickedUp.getId()),
+                        "error", redactWithProvider(e.getMessage())));
+                }
             }
             currentTicketId = null;
             currentStep = null;
@@ -2652,6 +2674,22 @@ public final class HarnessTicketProcessor implements TicketWorker {
         long exponent = Math.min(Math.max(0, attempt - 1), 10);
         long delay = Math.min(maxDelayMs, baseDelayMs * (1L << exponent));
         return attempt >= maxAttempts ? maxDelayMs : Math.max(0, delay);
+    }
+
+    private void assertStorageBudget(WorkspaceManager workspace, Ticket ticket) throws IOException {
+        long budgetGb = com.vibecode.agent.supervisor.StoragePolicy.budgetGbFor(
+            config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
+        long budgetBytes = budgetGb * 1024L * 1024L * 1024L;
+        long usedBytes = workspace.workspaceBytes();
+        if (budgetBytes > 0 && usedBytes > budgetBytes) {
+            java.util.Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("runtimeId", config.getRuntimeId());
+            payload.put("ticketId", ticket == null ? null : String.valueOf(ticket.getId()));
+            payload.put("budgetGb", budgetGb);
+            payload.put("usedGb", Math.round((usedBytes / (1024.0 * 1024.0 * 1024.0)) * 100.0) / 100.0);
+            emitEvent("storage.budget_exceeded", payload);
+            throw new IOException("storage_budget_exceeded");
+        }
     }
 
     private void postMessage(Long ticketId, String type, String content) {

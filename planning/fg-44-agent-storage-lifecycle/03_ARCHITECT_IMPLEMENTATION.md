@@ -110,4 +110,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| — | — | — | Not run (planned) |
+| 2026-11-22 | `feat/fg-44-storage-lifecycle` | Agent 959 tests (storage 15); host-storage 12/12; host-init 78/78; Compose base+sandbox | Runtime/ticket keyed workspaces, keyed cleanup + active marker, storage policy/watermarks/log, budget guard, storage events, host-init budget/TTL env, host-storage recovery script and tests. |
