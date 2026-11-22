@@ -46,4 +46,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-56-supervisor-health-gate` | BackendHealthGate 6 tests; SupervisorMain + SupervisorIntegration 20 | Pass. Healthy/503/timeout/opt-out covered; the gate runs before enrollment/declaration. |
+| 2026-11-22 | `feat/fg-56-supervisor-health-gate` (PR #203) | BackendHealthGate 6 tests; SupervisorMain + SupervisorIntegration 20 | Pass. Healthy/503/timeout/opt-out covered; the gate runs before enrollment/declaration. |

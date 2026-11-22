@@ -1,13 +1,13 @@
 ---
 id: "fg-56"
 title: "Supervisor Backend Health Gate"
-status: in_progress
+status: in_review
 priority: "P1"
 effort: "Small"
 scope: "Agent"
 created: "2026-11-22"
 updated: "2026-11-22"
-pr: null
+pr: 203
 branch: "feat/fg-56-supervisor-health-gate"
 depends_on: ["fg-43", "fg-54"]
 ---
@@ -30,7 +30,7 @@ endpoint is green.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan recorded | This suite; fg-43 D7 | ☑ |
-| Implementation merged | pending | ☐ |
+| Implementation in review | PR #203 | ☑ |
 | Verification results | `03` → Results | ☐ |
 
 ## Deferred register (canonical)
