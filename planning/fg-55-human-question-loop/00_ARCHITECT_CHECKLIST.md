@@ -1,7 +1,7 @@
 ---
 id: "fg-55"
 title: "Human Question Loop and Notifications"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Both"
@@ -39,7 +39,7 @@ repetition policy that escalates to a question.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | #193 added this suite to master | ☑ |
-| Implementation merged | pending review | ☐ |
+| Implementation merged | PR #195, squash `3f1b231` | ☑ |
 | Verification results | `03` → Results (local: backend 152/1788, integration 19/141, agent 923, frontend 69/596 + 37 e2e) | ☑ |
 
 ## Deferred register (canonical)

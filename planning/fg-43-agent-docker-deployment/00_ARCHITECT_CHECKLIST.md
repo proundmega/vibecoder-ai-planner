@@ -1,7 +1,7 @@
 ---
 id: "fg-43"
 title: "Agent Docker Deployment and Host Sizing"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Backend"
@@ -18,7 +18,7 @@ depends_on: ["fg-33", "fg-54"]
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Implementation in review | PR #197; see `03` Results | ☑ |
+| Implementation merged | PR #197, squash `ccf5d6a` | ☑ |
 | Verification results | `03` → Results (shell 65/65; Java 41 focused / full agent suite 929 tests; Compose base+sandbox) | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
