@@ -114,3 +114,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 |---|---|---|---|
 | 2026-11-22 | 06e923d | backend unit + integration, agent unit, frontend unit + typecheck + lint, planning check | pass |
 | 2026-11-22 | 2a216b4 | review fixes: queue filter, content-before-gate, create small-fix permission, criteria scoping, requirement parsing, docs/indexes, regenerated OpenAPI/types | pass |
+| 2026-11-22 | ffac5dd | review fixes 2: scoped create options validated before insert, actor role through criteria/template seed, criteria UI capability, membership/event tests, docs drift | pass |
