@@ -110,17 +110,84 @@ model = acme/claude-opus
 count = 1
 ```
 
-- `role` is `worker`, `reviewer` or `planner`.
+- `role` is `worker`, `reviewer`, `planner` or `light`.
 - `model` is `<credential-name>/<model>` in the owner/project scope. Ambiguous
   refs are rejected by the server (400/409), never guessed.
 - `count` spawns `<name>-1` … `<name>-N`; names are deterministic.
 - `effort` is `minimal`, `low`, `medium`, `high` or `max`; omitted means the
   model default (`medium`).
-- `project` is **required for worker sections** (Track A’s declare contract).
+- `project` is **required for worker and light sections** (Track A’s declare
+  contract).
   Grants decide authorization; the value is a declaration hint, never trusted.
 - Unknown keys, duplicate sections, invalid enums and any secret-looking key
   or value stop the supervisor at startup. Provider keys are fetched per
   runtime from the backend, never stored here.
+
+## Host sizing (fg-43)
+
+`agent/scripts/host-init.sh` sizes the host for the declaration before the
+supervisor starts. It parses `agent.ini`, sums the role profiles, subtracts the
+OS/Docker/supervisor reservation, fails closed if the fleet does not fit, and
+writes `.env.agent-host` (mode `0600`). There is no `PoolManager`, no pool admin
+token and no `MAX_POOL_SIZE`: the fg-54 supervisor owns the runtime children.
+
+| Role | CPU | RAM | Disk |
+|---|---|---|---|
+| `worker` | 2.0 | 3 GB | 20 GB |
+| `reviewer` | 1.5 | 2.5 GB | 10 GB |
+| `planner` | 1.5 | 2.5 GB | 10 GB |
+| `light` | 0.5 | 1.5 GB | 5 GB |
+
+`light` is a sizing variant and runs as a worker child; it does not invent a
+server role.
+
+Reference case: 3 workers + 2 reviewers + 2 planners = **7 runtimes**, 12 CPU,
+19 GB and 100 GB. On a 48-thread / 192 GB / 2 TB host it fits (binding `cpu`);
+the script writes `AGENT_HOST_MAX_RUNTIMES=50`,
+`AGENT_HOST_DECLARED_RUNTIMES=7`, `SUPERVISOR_CPUS=7.00`,
+`SUPERVISOR_MEMORY_BUDGET_MB=5376` and `SUPERVISOR_MEMORY_LIMIT=7G`.
+
+```bash
+# detect, parse, print the formula, write nothing
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --dry-run --explain
+
+# validate this host (no write, no start)
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --check
+
+# write .env.agent-host (use --force to replace an existing file)
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh
+
+# write and start the supervisor stack, then wait for /health
+AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --yes
+```
+
+Exit codes: `2` arguments, `3` host/Docker/sandbox/repo validation, `4`
+`agent.ini`, `5` over capacity, `6` Compose/health.
+
+The script supports `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`,
+`AGENT_DISK_BUDGET_GB`, `AGENT_UTILIZATION_TARGET`,
+`AGENT_RUNTIME_HEAP_MB`, `SANDBOX_CPUS`, `SANDBOX_MEMORY_MB`,
+`SANDBOX_DISK_MB`, `AGENT_LOG_MAX_SIZE` and `AGENT_LOG_MAX_FILE`.
+`AGENT_HOST_CPU_THREADS`, `AGENT_HOST_RAM_GB` and `AGENT_HOST_DISK_GB` are
+deterministic overrides for tests/CI.
+
+`SANDBOX_MODE=docker` adds `agent/docker-compose.sandbox.yml` and requires
+`SANDBOX_HOST_WORKSPACE_ROOT` plus a writable `REPO_HOST_PATH`. The generated
+env file is canonicalized and passed explicitly, so a caller's relative
+`AGENT_INI_PATH` cannot become a Compose named volume.
+
+Compose reads `SUPERVISOR_CPUS`, `SUPERVISOR_MEMORY_LIMIT`,
+`AGENT_LOG_MAX_SIZE` and `AGENT_LOG_MAX_FILE` from the env file:
+
+```bash
+docker compose --env-file .env.agent-host \
+  -f agent/docker-compose.yml [-f agent/docker-compose.sandbox.yml] up -d --build
+```
+
+The supervisor refuses to start if `agent.ini` grows past
+`AGENT_HOST_MAX_RUNTIMES` (default `50`); re-run `host-init.sh` after changing
+role counts. `AGENT_HOST_MAX_RUNTIMES=0` disables the guard for a hand-managed
+host.
 
 ## Supervisor lifecycle
 

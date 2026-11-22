@@ -287,6 +287,41 @@ class SupervisorMainTest {
     }
 
     @Test
+    void sighupRejectsADeclarationOverTheHostCapBeforeDeclaring() throws Exception {
+        Path ini = tempDir.resolve("over-capacity.ini");
+        Files.writeString(ini, """
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 6
+            project = 1
+
+            [runtime "planners"]
+            role = planner
+            model = acme/model
+            count = 1
+            """);
+        RuntimeConfig initial = RuntimeConfig.parse("""
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 1
+            """);
+        AtomicReference<RuntimeConfig> desired = new AtomicReference<>(initial);
+        com.vibecode.agent.service.RuntimeApi api =
+            mock(com.vibecode.agent.service.RuntimeApi.class);
+        Supervisor supervisor = mock(Supervisor.class);
+
+        RuntimeConfig applied = SupervisorMain.reload(api, supervisor, ini, desired, 6);
+
+        org.junit.jupiter.api.Assertions.assertNull(applied);
+        assertEquals(initial, desired.get());
+        org.mockito.Mockito.verify(api, org.mockito.Mockito.never())
+            .declareRuntimes(anyList());
+    }
+
+    @Test
     void sighupReloadReDeclaresAndSpawnsTheAddedSection() throws Exception {
         Assumptions.assumeTrue(sleepAvailable(), "POSIX sleep is required for this test");
         RuntimeConfig initial = RuntimeConfig.parse("""

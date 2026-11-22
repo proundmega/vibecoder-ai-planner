@@ -5,69 +5,60 @@
 
 ## Plan
 
-- [ ] Define the host capacity model and reservation policy
-- [ ] Write the sizing formula and examples for build/review/light agents
-- [ ] Allow a computed pool of 0 and fail closed; add `POOL_PAUSED`
-- [ ] Fix the `MAX_POOL_SIZE` parser so 0 is not coerced to 50
-- [ ] Add a runtime pool pause/resume config endpoint (`{ paused, maxPoolSize }`) guarded by `POOL_ADMIN_TOKEN`
-- [ ] Generate `POOL_ADMIN_TOKEN` with mode `0600` in `.env.agent-host` for host-init/recovery
-- [ ] Keep `POOL_ADMIN_TOKEN` backend-only; filter it from `agent/docker-compose.host.yml` and the PoolManager agent env allowlist
-- [ ] Map `AGENT_MAX_POOL_SIZE` (hard cap), `AGENT_POOL_SIZE` (capped override, can only lower) and `MAX_POOL_SIZE` (runtime)
-- [ ] Resolve `AGENT_REPO_DIR` from the repo volume mountpoint for `df`/`du`
-- [ ] Create `agent/host-init.sh` with `--dry-run` and `--yes`
-- [ ] Generate a `.env.agent-host` consumed by Compose/PoolManager
-- [ ] Add per-container CPU/RAM/PID/log limits
-- [ ] Define role profiles (build, review, fixer, light poller) with one pool per role in Phase 1
-- [ ] Decide the single-host topology (backend + PoolManager + agents on one Docker host)
-- [ ] Add compose deployment file and health checks
-- [ ] Persist `POOL_PAUSED=false`, add a backend startup health gate, and wait for `/health`; a restart resumes automatically
-- [ ] Add validation, logging and override behavior
-- [ ] Document multi-host/remote-Docker as a follow-up
-- [ ] Keep Kubernetes out of scope for this ticket
+- [x] Detect host CPU/RAM/disk with deterministic CI overrides
+- [x] Parse `agent.ini` role/count and sum the runtime profiles
+- [x] Reserve OS/Docker capacity and fail closed over capacity
+- [x] Support a computed `0`/failure path without starting a partial fleet
+- [x] Write `.env.agent-host` atomically with mode `0600`
+- [x] Add `--dry-run`, `--explain`, `--check`, `--yes`, `--force`
+- [x] Feed Compose memory/CPU/log rotation from the env file
+- [x] Add the supervisor `AGENT_HOST_MAX_RUNTIMES` guard and capacity log
+- [x] Replace the pool-controller assumptions with the fg-54 supervisor model
+- [x] Document host sizing and the declaration contract
 
 ## Per-file changes
 
-To be filled in when implementation starts.
-
 | File | Action | Change |
 |---|---|---|
-| | | |
-
-## Dependencies
-
-- fg-33, fg-54 (fg-34 recommended)
+| `agent/scripts/host-init.sh` | add | Host detection, agent.ini parsing, capacity math, env file and optional Compose start |
+| `agent/scripts/host-init.test.sh` | add | Hermetic reference/over-capacity/mode/permission tests |
+| `agent/docker-compose.yml` | change | Env-driven `SUPERVISOR_MEMORY_LIMIT`/`SUPERVISOR_CPUS`, JSON log rotation, `AGENT_HOST_MAX_RUNTIMES` |
+| `agent/src/main/java/com/vibecode/agent/supervisor/SupervisorMain.java` | change | Parse/enforce the host cap at boot and SIGHUP; capacity log |
+| `agent/src/test/java/com/vibecode/agent/supervisor/SupervisorCapacityTest.java` | add | Cap parsing, 7-runtime fit, over-capacity failure |
+| `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | change | 7-runtime reference expansion |
+| `agent/README.md` | change | Host sizing section |
+| `agent/agent.ini.example` | change | Note that host-init sums counts and the supervisor caps growth |
 
 ## Verification matrix (canonical)
 
-One row per requirement from `01`. A requirement with no row is not done.
-
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | | | | |
-| FR2 | | | | |
-| FR3 | | | | |
-| FR4 | | | | |
-| FR5 | | | | |
-| FR6 | | | | |
-| FR7 | | | | |
-| FR8 | | | | |
-| FR9 | | | | |
-| FR10 | | | | |
-| FR11 | | | | |
-| FR12 | | | | |
-| FR13 | | | | |
+| FR1 | Shell | `host-init.test.sh` | Reference host reports 48 threads / 192 GB / 2 TB | `bash agent/scripts/host-init.test.sh` |
+| FR2 | Shell | `host-init.test.sh` | Reserves and formula printed by `--explain` | same |
+| FR3 | Shell | `host-init.test.sh` | Over-capacity declaration fails with the binding dimension | same |
+| FR4 | Shell + Java | `host-init.test.sh`, `RuntimeConfigTest` | 3/2/2 roles sum to 7 runtimes / 12 CPU / 19 GB / 100 GB | same + `mvn test -Dtest=RuntimeConfigTest` |
+| FR4 | Shell | `host-init.test.sh` | Light role and profile totals | same |
+| FR5 | Shell | `host-init.test.sh` | Heap/profile overrides and env values are reproducible | same |
+| FR6 | Shell | `host-init.test.sh` | Env file mode 0600; no write in dry-run/check; `--force` required | same |
+| FR7 | Compose | `docker-compose.yml` | Base Compose renders; Docker mode adds the sandbox overlay | `docker compose -f agent/docker-compose.yml config`; `... -f agent/docker-compose.sandbox.yml config` |
+| FR8 | Shell | `host-init.test.sh` | Dry-run/check do not require Docker; deploy requires it | same |
+| FR9 | Compose | `docker-compose.yml` | Memory/CPU/log rotation values are env-driven | `docker compose ... config` |
+| FR10 | Java | `SupervisorCapacityTest` | Cap parsing and capacity failure message | `mvn test -Dtest=SupervisorCapacityTest` |
+| FR11 | Shell | `host-init.test.sh` | Over-capacity writes nothing and starts nothing | same |
+| FR12 | Java | `SupervisorCapacityTest`, `SupervisorMainTest` | Default cap 50; 7 slots rejected at cap 6; SIGHUP over-cap rejects before declaring | `mvn test -Dtest=SupervisorCapacityTest,SupervisorMainTest` |
+| FR13 | Shell | `host-init.test.sh` | `--yes` waits for `/health`; D7 records the supervisor health-gate deferral | same |
 
 ## Review checklist
 
-- [ ] Every `FR*`/`NFR*` has a passing row in the matrix
-- [ ] Error paths and edge cases are covered, not only the happy path
-- [ ] Migration has a rollback and is registered in `apply.js`
-- [ ] API contract matches `02`; OpenAPI/types regenerated if it changed
-- [ ] No secret, `.env`, `Jenkinsfile`, or unrelated file touched
-- [ ] `04` (if present) matches what was actually built
+- [x] Every in-scope `FR*` has a passing row
+- [x] Error paths (over capacity, existing env, invalid config) are covered
+- [x] No PoolManager, pool admin token, `MAX_POOL_SIZE` or admin API
+- [x] No secret in generated output; env file is 0600
+- [x] Base and sandbox Compose overlays render
+- [x] `02` matches what was built
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| | | | |
+| 2026-11-22 | `f86737b` (PR #197) | shell 65/65; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |

@@ -7,11 +7,18 @@
 ; channel and are rejected here by the parser (secret-looking keys *and*
 ; secret-looking values fail the boot).
 ;
-;   role   = worker | reviewer | planner   (required)
+;   role   = worker | reviewer | planner | light   (required)
 ;   model  = <credential-name>/<model>     (required)
 ;   count  = 1..64                         (required)
 ;   effort = minimal | low | medium | high | max   (optional; model default)
-;   project= <project id>                  (required for workers; Track A)
+;   project= <project id>                  (required for workers/light; Track A)
+;
+; Host sizing (fg-43): agent/scripts/host-init.sh reads this file and sums the
+; role profiles (worker 2 CPU/3 GB/20 GB, reviewer 1.5/2.5/10, planner
+; 1.5/2.5/10, light 0.5/1.5/5) to check the host and write .env.agent-host.
+; The supervisor then refuses to start if this file declares more slots than
+; AGENT_HOST_MAX_RUNTIMES (default 50). Re-run host-init.sh after changing any
+; count; do not raise the cap by hand without checking CPU, RAM and disk first.
 ;
 ; Section names are used in child names (<name>-1, <name>-2, …) and PID files.
 ; Changing role/model/effort/project replaces only the affected children;

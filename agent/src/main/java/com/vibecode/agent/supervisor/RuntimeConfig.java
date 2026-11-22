@@ -252,7 +252,12 @@ public final class RuntimeConfig {
     public enum Role {
         WORKER("worker"),
         REVIEWER("reviewer"),
-        PLANNER("planner");
+        PLANNER("planner"),
+        /**
+         * A light poller is sized and declared separately but runs as a
+         * worker child: the server role enum stays closed.
+         */
+        LIGHT("worker");
 
         private final String wireName;
 
@@ -266,14 +271,17 @@ public final class RuntimeConfig {
 
         public static Role fromWire(String raw) {
             if (raw != null) {
+                if ("light".equalsIgnoreCase(raw)) {
+                    return LIGHT;
+                }
                 for (Role role : values()) {
-                    if (role.wireName.equalsIgnoreCase(raw)) {
+                    if (role != LIGHT && role.wireName.equalsIgnoreCase(raw)) {
                         return role;
                     }
                 }
             }
             throw new IllegalArgumentException(
-                "role must be one of worker, reviewer, planner (got '" + raw + "')");
+                "role must be one of worker, reviewer, planner, light (got '" + raw + "')");
         }
     }
 

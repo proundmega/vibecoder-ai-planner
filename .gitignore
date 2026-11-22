@@ -12,6 +12,8 @@ backend/dist/
 .env
 .env.local
 .env.*.local
+.env.agent-host
+agent/.env.agent-host
 !backend/.env.example
 !frontend/.env.example
 

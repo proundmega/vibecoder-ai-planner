@@ -22,6 +22,7 @@ services:
       - AGENT_RUNTIME_HEAP_MB=${AGENT_RUNTIME_HEAP_MB:-768}
       - SUPERVISOR_MEMORY_BUDGET_MB=${SUPERVISOR_MEMORY_BUDGET_MB:-0}
       - SUPERVISOR_STOP_TIMEOUT_SECONDS=${SUPERVISOR_STOP_TIMEOUT_SECONDS:-10}
+      - AGENT_HOST_MAX_RUNTIMES=${AGENT_HOST_MAX_RUNTIMES:-50}
       # Optional fallback only; the project's configured repo wins.
       - REPO_OWNER=${REPO_OWNER:-}
       - REPO_NAME=${REPO_NAME:-}
@@ -38,6 +39,16 @@ services:
       # 100, gid 101: mkdir -p repos && sudo chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: ${AGENT_LOG_MAX_SIZE:-10m}
+        max-file: ${AGENT_LOG_MAX_FILE:-3}
+    deploy:
+      resources:
+        limits:
+          memory: ${SUPERVISOR_MEMORY_LIMIT:-2G}
+          cpus: '${SUPERVISOR_CPUS:-2.0}'
 
 volumes:
   # Keep this volume: deleting it loses the node identity and requires a new

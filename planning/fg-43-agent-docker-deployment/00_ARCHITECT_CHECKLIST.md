@@ -1,36 +1,40 @@
 ---
 id: "fg-43"
 title: "Agent Docker Deployment and Host Sizing"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
 updated: "2026-11-22"
-pr: null
-branch: null
+pr: 197
+branch: "feat/fg-43-host-sizing"
 depends_on: ["fg-33", "fg-54"]
 ---
 
 # 00 — Agent Docker Deployment and Host Sizing (fg-43)
 
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Implementation in review | PR #197; see `03` Results | ☑ |
+| Verification results | `03` → Results (shell 65/65; Java 41 focused / full agent suite 929 tests; Compose base+sandbox) | ☑ |
+
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
-**Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
+**Related code:** `agent/scripts/host-init.sh`, `agent/scripts/host-init.test.sh`,
+`agent/docker-compose.yml`, `agent/agent.ini.example`,
+`agent/src/main/java/com/vibecode/agent/supervisor/SupervisorMain.java`.
 
 ## Relationship to fg-54 (merged)
 
-`fg-54` replaces the container-per-agent pool with a **supervisor** that runs
-runtimes in one host stack. This ticket keeps the host sizing, reservations,
-limits, pause controls and health gates; the unit being sized becomes a
-**runtime child process**, and the pool size becomes the declared runtime count.
-`PoolManager` container creation is superseded (`fg-54` D9). Role profiles map
-to the fg-54 enum (`worker`, `reviewer`, `planner`); the "fixer" and "light
-poller" profiles become worker/planner variants.
-
-`01` FR4, FR7 and FR9 are read with this replacement; the sizing formula and
-safety rules are unchanged.
+`fg-54` replaced the container-per-agent pool with **one supervisor per host**
+that spawns one child JVM per declared runtime. This ticket sizes that
+declaration, enforces the host budget and starts the supervisor Compose stack.
+There is no `PoolManager`, `POOL_ADMIN_TOKEN`, `MAX_POOL_SIZE` or admin pool
+API in the current model (`fg-54` D9 removed the pool controller).
 
 Sandboxed agent containers remain fg-34's scope (D3). fg-34 hardening is
 recommended for a production host but is not a hard dependency of this ticket.
@@ -46,8 +50,10 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Queue-based autoscaling | fg-30 | Infrastructure | fg-38-harness-budgets-routing follow-up | open |
+| D1 | Queue-based autoscaling and dynamic per-role counts: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts (e.g. 48 threads, 6 workers + 1 planner at 90%, then fill spare capacity). | fg-30/self | Infrastructure | fg-38-harness-budgets-routing follow-up or a dedicated autoscaling ticket | open |
 | D2 | Durable leases across restarts | fg-33 | Reliability | fg-33-durable-harness-execution | open |
 | D3 | Sandboxed agent containers | fg-34 | Security | fg-34-harness-sandbox | open |
 | D4 | Multi-host/multi-agent orchestration | fg-40 | Agent | fg-40-multi-agent-orchestration | open |
 | D5 | Storage lifecycle and idle refresh | fg-44 | Infrastructure | fg-44-agent-storage-lifecycle | open |
+| D6 | Per-child cgroups and PID limits | self | Security | fg-34/supervisor follow-up | open |
+| D7 | Backend `/health` startup gate | self | Reliability | separate supervisor/lifecycle ticket | open |
