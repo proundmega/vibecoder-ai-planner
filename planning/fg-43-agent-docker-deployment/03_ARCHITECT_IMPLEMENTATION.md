@@ -64,5 +64,6 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `f86737b` (PR #197) | shell 68/68; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
+| 2026-11-22 | `f86737b` (PR #197) | shell 65/65; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
 | 2026-11-22 | `ccf5d6a` | Merged (PR #197) | Merged to master after review fixes. |
+| 2026-11-22 | `8fd2e57` | shell 68/68; planning check | Closeout: runbook Docker/manual split, check/dry-run host values, AGENTS/PENDING/roadmap reconciliation and bt-60/fg-45 status. No production code. |

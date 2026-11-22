@@ -49,7 +49,7 @@ specified there.
 > long-term roadmap; where it differs from the pilot order, `PENDING.txt` wins.
 
 ### Phase A - Reliability and security foundations
-1. **fg-33** durable execution and recovery (validation: **bt-60**; fg-33 slices 1-3 merged, Phase A in review #198, Phase B staging pending)
+1. **fg-33** durable execution and recovery (validation: **bt-60**; fg-33 slices 1-3 merged, Phase A merged #198, Phase B staging pending)
 2. **fg-34** sandbox and supply-chain security
 3. **fg-43** Docker agent host sizing and deployment (merged #197; follow-ups fg-43-D1/D6/D7)
 4. **fg-44** agent storage lifecycle and idle refresh
