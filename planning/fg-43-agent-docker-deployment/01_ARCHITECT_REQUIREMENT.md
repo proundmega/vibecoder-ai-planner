@@ -59,7 +59,7 @@ triggers OOM/CPU starvation.
 - **FR10 - Observability:** log the detected capacity, reserves, required totals, computed container limits and binding dimension; the supervisor logs declared slots vs the host cap.
 - **FR11 - Safety:** never exceed host capacity; memory is not overcommitted; disk uses 80% of free space; a failed check writes nothing and starts nothing.
 - **FR12 - Runtime guard:** `AGENT_HOST_MAX_RUNTIMES` defaults to `50` and is written to the env; the supervisor refuses a declaration larger than it. `0` disables the guard for a hand-managed host.
-- **FR13 - Health/restart behavior:** `--yes` starts Compose and waits for `${BACKEND_URL}/health` (bounded); on timeout it exits non-zero and leaves the stack gated. The supervisor health gate itself is D7. `agent.ini` remains the desired state across restarts.
+- **FR13 - Health/restart behavior:** `--yes` starts Compose and waits for `${BACKEND_URL}/api/health` (bounded); on timeout it exits non-zero and leaves the stack gated. The supervisor health gate itself is D7. `agent.ini` remains the desired state across restarts.
 
 ## Sizing formula
 

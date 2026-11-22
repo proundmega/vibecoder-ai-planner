@@ -49,7 +49,7 @@
 | FR10 | Java | `SupervisorCapacityTest` | Cap parsing and capacity failure message | `mvn test -Dtest=SupervisorCapacityTest` |
 | FR11 | Shell | `host-init.test.sh` | Over-capacity writes nothing and starts nothing | same |
 | FR12 | Java | `SupervisorCapacityTest`, `SupervisorMainTest` | Default cap 50; 7 slots rejected at cap 6; SIGHUP over-cap rejects before declaring | `mvn test -Dtest=SupervisorCapacityTest,SupervisorMainTest` |
-| FR13 | Shell | `host-init.test.sh` | `--yes` waits for `/health`; D7 records the supervisor health-gate deferral | same |
+| FR13 | Shell | `host-init.test.sh` | `--yes` waits for `/api/health`; D7 records the supervisor health-gate follow-up | same |
 
 ## Review checklist
 

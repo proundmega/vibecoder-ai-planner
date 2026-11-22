@@ -48,6 +48,14 @@ public final class SupervisorMain {
         AtomicReference<RuntimeConfig> desiredRef = new AtomicReference<>(desired);
 
         AgentConfig agentConfig = new AgentConfig();
+        if (BackendHealthGate.required(System.getenv("SUPERVISOR_HEALTH_REQUIRED"))) {
+            BackendHealthGate.awaitHealth(
+                agentConfig.getBackendUrl(),
+                BackendHealthGate.timeout(System.getenv("SUPERVISOR_HEALTH_TIMEOUT_SECONDS")),
+                BackendHealthGate.interval(System.getenv("SUPERVISOR_HEALTH_INTERVAL_SECONDS")));
+        } else {
+            log.info("Backend health gate disabled by SUPERVISOR_HEALTH_REQUIRED");
+        }
         AgentCredentialStore store = new AgentCredentialStore(Path.of(agentConfig.getCredentialsFile()));
         AgentAuthManager auth = new AgentAuthManager(agentConfig, store, new AgentEnrollmentClient(agentConfig));
         auth.initialize();
@@ -89,6 +97,13 @@ public final class SupervisorMain {
             desired.runtimes().size(),
             supervisor.snapshot().size());
 
+        // fg-56 slice B: keep watching health after startup. The monitor is
+        // created only after auth/declaration succeeded, so a startup failure
+        // cannot leak its daemon thread.
+        BackendHealthMonitor healthMonitor = BackendHealthMonitor.fromEnv(agentConfig.getBackendUrl());
+        healthMonitor.start();
+        supervisor.setHealthGate(healthMonitor::isHealthy);
+
         // A backend restart or a transient failure is retried with the current
         // desired set. The supervisor never spawns id-less children.
         ScheduledExecutorService retry = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -99,6 +114,10 @@ public final class SupervisorMain {
         java.util.concurrent.atomic.AtomicInteger tick = new java.util.concurrent.atomic.AtomicInteger();
         retry.scheduleWithFixedDelay(() -> {
             try {
+                if (!healthMonitor.isHealthy()) {
+                    log.debug("Backend is unhealthy; skipping declaration/reconcile tick");
+                    return;
+                }
                 Map<String, Object> config = api.fetchConfig();
                 if (!nodeActive(config)) {
                     log.info("Node is draining or revoked; stopping supervised runtimes");
@@ -178,6 +197,7 @@ public final class SupervisorMain {
             supervisor.runLoop();
         } finally {
             retry.shutdownNow();
+            healthMonitor.close();
             supervisor.close();
         }
     }

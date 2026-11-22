@@ -1,0 +1,89 @@
+# 02 — Design (fg-56)
+
+> **Owns:** current-state audit, design, data flow, failure modes, rollout.
+> **Not here:** requirements (`01`), verification matrix (`03`), file
+> operations (`04`), status (`00`).
+
+## Current state
+
+`SupervisorMain.run` parses the declaration, connects the node credential,
+fetches the node config, declares runtimes, constructs the supervisor and calls
+`reconcile()`. There is no explicit backend health check in that path.
+
+## Design
+
+A small `BackendHealthGate` owns the HTTP probe and bounded retry:
+
+```java
+static void awaitHealth(String backendUrl, Duration timeout, Duration interval)
+static boolean required(String value)
+static Duration timeout(String value)
+static Duration interval(String value)
+static String healthUrl(String backendUrl)
+```
+
+`SupervisorMain.run`:
+
+1. Build `AgentConfig` (needs `BACKEND_URL`/credentials path).
+2. If required (default), call `BackendHealthGate.awaitHealth(agentConfig.getBackendUrl(), ...)`.
+3. Only then call `auth.initialize()`, fetch the node config, declare and
+   reconcile.
+
+`healthUrl` strips trailing slashes and appends `/api/health`. The probe treats
+any 2xx as healthy and any connection error/5xx/non-2xx as retryable. The wait
+is bounded; on timeout it throws, so no child is created. `SUPERVISOR_HEALTH_REQUIRED=false`
+skips only the gate, not declaration/reconcile.
+
+A single static `HttpClient` serves startup and monitor probes (one selector
+thread/file descriptor). `HttpRequest.timeout()` uses the remaining startup
+budget; the connect phase has a fixed 5s bound, so a very short overall timeout
+can overshoot by at most that connect timeout. `SUPERVISOR_HEALTH_TIMEOUT_SECONDS`
+is therefore a retry deadline, not a hard wall-clock cap. Creating a client per
+probe would leak selector threads and descriptors in a long-running supervisor.
+
+### Slice B: post-start monitor
+
+After the startup gate, `BackendHealthMonitor` keeps probing the same endpoint
+on a daemon scheduler. A 2xx response is healthy; a failure flips the state to
+unhealthy, logs once, and waits with exponential backoff (base interval,
+doubling up to the max). Success resets the interval and logs recovery. Both
+the scheduled declaration/retry tick and `Supervisor.runLoop()`'s reconcile
+tick check `isHealthy()` and skip while the backend is down, so neither spawns
+a missing child against an unavailable API. Direct `Supervisor.reconcile()`
+callers (including the SIGHUP reload path) also honor the gate. Existing
+healthy children keep running. The monitor never stops the supervisor.
+`SUPERVISOR_HEALTH_REQUIRED=false` disables monitoring along with the startup
+gate.
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SUPERVISOR_HEALTH_REQUIRED` | `true` | Enable the startup health gate |
+| `SUPERVISOR_HEALTH_TIMEOUT_SECONDS` | `120` | Maximum wait |
+| `SUPERVISOR_HEALTH_INTERVAL_SECONDS` | `2` | Retry interval |
+| `SUPERVISOR_HEALTH_MONITOR_ENABLED` | `true` | Post-start monitor (off when the gate is off) |
+| `SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS` | `10` | Base monitor interval |
+| `SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS` | `60` | Maximum exponential backoff |
+
+## Failure modes
+
+| Case | Behavior |
+|---|---|
+| Backend 5xx/connection refused | Retry until the timeout; exit non-zero, no children |
+| Backend healthy first try | Log success and continue |
+| Timeout | Throw `IOException` with the URL and last reason |
+| Gate disabled | Log the skip and continue |
+| Backend dies after startup | Monitor flips unhealthy, logs once, backs off, and the declaration/reconcile tick pauses until recovery |
+
+## Security
+
+The health URL is the operator-configured `BACKEND_URL`; the request carries no
+node token or provider secret. Logs contain the URL and status only.
+
+## Rollout
+
+1. Add the gate and unit tests (real local `HttpServer`, short real sleeps).
+2. Enable by default; local offline users can set
+   `SUPERVISOR_HEALTH_REQUIRED=false`.
+3. Run the fg-54 runbook with the gate enabled and record evidence.

@@ -46,8 +46,8 @@ Environment:
   SANDBOX_DISK_MB            Sandbox disk profile (default: 5120)
   SANDBOX_HOST_WORKSPACE_ROOT  Required in docker mode
   REPO_HOST_PATH             Repo bind path (validated in docker mode)
-  BACKEND_URL                /health base (default: http://localhost:3001)
-  API_PORT                   Local /health port fallback (default: 3001)
+  BACKEND_URL                /api/health base (default: http://localhost:3001)
+  API_PORT                   Local /api/health port fallback (default: 3001)
   COMPOSE_PROJECT_NAME       Compose project (default: vibecode-agent)
   AGENT_LOG_MAX_SIZE         Docker log rotation size (default: 10m)
   AGENT_LOG_MAX_FILE         Docker log rotation files (default: 3)
@@ -430,6 +430,12 @@ AGENT_RUNTIME_HEAP_MB=${HEAP_MB}
 SUPERVISOR_MEMORY_BUDGET_MB=${SUPERVISOR_MEMORY_BUDGET_MB}
 SUPERVISOR_MEMORY_LIMIT=${SUPERVISOR_MEMORY_LIMIT_GB}G
 SUPERVISOR_CPUS=${SUPERVISOR_CPUS}
+SUPERVISOR_HEALTH_REQUIRED=${SUPERVISOR_HEALTH_REQUIRED:-true}
+SUPERVISOR_HEALTH_TIMEOUT_SECONDS=${SUPERVISOR_HEALTH_TIMEOUT_SECONDS:-120}
+SUPERVISOR_HEALTH_INTERVAL_SECONDS=${SUPERVISOR_HEALTH_INTERVAL_SECONDS:-2}
+SUPERVISOR_HEALTH_MONITOR_ENABLED=${SUPERVISOR_HEALTH_MONITOR_ENABLED:-true}
+SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS=${SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS:-10}
+SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS=${SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS:-60}
 SANDBOX_CPUS=${SANDBOX_CPUS}
 SANDBOX_MEMORY_MB=${SANDBOX_MEMORY_MB}
 SANDBOX_DISK_MB=${SANDBOX_DISK_MB}
@@ -459,9 +465,9 @@ wait_for_health() {
     fi
     if [[ -n "${BACKEND_URL:-}" ]]; then
         local base="${BACKEND_URL%/}"
-        local url="${base}/health"
+        local url="${base}/api/health"
     else
-        local url="http://localhost:${API_PORT:-3001}/health"
+        local url="http://localhost:${API_PORT:-3001}/api/health"
     fi
     local deadline=$((SECONDS + timeout))
     while (( SECONDS < deadline )); do

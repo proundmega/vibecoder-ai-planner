@@ -310,6 +310,54 @@ class SupervisorReconcileTest {
     }
 
     @Test
+    void healthGatePausesChildRespawnWhileTheBackendIsUnhealthy() throws Exception {
+        FakeLauncher launcher = new FakeLauncher();
+        AtomicBoolean healthy = new AtomicBoolean(false);
+        Supervisor supervisor = new Supervisor(
+            pidDir, workers(1), 128, launcher,
+            Map.of(), Duration.ofSeconds(1), Duration.ofMillis(10));
+        Thread loop = new Thread(supervisor::runLoop, "test-health-gate-loop");
+        loop.setDaemon(true);
+        try {
+            supervisor.setHealthGate(healthy::get);
+            loop.start();
+
+            Thread.sleep(100);
+            assertEquals(0, launcher.launchCount.get(),
+                "no child may spawn while unhealthy");
+            supervisor.reconcile();
+            assertEquals(0, launcher.launchCount.get(),
+                "a direct reconcile (SIGHUP path) must also pause while unhealthy");
+
+            healthy.set(true);
+            waitFor(() -> launcher.launchCount.get() == 1, 2_000);
+            assertEquals(1, supervisor.snapshot().size());
+
+            healthy.set(false);
+            launcher.kill("workers-1");
+            Thread.sleep(100);
+            assertEquals(1, launcher.launchCount.get(),
+                "a dead child must not be respawned while unhealthy");
+
+            healthy.set(true);
+            waitFor(() -> launcher.launchCount.get() == 2, 2_000);
+        } finally {
+            supervisor.close();
+            loop.interrupt();
+        }
+    }
+
+    private static void waitFor(java.util.function.BooleanSupplier condition, long timeoutMs)
+        throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofMillis(timeoutMs).toNanos();
+        while (System.nanoTime() < deadline) {
+            if (condition.getAsBoolean()) return;
+            Thread.sleep(10);
+        }
+        assertTrue(condition.getAsBoolean(), "condition not met within " + timeoutMs + "ms");
+    }
+
+    @Test
     void reconcilesFiftyRuntimesUnderThirtySeconds() throws IOException {
         StringBuilder ini = new StringBuilder();
         for (int i = 1; i <= 50; i++) {
@@ -466,6 +514,11 @@ class SupervisorReconcileTest {
             FakeProcess process = new FakeProcess(nextPid++, destroyCount);
             byName.put(spec.name(), process);
             return process;
+        }
+
+        void kill(String name) {
+            FakeProcess process = byName.get(name);
+            if (process != null) process.destroy();
         }
     }
 }

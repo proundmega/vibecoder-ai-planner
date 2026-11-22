@@ -187,10 +187,16 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 |----|------|---------------|------------|
 | **fg-43-D1** | Dynamic per-role autoscaling: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts. | The 48-thread, 6-worker + 1-planner, 90%-utilization example is reproduced from capacity alone, with a reviewed declaration. | fg-43, fg-38 |
 | **fg-43-D6** | Per-child cgroups and PID limits for supervisor runtime children. | Each child is capped by cgroup/PID limits and the limits are observable. | fg-43, fg-34 |
-| **fg-43-D7** | Supervisor-level backend `/health` startup gate. | A down backend prevents child spawn; recovery is automatic after health returns. | fg-43, fg-54 |
+| **fg-43-D7** | Supervisor-level backend `/health` startup gate. **Promoted to `fg-56` (PR #203).** | A down backend prevents child spawn; recovery is automatic after health returns. | fg-43, fg-54 |
 
 These rows are the intake for the fg-43 deferred register. Promote a row to a
 planning suite (`planning/fg-43-dN-...`) when it is scheduled.
+
+## Supervisor reliability (fg-56)
+
+| ID | Directory | Priority | Depends on | Description |
+|----|-----------|----------|------------|-------------|
+| **fg-56** | `fg-56-supervisor-health-gate` | P1 | fg-43, fg-54 | Backend `/api/health` startup gate: wait before enrollment/declaration/child spawn, bounded timeout, explicit offline opt-out, no partial fleet; post-start monitor with bounded exponential backoff pauses declaration/reconcile while unhealthy. **In review (PR #203).** |
 
 ## Human Loop (fg-55)
 
