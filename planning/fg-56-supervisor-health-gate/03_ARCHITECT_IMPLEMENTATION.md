@@ -52,3 +52,4 @@
 |---|---|---|---|
 | 2026-11-22 | `feat/fg-56-supervisor-health-gate` (PR #203) | BackendHealthGate 6 tests; SupervisorMain + SupervisorIntegration 20 | Pass. Healthy/503/timeout/opt-out and URL-userinfo sanitization covered. The `SupervisorMain.run` ordering is code-reviewed; there is no harness test that runs `run()`. |
 | 2026-11-22 | `81ad3b6` | BackendHealthMonitor 4 + SupervisorReconcile health-gate test; full agent suite 941 run / 10 skipped | Pass. Outage/recovery, bounded backoff, disabled/missing-URL, and no child respawn while unhealthy. |
+| 2026-11-22 | `54fef50` | Review fixes: health-gated `Supervisor.runLoop` + test; compose/host-init env; `/api/health` wait path; sanitized URLs; remaining-time request cap; matrix/Results corrected. Full agent 941 run / 10 skipped; host-init 68; Compose base+sandbox render. | Pass. |
