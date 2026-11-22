@@ -234,6 +234,9 @@ describe('HarnessUsageService', () => {
       expect(sql).not.toContain('agent_id');
       expect(sql).toContain("'harness'");
       expect(sql).toContain("existing.metadata->>'run_id'");
+      // The same parameter is a UUID comparison and an untyped jsonb value;
+      // without the cast Postgres cannot infer the parameter type.
+      expect(sql).toContain("'run_id', $1::uuid");
     });
 
     it('skips a run that no longer exists', async () => {
