@@ -60,4 +60,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-43-host-sizing` | shell 31/31; Java 39 focused / 927 total; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
+| 2026-11-22 | `80571f0` (PR #197) | shell 31/31; Java 39 focused / 927 total; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |

@@ -1,18 +1,25 @@
 ---
 id: "fg-43"
 title: "Agent Docker Deployment and Host Sizing"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
 updated: "2026-11-22"
-pr: null
-branch: null
+pr: 197
+branch: "feat/fg-43-host-sizing"
 depends_on: ["fg-33", "fg-54"]
 ---
 
 # 00 — Agent Docker Deployment and Host Sizing (fg-43)
+
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Implementation in review | PR #197; see `03` Results | ☑ |
+| Verification results | `03` → Results (shell 31/31; Java 39 focused / 927 total; Compose base+sandbox) | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
