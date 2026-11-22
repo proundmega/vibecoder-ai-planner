@@ -7,8 +7,8 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,7 +33,8 @@ public final class DoomLoopDetector {
 
     private final int maxRepeats;
     private final int maxContinues;
-    private final Set<String> seenCallIds = new HashSet<>();
+    private static final int MAX_TRACKED_CALLS = 10_000;
+    private final Set<String> seenCallIds = new LinkedHashSet<>();
     private String lastSignature;
     private int repeats;
     private int continues;
@@ -54,10 +55,21 @@ public final class DoomLoopDetector {
             return Decision.NONE;
         }
         // OpenCode emits running and completed updates for the same call. Count
-        // a physical invocation once, not once per lifecycle event.
-        if (call.callId() != null && !call.callId().isBlank()
-            && !seenCallIds.add(call.callId())) {
-            return Decision.NONE;
+        // a physical invocation once, not once per lifecycle event. The set is
+        // bounded so a disabled/very high tool-call budget cannot grow it
+        // without limit; evict the oldest observation first.
+        if (call.callId() != null && !call.callId().isBlank()) {
+            if (seenCallIds.contains(call.callId())) {
+                return Decision.NONE;
+            }
+            seenCallIds.add(call.callId());
+            if (seenCallIds.size() > MAX_TRACKED_CALLS) {
+                Iterator<String> oldest = seenCallIds.iterator();
+                if (oldest.hasNext()) {
+                    oldest.next();
+                    oldest.remove();
+                }
+            }
         }
         String signature = signature(event);
         if (signature == null) {

@@ -120,7 +120,9 @@ describe('Question and notification API (fg-55)', () => {
     PermissionService.hasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValue({ rows: [] });
     NotificationService.unreadCount.mockResolvedValue(3);
-    HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
+    HarnessRunService.getRun.mockResolvedValue({
+      id: RUN_ID, runtime_id: 3, project_id: 5, ticket_id: 42,
+    });
   });
 
   it('agent creates, reads and expires a question for its own run', async () => {
@@ -172,6 +174,35 @@ describe('Question and notification API (fg-55)', () => {
       .set('X-Test-Runtime', '4');
     expect(read.statusCode).toBe(403);
     expect(read.body.error.code).toBe('FORBIDDEN');
+  });
+
+  it('an outsider JWT cannot list another project’s run questions', async () => {
+    TicketQuestionService.listForRun.mockResolvedValue([QUESTION]);
+    pool.query.mockResolvedValue({ rows: [{ owner_id: '2', is_member: false }] });
+
+    const res = await request(app)
+      .get(`/api/v1/harness/runs/${RUN_ID}/questions`)
+      .set('Authorization', 'Bearer token');
+
+    expect(res.statusCode).toBe(403);
+    expect(TicketQuestionService.listForRun).not.toHaveBeenCalled();
+  });
+
+  it('a project owner or member can list run questions', async () => {
+    TicketQuestionService.listForRun.mockResolvedValue([QUESTION]);
+
+    pool.query.mockResolvedValue({ rows: [{ owner_id: '1', is_member: false }] });
+    const owner = await request(app)
+      .get(`/api/v1/harness/runs/${RUN_ID}/questions`)
+      .set('Authorization', 'Bearer token');
+    expect(owner.statusCode).toBe(200);
+    expect(owner.body.data).toHaveLength(1);
+
+    pool.query.mockResolvedValue({ rows: [{ owner_id: '2', is_member: true }] });
+    const member = await request(app)
+      .get(`/api/v1/harness/runs/${RUN_ID}/questions`)
+      .set('Authorization', 'Bearer token');
+    expect(member.statusCode).toBe(200);
   });
 
   it('a project member answers a pending question', async () => {

@@ -246,7 +246,8 @@ requirements in `01` remain the source of truth.
 - **Agent read isolation.** An agent may read a question only when
   `question.runtime_id` equals its `X-Agent-Runtime`; the run-list route checks
   the run's runtime before listing, so a same-project worker cannot read a
-  sibling's question by UUID.
+  sibling's question by UUID. A JWT list call is project-scoped with
+  `ANSWER_PERMISSION`, so an outsider who knows the run UUID gets 403.
 - **Repetition counting.** The doom-loop detector ignores OpenCode lifecycle
   updates by tracking unique `callId`s, so one running/completed pair is one
   call, not two repeats.

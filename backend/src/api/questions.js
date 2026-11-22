@@ -238,11 +238,24 @@ router.get(
   async (req, res, next) => {
     try {
       const runId = runIdParam(req.params.runId);
+      const run = await HarnessRunService.getRun(runId);
       if (req.agent) {
-        const run = await HarnessRunService.getRun(runId);
         if (String(run.runtime_id) !== String(req.runtime.id)) {
           throw new ForbiddenError('Harness run belongs to another runtime');
         }
+      } else {
+        let projectId = run.project_id;
+        if (projectId == null && run.ticket_id != null) {
+          const ticket = await pool.query(
+            'SELECT project_id FROM tickets WHERE id = $1',
+            [Number(run.ticket_id)]
+          );
+          projectId = ticket.rows[0]?.project_id ?? null;
+        }
+        if (projectId == null) {
+          throw new NotFoundError('Harness run project not found');
+        }
+        await assertProjectAccess(projectId, req, ANSWER_PERMISSION);
       }
       const questions = await TicketQuestionService.listForRun(runId, req.query);
       res.json({ success: true, data: questions });
