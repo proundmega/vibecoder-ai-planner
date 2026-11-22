@@ -19,9 +19,10 @@
 - `HarnessTicketProcessor` owns the clone, the sandbox and the finish path, so
   it is the natural cleanup caller.
 - There is no idle-refresh timer, disk/inode watermark, role budget meter,
-  runtime-root sweep or `host-storage.sh`. The existing child/startup random-dir
-  and temp-dir prune stays for legacy and crash-left dirs; the supervisor adds
-  runtime roots and a one-time legacy pass (D10 retires the old path).
+  runtime-root sweep or `host-storage.sh`. The existing child/startup temp/
+  own-root prune stays; the supervisor's `/repos`-rooted legacy pass covers the
+  old random dirs, and the runtime-root sweep is new. D10 retires the one-time
+  legacy path.
 - The supervisor Compose service already has `json-file` rotation 10m/3; the
   sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
   1m/1 and are not Compose services.
@@ -155,13 +156,14 @@ The supervisor's storage sweep:
 2. keep roots for active runtimes/leases/processes;
 3. remove runtime roots older than `HARNESS_WORKSPACE_RETENTION_HOURS` (default
    24h) with no active owner;
-4. legacy pass: `/repos/<8hex>-*` via the Java `pruneStaleWorkspaces()`
-   (child/startup and supervisor sweep) and `java.io.tmpdir`
-   (`opencode-harness-*`/`vibecode-askpass-*`) via
-   `pruneStaleTempDirectories()`. `host-storage.sh --legacy` reimplements the
-   same find/prefix/retention rules in bash over `/repos` and
-   `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; it does not call Java. The child/startup
-   call stays until D10;
+4. legacy pass: `/repos/<8hex>-*` via a supervisor `WorkspaceManager` rooted at
+   `/repos` using the Java `pruneStaleWorkspaces()`; the child/startup manager
+   only sees its runtime root, so it does not cover the legacy dirs.
+   `java.io.tmpdir` (`opencode-harness-*`/`vibecode-askpass-*`) via
+   `pruneStaleTempDirectories()` in the child/startup path.
+   `host-storage.sh --legacy` reimplements the same find/prefix/retention rules
+   in bash over `/repos` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; it does not call
+   Java. The child/startup temp/own-root prune stays until D10;
 5. move suspicious dirs to `orphans/` for `AGENT_ORPHAN_TTL_HOURS` (default
    24h), then delete;
 6. prune dangling images weekly (`docker image prune -f` only, never `-a`);
@@ -235,7 +237,7 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 | Orphan dir has a live marker/slot | Skip; log |
 | Inode exhaustion | Same as disk pressure; no new claims |
 | Cleanup after an unclean exit | Preserve until the fg-33 reaper, then sweep |
-| Legacy/temp dirs | Keep the child/startup prune; run the one-time supervisor/host `--legacy` pass; D10 retires the old path |
+| Legacy/temp dirs | Keep the child/startup temp/own-root prune; the supervisor/host `/repos` `--legacy` pass covers the old dirs; D10 retires the legacy path |
 
 ## Security considerations
 
@@ -271,7 +273,8 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 4. Enable idle refresh at 2h.
 5. Enable stop-spawn/emergency recycle.
 6. Tune budgets per role.
-7. Run the one-time legacy/temp sweep; keep the child/startup prune until D10.
+7. Run the one-time `/repos` + temp sweep; keep the child/startup temp/own-root
+   prune until D10; the `/repos` legacy pass is the supervisor/host script.
 
 ## Deferred scope
 

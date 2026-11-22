@@ -50,9 +50,9 @@ child (`HarnessTicketProcessor`) runs `pruneStaleWorkspaces()` /
 `pruneStaleTempDirectories()` with `HARNESS_WORKSPACE_RETENTION_HOURS` (default
 24) and the backend active-path list. What is missing is the runtime/ticket-keyed
 layout, lease-safe cleanup, idle/max-lifetime refresh, disk/inode watermarks, a
-role budget meter, storage events and a runtime-root/orphan sweep. The existing child/startup prune stays
-for legacy random dirs and crash-left temp dirs; the supervisor sweep adds the
-runtime roots and a one-time legacy pass. Do not remove
+role budget meter, storage events and a runtime-root/orphan sweep. The existing child/startup temp/
+own-root prune stays; the supervisor's `/repos`-rooted legacy pass covers the
+old random dirs, and the runtime-root sweep is new. Do not remove
 `pruneStaleTempDirectories`: it removes askpass/OpenCode dirs that may contain
 credentials.
 
@@ -84,4 +84,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D7 | Cross-host workspace migration | self | Infrastructure | fg-40 | open |
 | D8 | Compression of quarantined workspaces | self | Storage | future | open |
 | D9 | Configurable sandbox/proxy log rotation (10m/3) | self | Operations | follow-up | open |
-| D10 | Retire the legacy child/startup random-dir prune and migrate `pruneStaleTempDirectories` after the one-time legacy sweep | self | Storage | follow-up | open |
+| D10 | Retire the supervisor `/repos` legacy pass and migrate `pruneStaleTempDirectories` after the legacy dirs are gone | self | Storage | follow-up | open |

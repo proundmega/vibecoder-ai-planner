@@ -25,8 +25,8 @@ accumulate:
 - an idle runtime keeps its caches and temp files for days;
 - sandbox containers and Docker logs add to the same disk;
 - there is no disk/inode watermark, role budget meter, runtime-root sweep or
-  storage events; the existing random-dir/temp-dir prune remains for legacy and
-  crash-left dirs.
+  storage events; the existing child/startup temp/own-root prune remains, while
+  the supervisor's `/repos`-rooted legacy pass covers the old random dirs.
 
 On a 2 TB SSD this is manageable at first, but long-running fleets eventually
 hit disk-full, inode exhaustion or slow I/O. Disk pressure then looks like a
@@ -67,7 +67,7 @@ code failure.
 | FR6 | Budget meter: a periodic `du -sb` + inode count per runtime/ticket; a breach stops the workspace processes, fails the run with `storage_budget_exceeded`, quarantines the workspace and emits an event. | Fixture writes past the worker 20 GB budget; the run fails before the host fills. |
 | FR7 | Logs: the supervisor already uses Docker `json-file` rotation (`max-size=10m`, `max-file=3`); sandbox/proxy containers are created by `DockerSandboxRunner` with bounded `1m/1` log options and remain unchanged by this ticket. No unbounded log. | Verify the supervisor Compose config; assert the existing `1m/1` sandbox log options. |
 | FR8 | Images: prune dangling images only; never prune the current `vibecode-agent`/sandbox tags. | Dry-run lists only dangling images; the active tag remains. |
-| FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h, the existing retention TTL); a one-time legacy pass covers `/repos/<8hex>-*` (`WORKSPACE_DIR_PATTERN`) and `java.io.tmpdir`/`AGENT_TMPDIR` `opencode-harness-*`/`vibecode-askpass-*` temp dirs (`TEMP_DIR_PREFIXES`); suspicious dirs move to `orphans/` for a short TTL. The child/startup Java prune stays until D10; `host-storage.sh --legacy` reimplements the find/prefix rules in bash. | Orphan fixture is reaped after TTL; active/lease-owned and temp/credential dirs are handled with the same prefixes/retention on both roots; the existing tests remain. |
+| FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h, the existing retention TTL); a one-time legacy pass covers `/repos/<8hex>-*` (`WORKSPACE_DIR_PATTERN`) and `java.io.tmpdir`/`AGENT_TMPDIR` `opencode-harness-*`/`vibecode-askpass-*` temp dirs (`TEMP_DIR_PREFIXES`); suspicious dirs move to `orphans/` for a short TTL. The child/startup temp/own-root prune stays until D10; the supervisor `/repos`-rooted legacy pass (or `host-storage.sh --legacy`) covers `/repos/<8hex>-*`; `host-storage.sh --legacy` reimplements the find/prefix rules in bash. | Orphan fixture is reaped after TTL; active/lease-owned and temp/credential dirs are handled with the same prefixes/retention on both roots; the existing tests remain. |
 | FR10 | Active safety: never delete a workspace or stop a runtime with an unexpired lease or an active harness/OpenCode process. | Active lease/harness tests skip cleanup and log why. |
 | FR11 | Metrics/events: emit workspace bytes, host free bytes/inodes, log size, refresh/cleanup counts and orphan count as fg-41 events or structured logs. | Event/log assertions for each field. |
 | FR12 | Recovery: `agent/scripts/host-storage.sh --dry-run|--apply` is a stopped-supervisor recovery path; it refuses live supervisor/marker state, cleans idle workspaces, includes a `--legacy` pass for `/repos/<8hex>-*` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}` temp dirs, verifies free space/inodes and never exposes a control token to agents. The script reimplements the find/prefix rules; it does not call Java. | Dry-run lists actions; apply frees space only with the supervisor stopped; the legacy/temp fixtures use the existing prefixes on both roots; a full-disk fixture recovers. |
@@ -147,8 +147,8 @@ is a host incident.
 12. The one-time legacy sweep handles `/repos/<8hex>-*` and
     `java.io.tmpdir`/`AGENT_TMPDIR` `opencode-harness-*`/`vibecode-askpass-*`
     temp dirs with the existing prefixes/retention; `host-storage.sh --legacy`
-    reimplements the find/prefix rules in bash; the existing child/startup
-    prune tests still pass until D10 retires that path.
+    reimplements the find/prefix rules in bash; the child/startup temp/own-root
+    tests still pass until D10; the `/repos` legacy pass is supervisor/host.
 
 ## Out of scope
 

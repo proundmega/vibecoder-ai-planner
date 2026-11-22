@@ -62,13 +62,16 @@ under the ticket root before clone and `cache/` under the runtime root.
 deletes the runtime root including `cache/`. The cache uses the same
 `HARNESS_WORKSPACE_RETENTION_HOURS` TTL. The clone is never the delete root.
 
-The existing Java prune methods remain for the child/startup path:
-`pruneStaleWorkspaces()` scans the clone root (`/repos`) for the
-`WORKSPACE_DIR_PATTERN` (`<8hex>-*`); `pruneStaleTempDirectories()` scans
+The existing Java prune methods remain available: `pruneStaleWorkspaces()`
+matches `WORKSPACE_DIR_PATTERN` (`<8hex>-*`) under the clone root it is given.
+The supervisor's legacy pass uses a manager rooted at `/repos`; the child/startup
+manager only sees its runtime root (`/repos/runtimes/<runtimeId>`), so it cannot
+see the old `/repos/<8hex>-*` dirs. `pruneStaleTempDirectories()` scans
 `java.io.tmpdir` for `TEMP_DIR_PREFIXES`
-(`opencode-harness-*`/`vibecode-askpass-*`). The supervisor runtime-root sweep
-uses the Java methods for the normal path. `host-storage.sh --legacy`
-reimplements the same find/prefix/retention rules in bash over `/repos` and
+(`opencode-harness-*`/`vibecode-askpass-*`) and remains in the child/startup
+path. The runtime-root (`<ticketId>`) sweep is the new keyed logic, separate from
+`pruneStaleWorkspaces()`. `host-storage.sh --legacy` reimplements the same
+find/prefix/retention rules in bash over `/repos` and
 `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}`; it does not call Java. Do not remove
 `pruneStaleTempDirectories`: the temp dirs may contain credentials. In Docker
 mode, `AGENT_TMPDIR` must point at the host path the child sees as
@@ -156,6 +159,7 @@ supervisor `DEGRADED` state and a `storage.refresh_failed` event, not a
 | `HARNESS_WORKSPACE_RETENTION_HOURS` | `24` | workspace retention/orphan-root TTL (existing; single TTL); fg-44 makes `host-init.sh` write it when set |
 | `AGENT_ORPHAN_TTL_HOURS` | `24` | quarantine TTL |
 | `AGENT_DISK_BUDGET_GB` | role profile | optional budget override; fg-44 makes `host-init.sh` write it; supervisor passes it to the child |
+| `AGENT_TMPDIR` | `${TMPDIR:-/tmp}` | host-script-only temp root for `opencode-harness-*`/`vibecode-askpass-*`; not passed to the child |
 | `AGENT_STORAGE_WARN_PCT` | `70` | warn |
 | `AGENT_STORAGE_STOP_PCT` | `80` | stop spawning |
 | `AGENT_STORAGE_CLEAN_PCT` | `85` | clean idle |
