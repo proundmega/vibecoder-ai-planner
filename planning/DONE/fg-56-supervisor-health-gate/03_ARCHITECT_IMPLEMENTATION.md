@@ -62,4 +62,5 @@
 | 2026-11-22 | `54fef50` | Review fixes: health-gated `Supervisor.runLoop` + test; compose/host-init env; `/api/health` wait path; sanitized URLs; remaining-time request cap; matrix/Results corrected. Full agent 941 run / 10 skipped; host-init 68; Compose base+sandbox render. | Pass. |
 | 2026-11-22 | `e27d805` | Review fixes 2: sanitized `probeOnce` log, `SupervisorMain.run` subprocess wiring test, direct/SIGHUP reconcile gate, host-init path/env assertions, connect-timeout cap, docs table. Full agent 942 run / 10 skipped; host-init 75; Compose base+sandbox render. | Pass. |
 | 2026-11-22 | `32ece1d` | Review fixes 3: one static health `HttpClient` (no per-probe selector/FD churn), wiring test waits on a redirected file and verifies only `/api/health` was requested, D1 state vocabulary. Full agent 942 run / 10 skipped; host-init 75. | Pass. |
-| 2026-11-22 | `6c9f6fd` (PR #203 merged) | Merge closeout | Merged to `master`; no post-merge changes. fg-43 D7 closed and the suite moved to `planning/DONE/`. |
+| 2026-11-22 | `6c9f6fd` (PR #203) | Implementation merge | Merged to `master`. |
+| 2026-11-22 | `c7d0f40` (PR #208) | Closeout | fg-43 D7 closed and the suite moved to `planning/DONE/`; no implementation changes. |

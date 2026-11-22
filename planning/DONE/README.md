@@ -51,3 +51,34 @@
 - **Merge**: `871271f`
 - **Date**: 2026-11-14
 - **Description**: Replaced long-lived PATs with repo-scoped GitHub App installation tokens: per-project installation mapping, mint/cache/revoke service, token endpoint, agent refresh/retry, scoped fallback and deployment wiring.
+
+## bp-134: Ticket Dependency Gates
+- **PR**: #137
+- **Date**: 2026-11-11
+- **Description**: Enforced `tickets.depends_on` at pickup, status transitions and durable starts; fail closed on missing/deleted/self/cross-project dependencies; exposed readiness and kept blocked tickets out of the agent backlog.
+
+## fg-33: Durable Harness Execution
+- **PR**: #110
+- **Date**: 2026-11-03
+- **Description**: Durable runs, checkpoints and leases, scheduled reaping, startup recovery, publish evidence, operator dead-letter/adoption and workspace retention.
+
+## fg-43: Agent Docker Deployment and Host Sizing
+- **PR**: #197
+- **Date**: 2026-11-22
+- **Description**: One supervisor per host with host sizing/check output, supervisor container limits and the `host-init.sh` deployment path; per-child cgroups remain D6.
+
+## fg-45: Ticket Quality Gates and Definition of Ready
+- **PR**: #199
+- **Date**: 2026-11-22
+- **Description**: Readiness gates, acceptance criteria, assumptions/change-impact and risk sections, service-owned planning completion, scoped overrides and the `READINESS_GATE_MODE` rollout.
+
+## fg-55: Human Question Loop and Notifications
+- **PR**: #195
+- **Date**: 2026-11-22
+- **Description**: Opt-in `question` tool, ticket questions, human answer/resume, doom-loop escalation, notification bell/inbox and run outcome notifications.
+
+## fg-56: Supervisor Backend Health Gate
+- **PR**: #203
+- **Merge**: `6c9f6fd`
+- **Date**: 2026-11-22
+- **Description**: `/api/health` startup gate before enrollment/declaration/child spawn, bounded timeout/offline opt-out, and post-start health monitoring that pauses declaration/reconcile while unhealthy.
