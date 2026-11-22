@@ -1,0 +1,197 @@
+# 03 — Implementation (fg-57)
+
+> **Owns:** work order, per-file changes, verification matrix, results.
+> **Not here:** design rationale (`02`), exact signatures (`04`), status and
+> deferrals (`00`), operational procedure (`05`).
+
+## Purpose
+
+Replace GitHub-only publishing with a provider-neutral Git contract while
+keeping GitHub working. Deliver Forgejo/Gitea first, a local bare/SSH fallback,
+and GitLab later in the same suite.
+
+## Plan
+
+**CRITICAL:** Keep the existing GitHub routes, tests and App installation path
+green. Do not rename `pr_url` or `project_github_installations`.
+
+1. **Core provider abstraction and local/SSH fallback**
+   - Add `GitProvider` contract and provider registry.
+   - Add `GitProjectService`; make `GitHubService` a compatibility facade.
+   - Add generic `project_repos` columns and migration/rollback.
+   - Add local/SSH credential storage and host-key verification.
+   - Update harness adoption to accept branch + SHA.
+   - Add unit tests for contract, credential redaction and local publish.
+
+2. **Forgejo/Gitea provider**
+   - Connect/validate repository and default branch.
+   - Fetch a scoped token for the agent; clone/push branch.
+   - Create/reuse a pull request; list/delete branches.
+   - Add a disposable Forgejo/Gitea integration test.
+
+3. **GitLab self-hosted provider**
+   - Connect/validate and fetch a project access token.
+   - Push branch and create/reuse a merge request.
+   - Test against a GitLab API fake or disposable instance.
+
+4. **API, UI and documentation**
+   - Add `/api/v1/git/:projectId/...`; keep `/github` aliases.
+   - Provider picker and connection status in project settings.
+   - Ticket/run view shows PR/MR URL or branch + SHA.
+   - Update `05_RUNBOOK.md`, `AGENTS.md` and indexes.
+
+### Phase 1: Core contract and local/SSH
+
+Files:
+
+- `backend/src/providers/git/GitProvider.js` (new contract + helpers)
+- `backend/src/providers/git/local.js` (new)
+- `backend/src/services/GitProjectService.js` (new)
+- `backend/src/services/GitHubService.js` (facade)
+- `backend/src/migrations/061_git_provider.sql` + rollback
+- `backend/src/services/HarnessRunService.js` (adoption condition)
+- `agent/src/main/java/com/vibecode/agent/service/GitService.java` (new)
+- `agent/src/main/java/com/vibecode/agent/service/GitCredentialProvider.java`
+- `agent/src/main/java/com/vibecode/agent/service/GitHubService.java` (facade)
+- `agent/src/main/java/com/vibecode/agent/harness/HarnessTicketProcessor.java`
+- tests under `backend/src/__tests__/` and `agent/src/test/java/`
+
+### Phase 2: Forgejo/Gitea
+
+Files:
+
+- `backend/src/providers/git/forgejo.js` (new)
+- `backend/src/providers/git/gitea.js` (alias or shared implementation)
+- `backend/src/api/git.js` (new generic routes)
+- `backend/src/controllers/gitController.js` (new)
+- `backend/src/__tests__/integration/forgejoProvider.test.js` (new)
+- `agent/src/test/java/.../GitServiceTest.java` (provider cases)
+- `05_RUNBOOK.md` deployment steps
+
+### Phase 3: GitLab
+
+Files:
+
+- `backend/src/providers/git/gitlab.js` (new)
+- `backend/src/__tests__/integration/gitlabProvider.test.js` (new)
+- `05_RUNBOOK.md` resource/GitLab section
+- UI provider option
+
+### Phase 4: UI, docs and indexes
+
+- `frontend/src/views/ProjectSettings.vue` (or current settings view)
+- `frontend/src/components/...` provider form
+- `backend/src/api/v1/index.js` generic mount
+- `AGENTS.md`, `PENDING.txt`, `planning/HARNESS_ROADMAP.md`
+- `05_RUNBOOK.md`
+
+## Per-file changes
+
+### `backend/src/providers/git/GitProvider.js` (CREATE)
+
+- Export `PROVIDERS`, capability flags, `parseRepoUrl`, `assertSafeBaseUrl` and
+  the interface documentation.
+- No provider secret is logged.
+
+### `backend/src/services/GitProjectService.js` (CREATE)
+
+- `connect(projectId, input)` validates provider, repo URL, base URL, auth mode
+  and credential; stores encrypted values; never returns the credential.
+- `getAgentCredential(projectId)` returns the token/key only to an authenticated
+  runtime for an active repo.
+- `createBranch`, `createReviewRequest`, `listBranches`, `deleteBranch`.
+
+### `backend/src/services/HarnessRunService.js` (MODIFY)
+
+- Change adoption/reconciliation from `pr_url IS NOT NULL` to
+  `(pr_url IS NOT NULL OR head_sha IS NOT NULL)`.
+- Keep failed/no-evidence release semantics.
+- Add tests for branch-only adoption and duplicate-PR prevention.
+
+### `agent/src/main/java/.../GitService.java` (CREATE)
+
+- Provider-neutral clone, branch, commit, push and optional review request.
+- Uses `GitCredentialProvider`; no provider name in the harness code.
+
+### `agent/src/main/java/.../HarnessTicketProcessor.java` (MODIFY)
+
+- Call `GitService.createReviewRequest` when supported; otherwise publish
+  branch + SHA and finish successfully.
+- Record `pr_url` only when the provider returned one.
+
+### `backend/src/api/git.js` (CREATE) and `api/github.js` (MODIFY)
+
+- Generic routes mounted at `/api/v1/git`; `/api/v1/github` aliases the same
+  handlers for compatibility.
+
+## Dependencies
+
+- fg-35 and fg-54 merged.
+- Disposable Forgejo/Gitea container for integration.
+- An API fake or disposable GitLab for the later slice.
+- No new npm/Maven dependency unless the provider client is unavoidable; prefer
+  `fetch`/OkHttp.
+
+## Verification matrix
+
+| Req | ID | Scenario | Layer | Expected |
+|---|---|---|---|---|
+| FR1 | E1 | Same Git contract selects a provider | Backend unit | No hardcoded provider in harness publishing |
+| FR2 | E2 | Connect Forgejo/Gitea repo with base URL/token | Backend HTTP | Repo stored; validation and default branch correct |
+| FR2 | E3 | Bad base URL/credential | Backend HTTP | 4xx; no secret in response/log |
+| FR3 | E4 | Push branch and create PR | Forgejo integration | One branch, one PR |
+| FR3 | E5 | Retry publish | Forgejo integration | Existing PR returned; no duplicate |
+| FR4 | E6 | GitLab connect and create MR | GitLab fake/integration | MR created once; default branch correct |
+| FR5 | E7 | Local bare/SSH publish | Agent/integration | Branch pushed; run succeeds; no review URL |
+| FR6 | E8 | Branch-only reconcile | Backend integration | Run adopted to review; failed/no-evidence run still released |
+| FR7 | E9 | `/git` route and `/github` alias | Backend HTTP | Both return the same result |
+| FR8 | E10 | Credential storage and redaction | Unit/security | Encrypted at rest; absent from logs/argv/prompt |
+| FR9 | E11 | Provider config validation | Backend HTTP | Clear 4xx; no base-branch write |
+| FR10 | E12 | UI provider selection/status | Frontend/e2e | Provider and review/branch shown |
+| FR11 | E13 | GitHub regression suite | Existing tests | All GitHub tests still pass |
+| FR11 | E14 | Forgejo/Gitea contract suite | Integration | Green against disposable container |
+| FR12 | E15 | Runbook/index updates | Docs | `05` covers all providers; index labels match `00` |
+| NFR1 | E10 | Secret hygiene | Unit/review | No plaintext secret in DB/files/argv/logs/prompt |
+| NFR2 | E16 | Revoked/unreachable provider | Integration | Publish fails closed; base branch untouched |
+| NFR3 | E5 | Idempotent publish | Forgejo integration | No duplicate branch/PR |
+| NFR4 | E17 | Privacy policy still enforced | Backend integration | Model-provider policy is unchanged |
+| NFR5 | E13 | Backward compatibility | Existing suites | GitHub path unchanged |
+| NFR6 | E18 | Full verification | CI | Backend unit/integration, agent `mvn test`, lint pass |
+
+## Commands
+
+```bash
+cd backend
+npm test
+npm run test:integration
+npm run lint
+
+cd ../agent
+mvn test
+```
+
+Provider integration (disposable):
+
+```bash
+docker compose -f docker-compose.forgejo-test.yml up -d
+cd backend
+FORGEJO_BASE_URL=http://localhost:3000 npm run test:integration -- forgejoProvider
+```
+
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| — | — | — | Not run |
+
+| Field | Value |
+|---|---|
+| Residual provider rows | none (verify) |
+| Forgejo/Gitea evidence | — |
+| GitLab evidence | — |
+| Local/SSH evidence | — |
+
+## Deferred scope
+
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep
+a copy.
