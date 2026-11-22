@@ -1109,6 +1109,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
       [run.id]
     );
     expect(logs.rows).toHaveLength(1);
+    expect(logs.rows[0].provider_type).toBe('harness');
+    expect(logs.rows[0].request_type).toBe('harness');
+    expect(logs.rows[0].model).toBe('gpt-4o');
+    expect(Number(logs.rows[0].tokens_in)).toBe(100);
+    expect(Number(logs.rows[0].tokens_out)).toBe(50);
+    expect(Number(logs.rows[0].cost_usd)).toBeCloseTo(0.25, 6);
     expect(logs.rows[0].metadata.run_id).toBe(run.id);
     expect(String(logs.rows[0].project_id)).toBe(String(projectId));
     expect(String(logs.rows[0].runtime_id)).toBe(String(runtimeId));
