@@ -69,6 +69,32 @@ class RuntimeConfigTest {
     }
 
     @Test
+    void expandsTheSevenRuntimeReferenceCase() {
+        RuntimeConfig config = RuntimeConfig.parse("""
+            [runtime "workers"]
+            role = worker
+            model = acme/claude-sonnet
+            count = 3
+            project = 1
+
+            [runtime "reviewers"]
+            role = reviewer
+            model = acme/claude-opus
+            count = 2
+
+            [runtime "planners"]
+            role = planner
+            model = acme/claude-sonnet
+            count = 2
+            """);
+
+        assertEquals(7, config.expandedSlots().size());
+        assertEquals(List.of("workers-1", "workers-2", "workers-3",
+            "reviewers-1", "reviewers-2", "planners-1", "planners-2"),
+            config.expandedSlots().stream().map(RuntimeConfig.RuntimeSlot::name).toList());
+    }
+
+    @Test
     void parsesAFile() throws IOException {
         Path file = tempDir.resolve("agent.ini");
         Files.writeString(file, VALID);

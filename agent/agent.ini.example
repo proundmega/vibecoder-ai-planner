@@ -13,6 +13,13 @@
 ;   effort = minimal | low | medium | high | max   (optional; model default)
 ;   project= <project id>                  (required for workers; Track A)
 ;
+; Host sizing (fg-43): agent/scripts/host-init.sh reads this file and sums the
+; role profiles (worker 2 CPU/4 GB/20 GB, reviewer 1/2/10, planner 1/2/10) to
+; check the host and write .env.agent-host. The supervisor then refuses to
+; start if this file declares more slots than AGENT_HOST_MAX_RUNTIMES. Re-run
+; host-init.sh after changing any count; do not raise the cap by hand without
+; checking CPU, RAM and disk first.
+;
 ; Section names are used in child names (<name>-1, <name>-2, …) and PID files.
 ; Changing role/model/effort/project replaces only the affected children;
 ; changing count adds or drains only the difference.

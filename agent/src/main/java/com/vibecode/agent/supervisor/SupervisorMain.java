@@ -43,6 +43,8 @@ public final class SupervisorMain {
         Path path = Path.of(configPath);
         RuntimeConfig desired = RuntimeConfig.parse(path);
         validateDeclaration(desired);
+        int hostMaxRuntimes = hostMaxRuntimes(System.getenv("AGENT_HOST_MAX_RUNTIMES"));
+        enforceHostCapacity(desired, hostMaxRuntimes);
         AtomicReference<RuntimeConfig> desiredRef = new AtomicReference<>(desired);
 
         AgentConfig agentConfig = new AgentConfig();
@@ -64,6 +66,8 @@ public final class SupervisorMain {
             declareRequired(api, desired, DECLARE_ATTEMPTS, bootSuspended);
         Map<String, Long> runtimeIds = declared.runtimeIds();
         int heapMb = childHeapMb(desired);
+        log.info("Host capacity guard: declaredSlots={} maxRuntimes={} heapMb={}",
+            desired.expandedSlots().size(), hostMaxRuntimes, heapMb);
         Path pidDir = Path.of(System.getenv().getOrDefault(
             "SUPERVISOR_PID_DIR", "/tmp/vibecode-runtimes"));
         Duration stopTimeout = Duration.ofSeconds(longEnv("SUPERVISOR_STOP_TIMEOUT_SECONDS", 10));
@@ -408,6 +412,8 @@ public final class SupervisorMain {
         try {
             RuntimeConfig reloaded = RuntimeConfig.parse(path);
             validateDeclaration(reloaded);
+            enforceHostCapacity(reloaded,
+                hostMaxRuntimes(System.getenv("AGENT_HOST_MAX_RUNTIMES")));
             DeclarationResult declared = declareWithRetry(
                 api, reloaded, 3, supervisor.hardSuspendedSectionsSnapshot());
             if (declared.terminal()) {
@@ -612,6 +618,43 @@ public final class SupervisorMain {
                 throw new IllegalArgumentException(
                     "worker runtime '" + runtime.name() + "' requires project");
             }
+        }
+    }
+
+    /**
+     * Parse the host-init cap. Empty/0 disables the guard for a hand-managed
+     * host; a negative or non-numeric value fails closed.
+     */
+    static int hostMaxRuntimes(String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        try {
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed < 0) {
+                throw new IllegalArgumentException(
+                    "AGENT_HOST_MAX_RUNTIMES must be a non-negative integer");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                "AGENT_HOST_MAX_RUNTIMES must be a non-negative integer (got '"
+                    + value + "')");
+        }
+    }
+
+    /**
+     * Refuse to start a declaration larger than the host-init budget. The cap
+     * comes from the declared agent.ini slot count so a later count increase
+     * cannot silently overcommit the host.
+     */
+    static void enforceHostCapacity(RuntimeConfig config, int maxRuntimes) {
+        int declared = config.expandedSlots().size();
+        if (maxRuntimes > 0 && declared > maxRuntimes) {
+            throw new IllegalArgumentException(
+                "agent.ini declares " + declared + " runtime slots but "
+                    + "AGENT_HOST_MAX_RUNTIMES=" + maxRuntimes
+                    + "; re-run agent/scripts/host-init.sh for this size");
         }
     }
 
