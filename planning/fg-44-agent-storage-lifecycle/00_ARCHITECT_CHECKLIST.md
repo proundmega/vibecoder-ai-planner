@@ -41,19 +41,26 @@ is the runtime:
 All runtimes share the repo volume. Repo clones, `node_modules`, Maven/npm
 caches, OpenCode temp files, sandbox containers, Docker logs and images
 accumulate. A busy host can fill the disk or exhaust inodes even when CPU/RAM
-are fine. Disk pressure then looks like a code failure. Today `WorkspaceManager`
-creates a random `xxxxxxxx-repo` directory and only has a no-arg `cleanup()`;
-nothing cleans a ticket workspace after a terminal run, refreshes an idle
-runtime or reaps orphans.
+are fine. Disk pressure then looks like a code failure.
+
+The existing machinery is partial, not absent: `WorkspaceManager` creates a
+random `xxxxxxxx-repo` directory, `HarnessTicketProcessor` destroys the sandbox
+and calls the no-arg `cleanup()` in its per-ticket `finally`; the same harness
+child (`HarnessTicketProcessor`) runs `pruneStaleWorkspaces()` /
+`pruneStaleTempDirectories()` with `HARNESS_WORKSPACE_RETENTION_HOURS` (default
+24) and the backend active-path list. What is missing is the runtime/ticket-keyed
+layout, lease-safe cleanup, idle/max-lifetime refresh, disk/inode watermarks, a
+role budget meter, storage events and a runtime-root/orphan sweep. The existing
+random-dir prune must be folded into that sweep, not duplicated.
 
 ## Decisions needed from the user
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Workspace layout | runtime-scoped / current random dirs | `/repos/runtimes/<runtimeId>/<ticketId>`; the supervisor owns the runtime root | Answered 2026-11-22: runtime-scoped |
+| 1 | Workspace layout | runtime-scoped / current random dirs | `/repos/runtimes/<runtimeId>/<ticketId>/` with `repo/`, `tmp/`, `logs/`; the supervisor owns the runtime root | Answered 2026-11-22: runtime-scoped |
 | 2 | Cleanup owner | supervisor / backend reaper / host cron | Supervisor cleans after terminal run + lease release; host script for manual recovery | Answered 2026-11-22: supervisor |
 | 3 | Watermarks | five levels / three levels / custom | 70/80/85/90/95 for disk and inodes | Answered 2026-11-22: five levels |
-| 4 | Idle refresh | 2h / 4h / off | 2h when no ticket, lease or child process; same runtime identity | Assumed; revisit after the pilot |
+| 4 | Idle refresh | 2h / 4h / off | 2h when no active ticket, lease, sandbox or harness/OpenCode process; the idle runtime child is the process being restarted; same runtime identity | Assumed; revisit after the pilot |
 | 5 | Max lifetime | 24h / 12h / off | 24h between tickets | Assumed |
 | 6 | Budget breach | fail `storage_budget_exceeded` / warn only | Fail the run, quarantine the workspace, emit an event | Assumed |
 | 7 | Reaper owner | supervisor + host script / backend cron | Supervisor periodic sweep + `host-storage.sh` dry-run/apply | Assumed |
@@ -66,7 +73,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
 | D1 | Durable leases across restarts | fg-33 | Reliability | fg-33-durable-harness-execution | done (#110) |
-| D2 | Sandboxed workspaces | fg-34 | Security | fg-34-harness-sandbox | done (fg-34 slices) |
+| D2 | Sandboxed workspaces | fg-34 | Security | fg-34-harness-sandbox | done for the slices fg-44 needs; fg-34 D12/D24-D26 hardening remains |
 | D3 | Per-agent worktrees | fg-40 | Agent | fg-40-multi-agent-orchestration | open |
 | D4 | Host sizing and limits | fg-43 | Infrastructure | fg-43-agent-docker-deployment | done (#197) |
 | D5 | Read-only shared dependency cache (npm/Maven) | self | Performance | after the pilot | open |

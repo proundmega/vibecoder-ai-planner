@@ -7,15 +7,23 @@
 ## Current State
 
 - `WorkspaceManager(repoCloneDir, repoName, ...)` clones into a random
-  `<8hex>-<repo>` directory under `REPO_CLONE_DIR`; it has a no-arg `cleanup()`
-  and no ticket/runtime key.
+  `<8hex>-<repo>` directory under `REPO_CLONE_DIR`; it has a no-arg `cleanup()`.
+- `HarnessTicketProcessor` calls that `cleanup()` in the per-ticket `finally`
+  after destroying the sandbox; the same harness child also runs
+  `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` with
+  `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24) and the backend active-path
+  list. This is random-dir cleanup, not runtime/ticket-keyed lifecycle
+  management.
 - The fg-54 supervisor spawns one child per runtime and passes
   `REPO_CLONE_DIR` (default `/repos`); children share the same root.
 - `HarnessTicketProcessor` owns the clone, the sandbox and the finish path, so
   it is the natural cleanup caller.
-- There is no idle-refresh timer, disk/inode watermark, budget meter, orphan
-  reaper or `host-storage.sh`.
-- Docker log rotation is not configured for the supervisor/sandbox.
+- There is no idle-refresh timer, disk/inode watermark, role budget meter,
+  runtime-root sweep or `host-storage.sh`; the existing random-dir prune must be
+  folded into the new sweep.
+- The supervisor Compose service already has `json-file` rotation 10m/3; the
+  sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
+  1m/1 and are not Compose services.
 
 ## Design summary
 
@@ -57,8 +65,10 @@ Supervisor
 - `cleanup(ticketId)` deletes only `<runtimeRoot>/<ticketId>`; a
   `cleanupRuntime()` deletes the runtime root; the existing no-arg `cleanup()`
   remains as a full shutdown wrapper.
-- `assertSafeToDelete` continues to refuse anything outside the normalized
-  runtime root.
+- `assertSafeToDelete` currently uses `toAbsolutePath().normalize()`. fg-44
+  changes it to `toRealPath(LinkOption.NOFOLLOW_LINKS)` for an existing path
+  (and a normalized, non-following check for a path that does not exist yet),
+  refusing anything outside the runtime root.
 
 ## Cleanup flow
 
@@ -66,27 +76,37 @@ Supervisor
 2. `HarnessTicketProcessor` destroys the sandbox (if any) and verifies the
    destroy/close result.
 3. It records the final checkpoint/finish (lease release).
-4. Only after the lease release, it calls `WorkspaceManager.cleanup(ticketId)`.
-5. On failure, it preserves the workspace and emits a `storage.cleanup_failed`
-   event; the orphan sweep retries after TTL.
+4. Only after the lease release, it clears the `.active` marker and calls
+   `WorkspaceManager.cleanup(ticketId)`.
+5. On failure, it preserves the workspace and `.active` marker and emits a
+   `storage.cleanup_failed` event; the orphan sweep retries after TTL. A marker
+   whose run is terminal and whose lease has expired is stale only after the
+   retention TTL.
 6. On an unclean JVM exit, the workspace stays until the fg-33 reaper marks the
    run terminal and the lease expires; the storage sweep then removes it.
 
 Cleanup is idempotent and never touches a directory with an active workspace
-lock (a `.active` marker or the supervisor's in-memory slot).
+lock. `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start and
+removes it in the terminal cleanup; the supervisor slot and the marker are both
+checked. `host-storage.sh` uses the same marker/PID state in stopped-supervisor
+mode.
 
 ## Idle refresh and max lifetime
 
 - The supervisor tracks `lastActivityAt` per runtime (last claim/finish).
 - `AGENT_IDLE_REFRESH_MS` default `7200000` (2h); `AGENT_MAX_LIFETIME_HOURS`
   default `24`.
-- Eligible only if no ticket, no lease, no child process and no sandbox.
+- Eligible only if no active ticket, no lease, no sandbox and no active
+  harness/OpenCode process. The idle runtime child JVM is the process being
+  restarted.
 - Flow: mark `refreshing` (not assignable), capture size, stop the child with
   `SUPERVISOR_STOP_TIMEOUT_SECONDS`, destroy the sandbox, remove the runtime
   root and caches, start a fresh child with the same runtime id, refresh the
   node credential, health check and re-register.
-- If the restart fails, keep the old child when possible; otherwise mark the
-  slot degraded and retry.
+- If the restart fails after the child was stopped, mark the slot `degraded`,
+  emit `storage.refresh_failed` and retry with backoff. Do not claim the old
+  child is still running; it was stopped. If the remove step failed before
+  deletion, keep the workspace for recovery and retry.
 - A max-lifetime refresh uses the same flow but only between tickets.
 
 ## Watermarks
@@ -100,7 +120,7 @@ The supervisor samples the repo volume (`statfs`) every
 | 80% | stop spawning; reject new claims with `STORAGE_PRESSURE` |
 | 85% | clean idle runtime roots/caches; re-sample |
 | 90% | emergency recycle the oldest idle runtime; alert |
-| 95% | stop assigning; require `host-storage.sh --apply` |
+| 95% | stop assigning; require `host-storage.sh --apply` with the supervisor stopped |
 
 Inode usage uses the same thresholds. The backend exposes the current state via
 the existing heartbeat/status payload so the fleet UI can show it.
@@ -110,8 +130,12 @@ the existing heartbeat/status payload so the fleet UI can show it.
 - Every `AGENT_STORAGE_METER_SECONDS` (default 300), walk the active runtime
   roots with `du -sb` and count inodes (bounded depth; skip `.git` objects if
   needed).
-- Compare against the fg-43 role budget (worker 20 GB, reviewer/planner 10 GB,
-  light 5 GB).
+- Compare against the resolved per-runtime budget: the role default (worker
+  20 GB, reviewer/planner 10 GB, light 5 GB) or the fg-43 override
+  `AGENT_DISK_BUDGET_GB`. `host-init.sh` writes the override to
+  `.env.agent-host`; the supervisor passes the resolved value to the child.
+  `StoragePolicy`/`RuntimeState` carry the role and budget; do not add a second
+  `AGENT_WORKSPACE_BUDGET_GB` knob.
 - On breach: send `SIGTERM` to the workspace child/sandbox, fail the run with
   `storage_budget_exceeded`, move the ticket dir to `orphans/`, emit an event
   and alert.
@@ -124,20 +148,26 @@ The supervisor's storage sweep:
 
 1. list `/repos/runtimes/*`;
 2. keep roots for active runtimes/leases/processes;
-3. remove roots older than `AGENT_WORKSPACE_TTL_HOURS` (default 24h) with no
-   active owner;
+3. remove roots older than `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h)
+   with no active owner;
 4. move suspicious dirs to `orphans/` for `AGENT_ORPHAN_TTL_HOURS` (default
    24h), then delete;
 5. prune dangling images weekly (`docker image prune -f` only, never `-a`);
 6. report freed bytes and failures as events.
 
 `host-storage.sh` exposes the same sweep as `--dry-run`/`--apply` for manual
-recovery, without a control token.
+recovery. It has no backend control token and cannot read backend leases; it
+uses `.active` markers and supervisor PID/state, and `--apply` is restricted to
+a documented stopped-supervisor recovery mode (it refuses live supervisor/marker
+state, exit 4). The supervisor remains the lease-safe cleanup owner during
+normal operation.
 
 ## Logs and images
 
-- Compose and sandbox `LogConfig`: `json-file`, `max-size=10m`,
-  `max-file=3`.
+- The supervisor Compose service already uses `json-file` 10m/3; keep it.
+- Sandbox/proxy containers are created by `DockerSandboxRunner` with bounded
+  1m/1 log options; they are not Compose services. Configurable sandbox
+  rotation is out of scope for this ticket.
 - Keep the current `vibecode-agent`/sandbox tags; prune dangling images only.
 - Keep at most N old tags for rollback when the deployment supports it.
 
@@ -154,22 +184,23 @@ recovery, without a control token.
 
 Emit through the fg-41 event sink (or structured logs when the sink is off):
 
-- `storage.workspace_bytes{runtime,ticket}`
-- `storage.cache_bytes{runtime}`
-- `storage.disk_free_bytes`, `storage.disk_used_percent`
-- `storage.inodes_free`, `storage.inodes_used_percent`
-- `storage.refresh` (reason: idle/max_lifetime/failed)
-- `storage.cleanup` (reason: success/failure/terminal)
-- `storage.orphan_dirs`
-- `storage.budget_exceeded`
-- `storage.watermark` (level)
+- `storage.workspace` `{runtimeId, ticketId, bytes, inodes}`
+- `storage.cleanup` `{runtimeId, ticketId, bytes, reason}`
+- `storage.cleanup_failed` `{runtimeId, ticketId, error}`
+- `storage.refresh` `{runtimeId, reason, freedBytes}`
+- `storage.refresh_failed` `{runtimeId, error}`
+- `storage.watermark` `{level, usedPct, inodePct}`
+- `storage.budget_exceeded` `{runtimeId, ticketId, budgetGb, usedGb}`
+- `storage.orphan` `{path, bytes, action}`
+- `storage.image_prune` `{removed, reclaimedBytes}`
 
 ## Manual recovery
 
-1. Stop new claims: stop the supervisor or remove the runtime sections and
-   HUP. There is no pool-control token.
-2. `docker ps` and stop idle supervisors/sandboxes.
-3. Run `agent/scripts/host-storage.sh --dry-run`, then `--apply`.
+1. Stop the supervisor (stopped-supervisor recovery mode). There is no
+   pool-control token.
+2. Confirm no supervisor PID/slot or `.active` marker remains.
+3. Run `agent/scripts/host-storage.sh --dry-run`, then `--apply`; the script
+   refuses live supervisor/marker state (exit 4).
 4. `docker system df`; prune only dangling images/stopped containers.
 5. Verify free bytes/inodes.
 6. Restart the supervisor and monitor.
@@ -182,19 +213,22 @@ Emit through the fg-41 event sink (or structured logs when the sink is off):
 | Disk 80% during a run | Finish the current run; reject new claims |
 | Disk 95% | Stop assigning; require manual recovery |
 | `du` scan slow/timeout | Skip the cycle, log a warning; do not kill the run |
-| Refresh restart fails | Keep the old child if alive; else degraded slot + retry |
-| Orphan dir has an active lease | Skip; log |
+| Refresh restart fails | Child was stopped; mark degraded, emit `storage.refresh_failed`, retry with backoff; keep the workspace if removal failed |
+| Orphan dir has a live marker/slot | Skip; log |
 | Inode exhaustion | Same as disk pressure; no new claims |
 | Cleanup after an unclean exit | Preserve until the fg-33 reaper, then sweep |
 
 ## Security considerations
 
-- Workspace deletion is bounded by `toRealPath()` and the runtime root; never
-  follow symlinks outside it.
+- Workspace deletion is bounded by the runtime root. fg-44 changes
+  `assertSafeToDelete` from `toAbsolutePath().normalize()` to
+  `toRealPath(LinkOption.NOFOLLOW_LINKS)` (with a non-following fallback for a
+  path that does not exist yet); symlinks outside the root are refused.
 - No secret is written to a workspace or log; the provider key stays in the
   harness memory/env file.
 - `host-storage.sh` runs on the host and never receives `POOL_ADMIN_TOKEN`
-  (removed) or provider keys.
+  (removed), a backend lease token or provider keys. It uses `.active`
+  markers/PID state and `--apply` is stopped-supervisor recovery only.
 - Quarantined workspaces may contain repo code; restrict permissions and delete
   after TTL.
 - Docker log rotation is mandatory; log contents follow fg-42 redaction.

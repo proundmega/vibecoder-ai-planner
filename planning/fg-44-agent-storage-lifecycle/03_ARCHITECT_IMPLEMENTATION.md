@@ -14,8 +14,10 @@ Create these stubs **before** production code:
    refresh, max lifetime, watermarks, active safety, orphan sweep.
 3. `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` —
    cleanup after terminal + lease, sandbox-before-delete, budget breach.
-4. `agent/scripts/host-storage.test.sh` — dry-run/apply, watermark actions,
-   orphan TTL, full-disk recovery.
+4. `agent/scripts/host-storage.test.sh` — dry-run/apply, stopped-supervisor and
+   `.active`/PID guards, watermark actions, orphan TTL, full-disk recovery.
+5. `agent/src/test/java/.../harness/HarnessEventStorageTest.java` — `storage.*`
+   event names and payload fields.
 
 ## Plan
 
@@ -26,9 +28,12 @@ Create these stubs **before** production code:
    the run/lease, then cleans the ticket workspace; failure preserves it and
    emits an event.
 3. **Supervisor storage policy** — idle 2h / max 24h refresh, disk/inode
-   watermarks, budget meter, orphan sweep, dangling-image prune, log rotation.
-4. **Host script** — `agent/scripts/host-storage.sh --dry-run|--apply`.
-5. **Compose** — log rotation for supervisor and sandbox.
+   watermarks, role budget meter (`AGENT_DISK_BUDGET_GB` override),
+   orphan/runtime-root sweep, dangling-image prune.
+4. **Host script** — `agent/scripts/host-storage.sh --dry-run|--apply` in
+   stopped-supervisor recovery mode with `.active`/PID guards.
+5. **Compose** — verify the existing supervisor 10m/3 rotation; pass
+   `AGENT_DISK_BUDGET_GB`; sandbox/proxy logs stay Java-created at 1m/1.
 6. **Docs** — `agent/README.md` storage section, env table, recovery.
 7. **Verification** — run the matrix and record results.
 
@@ -36,21 +41,22 @@ Create these stubs **before** production code:
 
 | File | Action | Change |
 |---|---|---|
-| `agent/src/main/java/.../service/WorkspaceManager.java` | change | Runtime/ticket keyed root, `cleanup(key)`, `cleanupRuntime()`, `workspaceBytes()`, traversal guards |
+| `agent/src/main/java/.../service/WorkspaceManager.java` | change | Runtime/ticket-keyed root (`<ticketRoot>/repo`), `cleanup(key)`, `cleanupRuntime()`, `workspaceBytes()`, `.active` guard, `toRealPath(NOFOLLOW_LINKS)` deletion guard |
 | `agent/src/main/java/.../supervisor/Supervisor.java` | change | Pass `REPO_CLONE_DIR` per runtime; idle/max-lifetime refresh; active-slot guard |
 | `agent/src/main/java/.../supervisor/SupervisorMain.java` | change | Storage sweep wiring, env parse, watermark log |
-| `agent/src/main/java/.../supervisor/StoragePolicy.java` | add | Watermarks, budget, orphan/refresh decisions |
-| `agent/src/main/java/.../harness/HarnessTicketProcessor.java` | change | Destroy sandbox → finish → cleanup; budget event |
+| `agent/src/main/java/.../supervisor/StoragePolicy.java` | add | Watermarks, role/budget, orphan/refresh decisions; `RuntimeState` |
+| `agent/src/main/java/.../harness/HarnessTicketProcessor.java` | change | Destroy sandbox → finish → keyed cleanup; `.active` marker; budget event; remove the existing prune call and route retention to the supervisor sweep |
 | `agent/src/main/java/.../harness/HarnessEvent.java` | change | Add `storage.*` event types |
-| `agent/scripts/host-storage.sh` | add | Dry-run/apply recovery and sweep |
+| `agent/scripts/host-storage.sh` | add | Dry-run/apply stopped-supervisor recovery; `.active`/PID guards |
 | `agent/scripts/host-storage.test.sh` | add | Bash fixtures/assertions |
-| `agent/docker-compose.yml` | change | Log rotation for supervisor |
-| `agent/docker-compose.sandbox.yml` | change | Log rotation for sandbox |
+| `agent/scripts/host-init.sh` | change | Write `AGENT_DISK_BUDGET_GB` to `.env.agent-host` when set |
+| `agent/scripts/host-init.test.sh` | change | Assert the budget override is written |
+| `agent/docker-compose.yml` | change | Pass `AGENT_DISK_BUDGET_GB`; verify existing 10m/3 supervisor rotation |
 | `agent/README.md` | change | Layout, env vars, refresh, budget, recovery |
-| `agent/src/test/java/.../service/WorkspaceManagerStorageTest.java` | add | Keyed layout/cleanup/size |
-| `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` | add | Refresh/watermark/orphan/active safety |
-| `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` | add | Cleanup order/budget |
-| `agent/scripts/host-storage.test.sh` | add | Recovery script |
+| `agent/src/test/java/.../service/WorkspaceManagerStorageTest.java` | add | Keyed layout/cleanup/size/traversal/symlink |
+| `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` | add | Refresh/watermark/orphan/active safety/budget |
+| `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` | add | Cleanup order/budget/.active |
+| `agent/src/test/java/.../harness/HarnessEventStorageTest.java` | add | `storage.*` event payloads |
 
 ## Verification matrix (canonical)
 
@@ -58,28 +64,28 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Agent | `WorkspaceManagerStorageTest.java` | runtime 12 / ticket 34 path; traversal refused | `cd agent && mvn test` |
-| FR2 | Agent | `HarnessTicketProcessorStorageTest.java` | terminal + lease → cleanup; unclean exit preserved | `mvn test` |
-| FR3 | Agent | `SupervisorStorageTest.java` | idle 2h stops/restarts child, keeps id | `mvn test` |
+| FR1 | Agent | `WorkspaceManagerStorageTest.java` | runtime 12 / ticket 34; `repo/`, `tmp/`, `logs/`; traversal and symlink/non-existent targets refused | `cd agent && mvn test` |
+| FR2 | Agent | `HarnessTicketProcessorStorageTest.java` | terminal + lease → keyed cleanup; `.active` marker preserved; unclean exit retained | `mvn test` |
+| FR3 | Agent | `SupervisorStorageTest.java` | idle 2h stops/restarts child, no active harness; failed restart degraded/retried | `mvn test` |
 | FR4 | Agent | `SupervisorStorageTest.java` | 24h between tickets only | `mvn test` |
 | FR5 | Agent | `SupervisorStorageTest.java` | 70/80/85/90/95 actions; inode same | `mvn test` |
-| FR6 | Agent | `HarnessTicketProcessorStorageTest.java` | budget breach → `storage_budget_exceeded`, quarantine | `mvn test` |
-| FR7 | Compose | `docker compose config` | log rotation on supervisor/sandbox | `docker compose -f agent/docker-compose.yml config` |
+| FR6 | Agent + Shell | `HarnessTicketProcessorStorageTest.java`, `host-init.test.sh` | role/override budget; breach → `storage_budget_exceeded`; env written | `mvn test -Dtest=HarnessTicketProcessorStorageTest && bash agent/scripts/host-init.test.sh` |
+| FR7 | Compose + Agent | `DockerSandboxRunnerTest.java` | supervisor 10m/3; existing sandbox/proxy 1m/1 | `docker compose -f agent/docker-compose.yml config && mvn test -Dtest=DockerSandboxRunnerTest` |
 | FR8 | Agent | `SupervisorStorageTest.java` | dangling prune keeps active tag | `mvn test` |
-| FR9 | Agent | `SupervisorStorageTest.java` | orphan TTL; active/lease kept | `mvn test` |
-| FR10 | Agent | `SupervisorStorageTest.java` | active lease/process skipped | `mvn test` |
-| FR11 | Agent | `HarnessEvent` assertions | `storage.*` fields and counts | `mvn test` |
-| FR12 | Script | `host-storage.test.sh` | dry-run/apply, full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
+| FR9 | Agent | `SupervisorStorageTest.java` | `HARNESS_WORKSPACE_RETENTION_HOURS` TTL; active/lease kept | `mvn test` |
+| FR10 | Agent | `SupervisorStorageTest.java` | `.active` marker/supervisor slot skipped | `mvn test` |
+| FR11 | Agent | `HarnessEventStorageTest.java` | `storage.*` names and payload fields | `mvn test -Dtest=HarnessEventStorageTest` |
+| FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID guards; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
 | FR13 | Agent | `HarnessTicketProcessorStorageTest.java` | destroy before delete; failed destroy keeps dir | `mvn test` |
 
 ## Review checklist
 
 - [ ] Every `FR*` acceptance statement has a passing row
 - [ ] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
-- [ ] No active lease/process is ever deleted or stopped
+- [ ] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
 - [ ] Sandbox destroy precedes workspace deletion
-- [ ] No `PoolManager`/`POOL_ADMIN_TOKEN` reference remains
-- [ ] `04` matches what was built
+- [ ] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
+- [ ] `04` is the implementation contract; `Results` records as-built deviations
 
 ## Results
 

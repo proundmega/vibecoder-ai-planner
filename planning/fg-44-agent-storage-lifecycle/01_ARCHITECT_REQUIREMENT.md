@@ -14,12 +14,18 @@ across them. Every run clones a repo, installs dependencies, writes test output
 and may create a sandbox container. Caches, logs and abandoned workspaces
 accumulate:
 
-- `WorkspaceManager` creates a random `xxxxxxxx-repo` directory and only has a
-  no-arg `cleanup()`; nothing deletes a ticket workspace after a terminal run;
-- a killed child leaves its workspace behind;
+- `WorkspaceManager` creates a random `xxxxxxxx-repo` directory and has a no-arg
+  `cleanup()`; `HarnessTicketProcessor` already calls it in the per-ticket
+  `finally`, but cleanup is not keyed or runtime-scoped;
+- the harness child (`HarnessTicketProcessor`) already runs
+  `pruneStaleWorkspaces()` / `pruneStaleTempDirectories()` with
+  `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24) and the backend active-path
+  list, but it only covers random clone dirs and is not lease/idle aware;
+- a killed child leaves its workspace behind until retention;
 - an idle runtime keeps its caches and temp files for days;
 - sandbox containers and Docker logs add to the same disk;
-- there is no disk/inode watermark, budget meter or orphan reaper.
+- there is no disk/inode watermark, role budget meter, runtime-root sweep or
+  storage events.
 
 On a 2 TB SSD this is manageable at first, but long-running fleets eventually
 hit disk-full, inode exhaustion or slow I/O. Disk pressure then looks like a
@@ -52,23 +58,23 @@ code failure.
 
 | ID | Requirement | Acceptance (testable) |
 |---|---|---|
-| FR1 | Workspace layout: each runtime owns `/repos/runtimes/<runtimeId>/` and each ticket a subdirectory `<ticketId>/repo`; a runtime never writes into another runtime's root. | Unit test asserts the path for runtime 12/ticket 34; a traversal attempt fails. |
+| FR1 | Workspace layout: each runtime owns `/repos/runtimes/<runtimeId>/`; each ticket owns `<runtimeId>/<ticketId>/` with `repo/`, `tmp/` and `logs/` inside it; the clone is `<ticketId>/repo`. A runtime never writes into another runtime's root. | Unit test asserts the ticket root and repo path for runtime 12/ticket 34; a traversal attempt fails. |
 | FR2 | Ticket cleanup: remove the ticket directory only after the run is terminal and the lease is released (success, failure or explicit release). On an unclean JVM exit, preserve it until the fg-33 reaper marks the run terminal; never delete an active workspace. | Cleanup test for success/failure; unclean-exit test keeps the dir until lease expiry. |
-| FR3 | Idle refresh: if a runtime has no active ticket/lease/child process for `AGENT_IDLE_REFRESH_MS` (default 2h), stop and restart the child, remove its workspace/caches, keep the same runtime id and refresh the node credential. | Idle test stops/restarts one child, removes the root, keeps the id. |
+| FR3 | Idle refresh: if a runtime has no active ticket, lease, sandbox or harness/OpenCode process for `AGENT_IDLE_REFRESH_MS` (default 2h), stop and restart the child, remove its workspace/caches, keep the same runtime id and refresh the node credential. The idle runtime child JVM is the process being restarted. | Idle test stops/restarts one child, removes the root, keeps the id. |
 | FR4 | Max lifetime: recycle a runtime after `AGENT_MAX_LIFETIME_HOURS` (default 24h) only between tickets; never mid-ticket. | Busy runtime is not recycled; idle-at-lifetime is. |
 | FR5 | Disk watermarks: 70% warn, 80% stop spawning, 85% clean idle workspaces, 90% emergency recycle oldest idle, 95% manual recovery. Inode usage uses the same thresholds. | Each threshold triggers the expected action; 80% rejects a new claim. |
 | FR6 | Budget meter: a periodic `du -sb` + inode count per runtime/ticket; a breach stops the workspace processes, fails the run with `storage_budget_exceeded`, quarantines the workspace and emits an event. | Fixture writes past the worker 20 GB budget; the run fails before the host fills. |
-| FR7 | Logs: Docker `json-file` rotation (`max-size=10m`, `max-file=3`) for the supervisor and sandboxes; no unbounded log. | Compose render/inspect asserts the log config. |
+| FR7 | Logs: the supervisor already uses Docker `json-file` rotation (`max-size=10m`, `max-file=3`); sandbox/proxy containers are created by `DockerSandboxRunner` with bounded `1m/1` log options and remain unchanged by this ticket. No unbounded log. | Verify the supervisor Compose config; assert the existing `1m/1` sandbox log options. |
 | FR8 | Images: prune dangling images only; never prune the current `vibecode-agent`/sandbox tags. | Dry-run lists only dangling images; the active tag remains. |
-| FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `AGENT_WORKSPACE_TTL_HOURS` (default 24h); suspicious dirs move to `orphans/` for a short TTL. | Orphan fixture is reaped after TTL; active/lease-owned dirs are kept. |
-| FR10 | Active safety: never delete a workspace or stop a runtime with an unexpired lease or an active child process. | Active lease/process tests skip cleanup and log why. |
+| FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h, the existing retention TTL); suspicious dirs move to `orphans/` for a short TTL. | Orphan fixture is reaped after TTL; active/lease-owned dirs are kept. |
+| FR10 | Active safety: never delete a workspace or stop a runtime with an unexpired lease or an active harness/OpenCode process. | Active lease/harness tests skip cleanup and log why. |
 | FR11 | Metrics/events: emit workspace bytes, host free bytes/inodes, log size, refresh/cleanup counts and orphan count as fg-41 events or structured logs. | Event/log assertions for each field. |
-| FR12 | Recovery: `agent/scripts/host-storage.sh --dry-run|--apply` stops new work, cleans idle workspaces, verifies free space/inodes and never exposes a control token to agents. | Dry-run lists actions; apply frees space; a full-disk fixture recovers. |
+| FR12 | Recovery: `agent/scripts/host-storage.sh --dry-run|--apply` is a stopped-supervisor recovery path; it refuses live supervisor/marker state, cleans idle workspaces, verifies free space/inodes and never exposes a control token to agents. | Dry-run lists actions; apply frees space only with the supervisor stopped; a full-disk fixture recovers. |
 | FR13 | Sandbox cleanup: destroy the fg-34 sandbox before deleting its workspace; a failed destroy keeps the runtime tracked and fails closed. | Failed-destroy test keeps the dir; successful test removes it. |
 
 ## Storage budget
 
-Use fg-43's per-runtime disk budget:
+Use fg-43's per-runtime disk budget. The role defaults are:
 
 | Role | Workspace budget | Notes |
 |---|---|---|
@@ -76,6 +82,11 @@ Use fg-43's per-runtime disk budget:
 | reviewer | 10 GB | read-only checkout |
 | planner | 10 GB | planning docs and repo |
 | light | 5 GB | small repos/pollers |
+
+The optional override is fg-43's `AGENT_DISK_BUDGET_GB` — one name; do not add a
+second `AGENT_WORKSPACE_BUDGET_GB` knob. `host-init.sh` writes it to
+`.env.agent-host` when set, and the supervisor passes the resolved per-runtime
+budget to the child. Without the override, the role default above is used.
 
 Enforce the budget with a periodic `du -sb` plus inode count per runtime/ticket.
 On breach: stop the workspace processes, fail the run with
@@ -86,14 +97,17 @@ driver supports it; the shared repo volume relies on the meter.
 ## Idle refresh policy
 
 - `AGENT_IDLE_REFRESH_MS` = 2h is a **state refresh**, not a pool eviction.
-- Eligible only when the runtime has no ticket, no lease, no child process and
-  no sandbox.
+- Eligible only when the runtime has no active ticket, no lease, no sandbox and
+  no active harness/OpenCode process. The idle runtime child JVM is the process
+  being restarted.
 - Refresh flow: mark `refreshing` (do not assign), capture size, stop the child
   with a grace period, destroy any sandbox, remove the runtime root and caches,
   start a fresh child with the same runtime id, refresh the node credential,
   health check and re-register.
-- If refresh fails, keep the old child if it is still running; otherwise mark
-  the slot degraded and retry later.
+- If the restart fails after the child was stopped, mark the slot `degraded`,
+  emit `storage.refresh_failed` and retry with backoff. Do not claim the old
+  child is still running; it was stopped as part of the refresh. If the remove
+  step failed before deletion, keep the workspace for recovery and retry.
 - Log the reason, freed bytes and duration.
 
 ## Watermarks
@@ -119,10 +133,10 @@ is a host incident.
 4. An active ticket is never refreshed or cleaned.
 5. Disk at 80% stops new claims with a clear error; 90% recycles the oldest
    idle runtime; 95% requires manual recovery.
-6. Logs rotate and dangling images are pruned safely.
+6. Supervisor logs rotate; sandbox logs remain bounded at 1m/1, and dangling images are pruned safely.
 7. Orphan workspaces are reaped after TTL; active/lease-owned dirs are kept.
 8. Storage events show workspace bytes, free bytes/inodes and refresh counts.
-9. A full-disk simulation recovers with `host-storage.sh`.
+9. A full-disk simulation recovers with `host-storage.sh` in stopped-supervisor mode.
 10. A workspace over its profile budget fails the run with
     `storage_budget_exceeded` before the host fills.
 11. Sandbox destroy runs before workspace deletion; a failed destroy keeps the
