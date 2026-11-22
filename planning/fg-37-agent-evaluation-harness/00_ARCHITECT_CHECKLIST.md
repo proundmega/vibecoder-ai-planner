@@ -34,7 +34,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D2 | Reviewer calibration | fg-31 | Review | fg-31 follow-up | open |
 | D3 | Sandboxed eval repos | fg-34 | Security | fg-34-harness-sandbox | open |
 | D4 | Sandboxed evaluation repos | fg-34 | Security | TBD (new follow-up) | open |
-| D5 | Budget-aware eval runs | fg-38 | Billing | fg-38-harness-budgets-routing | open |
+| D5 | Budget-aware eval runs | fg-38 | Billing | DONE/fg-38-harness-budgets-routing | open |
 | D6 | Budget-aware evaluation runs | fg-38 | Billing | TBD (new follow-up) | open |
-| D7 | Eval dashboards | fg-41 | Observability | fg-41-harness-observability | open |
+| D7 | Eval dashboards | fg-41 | Observability | DONE/fg-41-harness-observability | open |
 | D8 | Eval result dashboards | fg-41 | Observability | TBD (new follow-up) | open |

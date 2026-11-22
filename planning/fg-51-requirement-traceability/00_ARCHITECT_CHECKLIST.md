@@ -67,7 +67,7 @@ after the implementation PR is merged and `03` has a dated Results row.
 | D2 | Auto-generate missing tests from acceptance criteria | self | Agent / Testing | none | open |
 | D3 | Report adapters beyond JUnit XML, Jest/Vitest JSON and pytest JSON | self | Tooling | none | open |
 | D4 | Cross-ticket / cross-repository traceability | self | Tooling | none | open |
-| D5 | Traceability trends and dashboards | fg-41 | Observability | fg-41-harness-observability | open |
+| D5 | Traceability trends and dashboards | fg-41 | Observability | DONE/fg-41-harness-observability | open |
 | D6 | Monorepo / package-scoped requirement mapping | self | Tooling | none | open |
 
 ## Decisions needed from the user

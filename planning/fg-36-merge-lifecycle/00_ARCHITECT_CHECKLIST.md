@@ -33,4 +33,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D1 | Reviewer should check mergeability before review | fg-31 | Review | fg-31 follow-up | open |
 | D2 | Fixer round for conflicts | fg-32 | Agent | fg-32 follow-up | open |
 | D3 | Measure merge/rollback outcomes | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
-| D4 | Merge queue audit events | fg-41 | Observability | fg-41-harness-observability | open |
+| D4 | Merge queue audit events | fg-41 | Observability | DONE/fg-41-harness-observability | open |
