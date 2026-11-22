@@ -40,7 +40,7 @@ repetition policy that escalates to a question.
 |---|---|---|
 | Plan merged | #193 added this suite to master | ☑ |
 | Implementation merged | pending review | ☐ |
-| Verification results | `03` → Results (local: backend 152/1782, integration 19/140, agent 921, frontend 68/589) | ☑ |
+| Verification results | `03` → Results (local: backend 152/1782, integration 19/141, agent 921, frontend 68/589) | ☑ |
 
 ## Deferred register (canonical)
 

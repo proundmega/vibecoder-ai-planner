@@ -387,7 +387,7 @@ class TicketQuestionService {
              answer = $3,
              answered_by = $4,
              answered_at = NOW()
-         WHERE id = $1 AND status = 'pending'
+         WHERE id = $1 AND run_id = $2 AND status = 'pending'
          RETURNING *`,
         [id, run, text, user]
       );

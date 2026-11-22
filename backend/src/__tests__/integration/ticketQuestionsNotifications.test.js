@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 const HarnessRunService = require('../../services/HarnessRunService');
+const TicketQuestionService = require('../../services/TicketQuestionService');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const FORWARD_SQL = path.join(
@@ -199,6 +200,107 @@ describe('Migration 060 questions and notifications (real DB, transactional)', (
       await client.query('DELETE FROM agent_nodes WHERE id = $1', [node.rows[0].id]);
       await client.query('DELETE FROM users WHERE id = ANY($1::bigint[])',
         [[owner.rows[0].id, member.rows[0].id]]);
+    }
+  });
+
+  test('createForRun persists, dedupes and answer clears waiting', async () => {
+    const tag = `fg55_create_${Date.now()}`;
+    const owner = await client.query(
+      `INSERT INTO users (email, name, password_hash)
+       VALUES ($1, 'FG55 create owner', 'x') RETURNING id`,
+      [`${tag}@test.local`]
+    );
+    const project = await client.query(
+      `INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id`,
+      [tag, owner.rows[0].id]
+    );
+    const credential = await client.query(
+      `INSERT INTO provider_credentials
+         (owner_id, name, provider_type, api_key_encrypted)
+       VALUES ($1, $2, 'openai', 'x') RETURNING id`,
+      [owner.rows[0].id, `${tag}-cred`]
+    );
+    const model = await client.query(
+      `INSERT INTO provider_models (credential_id, model, source, roles)
+       VALUES ($1, $2, 'manual', ARRAY['worker']) RETURNING id`,
+      [credential.rows[0].id, `${tag}-model`]
+    );
+    const node = await client.query(
+      `INSERT INTO agent_nodes (owner_id, name) VALUES ($1, $2) RETURNING id`,
+      [owner.rows[0].id, `${tag}-node`]
+    );
+    const runtime = await client.query(
+      `INSERT INTO agent_runtimes
+         (node_id, name, role, model_id, status, current_project_id)
+       VALUES ($1, $2, 'worker', $3, 'running', $4) RETURNING id`,
+      [node.rows[0].id, `${tag}-worker`, model.rows[0].id, project.rows[0].id]
+    );
+    const ticket = await client.query(
+      `INSERT INTO tickets (project_id, title, owner_id, status, assigned_runtime_id, locked_at)
+       VALUES ($1, $2, $3, 'in_progress', $4, NOW()) RETURNING id`,
+      [project.rows[0].id, `${tag} ticket`, owner.rows[0].id, runtime.rows[0].id]
+    );
+    const run = await client.query(
+      `INSERT INTO harness_runs (ticket_id, runtime_id, project_id, branch)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [ticket.rows[0].id, runtime.rows[0].id, project.rows[0].id, `feat/${tag}`]
+    );
+
+    try {
+      const question = await TicketQuestionService.createForRun({
+        runId: run.rows[0].id,
+        runtimeId: runtime.rows[0].id,
+        externalId: 'evt_create',
+        kind: 'question',
+        prompt: 'Which helper?',
+      });
+      expect(question.status).toBe('pending');
+
+      const duplicate = await TicketQuestionService.createForRun({
+        runId: run.rows[0].id,
+        runtimeId: runtime.rows[0].id,
+        externalId: 'evt_create',
+        kind: 'question',
+        prompt: 'Which helper?',
+      });
+      expect(duplicate.id).toBe(question.id);
+
+      const waiting = await client.query(
+        'SELECT waiting_since FROM harness_runs WHERE id = $1',
+        [run.rows[0].id]
+      );
+      expect(waiting.rows[0].waiting_since).not.toBeNull();
+
+      const notification = await client.query(
+        'SELECT user_id, type FROM notifications WHERE question_id = $1',
+        [question.id]
+      );
+      expect(notification.rows).toEqual([
+        { user_id: owner.rows[0].id, type: 'question' },
+      ]);
+
+      const answered = await TicketQuestionService.answer(
+        run.rows[0].id,
+        question.id,
+        { answer: 'Use the helper.', userId: owner.rows[0].id }
+      );
+      expect(answered.status).toBe('answered');
+
+      const cleared = await client.query(
+        'SELECT waiting_since, waited_ms FROM harness_runs WHERE id = $1',
+        [run.rows[0].id]
+      );
+      expect(cleared.rows[0].waiting_since).toBeNull();
+      expect(Number(cleared.rows[0].waited_ms)).toBeGreaterThanOrEqual(0);
+    } finally {
+      await client.query('DELETE FROM agent_runtimes WHERE node_id = $1', [node.rows[0].id]);
+      await client.query('DELETE FROM provider_models WHERE credential_id = $1',
+        [credential.rows[0].id]);
+      await client.query('DELETE FROM provider_credentials WHERE id = $1',
+        [credential.rows[0].id]);
+      await client.query('DELETE FROM projects WHERE id = $1', [project.rows[0].id]);
+      await client.query('DELETE FROM agent_nodes WHERE id = $1', [node.rows[0].id]);
+      await client.query('DELETE FROM users WHERE id = $1', [owner.rows[0].id]);
     }
   });
 });
