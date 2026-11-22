@@ -4,8 +4,6 @@ process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY
   || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
@@ -23,9 +21,11 @@ const {
  * bt-60 Phase A — real Express app + real Postgres round trip for the durable
  * harness. No route or service is mocked.
  *
- * Covered: E1-E14, E23-E25. E26-E28 are review/verification rows: this change
- * adds test files only (E26), the commands below plus lint are the evidence for
- * E27, and E28 (staging safety) belongs to the deferred Phase B staging run.
+ * Covered: E1-E14 and E23-E24. E25 is review-only (the index lives outside the
+ * backend test image and is updated in the planning docs). E26-E28 are
+ * review/verification rows: this change adds test files only (E26), the
+ * commands below plus lint are the evidence for E27, and E28 (staging safety)
+ * belongs to the deferred Phase B staging run.
  *
  * E15-E21 (real OpenCode/GitHub/PR, crash/reaper/idempotent publish) remain
  * Phase B/manual and are recorded in the bt-60 runbook and deferred register.
@@ -162,14 +162,31 @@ afterEach(async () => {
   await resetFixtureTickets();
 });
 
+function fixtureIdsForCleanup(value) {
+  return {
+    suffix: value.suffix,
+    userIds: value.userIds,
+    projectIds: value.projectIds,
+    nodeIds: value.nodeIds,
+    runtimeIds: value.runtimeIds,
+    ticketIds: value.ticketIds,
+  };
+}
+
 afterAll(async () => {
   try {
     if (!fixture) return;
-    await cleanupHarnessFixture(fixture);
-    const residuals = await residualRows(fixture);
-    const remaining = Object.entries(residuals).filter(([, value]) => value !== 0);
-    if (remaining.length > 0) {
-      throw new Error(`bt-60 fixture cleanup left rows: ${JSON.stringify(residuals)}`);
+    try {
+      await cleanupHarnessFixture(fixture);
+      const residuals = await residualRows(fixture);
+      const remaining = Object.entries(residuals).filter(([, value]) => value !== 0);
+      if (remaining.length > 0) {
+        throw new Error(`bt-60 fixture cleanup left rows: ${JSON.stringify(residuals)}`);
+      }
+    } catch (error) {
+      // Ids only (never tokens) so the runbook cleanup SQL can target the run.
+      console.error('bt-60 manual cleanup ids:', fixtureIdsForCleanup(fixture));
+      throw error;
     }
   } finally {
     await closeHarnessFixturePool();
@@ -533,7 +550,7 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     expect(afterFinish.statusCode).toBe(404);
   });
 
-  test('E12 finish persists evidence and releases the lease', async () => {
+  test('E12 finish persists evidence, finalizes artifacts and releases the lease', async () => {
     const runId = await createActiveRun();
     const claimed = await claimLease({
       token: fixture.nodeToken,
@@ -542,6 +559,15 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
       runId,
     });
     expect(claimed.statusCode).toBe(201);
+
+    const wrongRuntime = await finishRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.secondRuntimeId,
+      runId,
+      status: 'succeeded',
+    });
+    expect(wrongRuntime.statusCode).toBe(403);
+    expect(wrongRuntime.body.error.code).toBe('FORBIDDEN');
 
     const headSha = 'bt60-finish-head';
     const prUrl = 'https://example.test/bt60/pull/12';
@@ -564,13 +590,15 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     expect(run.head_sha).toBe(headSha);
     expect(run.pr_url).toBe(prUrl);
     expect(run.finished_at).not.toBeNull();
+    // A failed usage flush leaves this NULL and makes the reaper retry forever.
+    expect(run.artifacts_finalized_at).not.toBeNull();
     expect(await count(
       'SELECT count(*)::int AS count FROM harness_leases WHERE run_id = $1',
       [runId]
     )).toBe(0);
   });
 
-  test('E13 finish is idempotent', async () => {
+  test('E13 finish is idempotent and keeps artifacts finalized', async () => {
     const runId = await createActiveRun();
     const first = await finishRun({
       token: fixture.nodeToken,
@@ -582,6 +610,7 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     });
     expect(first.statusCode).toBe(200);
     const firstRun = await dbRun(runId);
+    expect(firstRun.artifacts_finalized_at).not.toBeNull();
 
     const second = await finishRun({
       token: fixture.nodeToken,
@@ -602,6 +631,7 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     expect(finalRun.status).toBe('succeeded');
     expect(finalRun.head_sha).toBe(firstRun.head_sha);
     expect(finalRun.finished_at).toEqual(firstRun.finished_at);
+    expect(finalRun.artifacts_finalized_at).not.toBeNull();
     expect(finalRun.error).toBeNull();
   });
 
@@ -756,24 +786,4 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     }
   });
 
-  test('E25 PENDING.txt and the harness roadmap index bt-60', () => {
-    const root = path.join(__dirname, '..', '..', '..', '..');
-    const pendingPath = path.join(root, 'PENDING.txt');
-    const roadmapPath = path.join(root, 'planning', 'HARNESS_ROADMAP.md');
-
-    // The backend integration image ships only backend/, so the docs check is
-    // a local/review assertion and a no-op when the repo root is unavailable.
-    if (!fs.existsSync(pendingPath) || !fs.existsSync(roadmapPath)) {
-      console.warn('bt-60 E25 skipped: repository docs are not mounted in this test image');
-      return;
-    }
-
-    const pending = fs.readFileSync(pendingPath, 'utf8');
-    const roadmap = fs.readFileSync(roadmapPath, 'utf8');
-
-    expect(pending).toContain('bt-60');
-    expect(pending).toContain('fg-33');
-    expect(roadmap).toContain('bt-60');
-    expect(roadmap).toContain('fg-33');
-  });
 });

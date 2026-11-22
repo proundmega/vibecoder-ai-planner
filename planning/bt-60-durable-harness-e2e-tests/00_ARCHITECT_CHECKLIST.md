@@ -1,14 +1,14 @@
 ---
 id: "bt-60"
 title: "Durable Harness End-to-End Tests"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-02"
 updated: "2026-11-22"
-pr: null
-branch: null
+pr: 198
+branch: "test/bt-60-phase-a"
 depends_on: ["fg-33"]
 ---
 
@@ -46,8 +46,9 @@ now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #111 | ☑ |
-| Implementation merged | pending — staging credentials required | ☐ |
-| Verification results | n/a — planned | ☐ |
+| Phase A implemented | PR #198 (in review); fixes the usage-flush defect found by E12 | ☑ |
+| Phase B staged | pending — disposable repo, provider key and GitHub App installation required | ☐ |
+| Verification results | `03` Results, 2026-11-22 (Phase A) | ☑ |
 
 ## Deferred register (canonical)
 
@@ -67,13 +68,14 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |
 | D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
 | D11 | Redaction and retention for captured test artifacts | fg-42 | Privacy | DONE/fg-42-harness-privacy | done (#166) |
+| D12 | Harness usage flush failed with `could not determine data type of parameter $1`, leaving `artifacts_finalized_at` NULL and the reaper retrying forever (found by Phase A E12) | self | Reliability | PR #200 (separate production fix) | in review (#200) |
 
 ## Decisions needed from the user
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Staging project/repo/node/runtime and provider/GitHub credentials | provide now / defer | Use a dedicated disposable set, never production | Pending |
-| 2 | Phase split | A only / A+B now | Both dependencies are satisfied; run A+B | Pending |
+| 1 | Staging project/repo/node/runtime and provider/GitHub credentials | provide now / defer | Use a dedicated disposable set, never production | Deferred until the disposable set exists (Phase B) |
+| 2 | Phase split | A only / A+B now | Both dependencies are satisfied; run A+B | Phase A now; Phase B deferred |
 
 ## Completion gate
 

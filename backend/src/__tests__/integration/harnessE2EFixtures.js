@@ -271,7 +271,6 @@ async function cleanupHarnessFixture(fixture) {
   const userIds = fixture.userIds || [];
   const projectIds = fixture.projectIds || [];
   const nodeIds = fixture.nodeIds || [];
-  const runtimeIds = fixture.runtimeIds || [];
   const ticketIds = fixture.ticketIds || [];
   const credentialIds = fixture.credentialIds || [];
   const modelIds = fixture.modelIds || [];
