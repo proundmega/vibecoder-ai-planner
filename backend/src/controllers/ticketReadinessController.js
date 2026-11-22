@@ -1,4 +1,5 @@
 const TicketReadinessService = require('../services/TicketReadinessService');
+const ProjectAccessService = require('../services/ProjectAccessService');
 
 function actorFrom(req) {
   if (req.user && req.user.userId) {
@@ -18,7 +19,14 @@ function actorFrom(req) {
 class TicketReadinessController {
   async get(req, res) {
     const readiness = await TicketReadinessService.getReadiness(req.params.ticketId);
-    res.json({ success: true, data: readiness });
+    // The backend requires project membership for criteria writes. Surface the
+    // same capability so the panel does not offer controls that return 403.
+    let canEditCriteria = false;
+    const userId = ProjectAccessService.actorUserId(req.user || {});
+    if (userId && readiness.projectId) {
+      canEditCriteria = await ProjectAccessService.isProjectMember(userId, readiness.projectId);
+    }
+    res.json({ success: true, data: { ...readiness, canEditCriteria } });
   }
 
   async approvePlan(req, res) {

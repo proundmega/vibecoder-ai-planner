@@ -43,7 +43,12 @@ class TicketPlanningController {
       return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'templateName is required' } });
     }
 
-    const files = await TicketPlanningService.applyTemplate(ticketId, templateName, userId);
+    const files = await TicketPlanningService.applyTemplate(
+      ticketId,
+      templateName,
+      userId,
+      req.user.role
+    );
     res.json({ success: true, data: files, message: 'Template applied successfully' });
   }
 

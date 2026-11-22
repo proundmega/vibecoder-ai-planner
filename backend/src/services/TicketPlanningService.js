@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const Ticket = require('../models/ticket');
 const TemplateService = require('./TemplateService');
 const TicketReadinessService = require('./TicketReadinessService');
+const ProjectAccessService = require('./ProjectAccessService');
 const { NotFoundError, ValidationError, PlanningStatusError } = require('../errors/HttpError');
 
 class TicketPlanningService {
@@ -127,7 +128,11 @@ class TicketPlanningService {
     }
   }
 
-  async applyTemplate(ticketId, templateName, userId) {
+  async applyTemplate(ticketId, templateName, userId, role = 'member') {
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new NotFoundError('Ticket not found');
+    await ProjectAccessService.assertProjectMember(userId, ticket.projectId, { role });
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -184,8 +189,9 @@ class TicketPlanningService {
       await TicketReadinessService.seedCriteriaFromPlanning(ticketId, fileContents, {
         type: 'user',
         userId,
+        role,
       });
-      await TicketReadinessService.refreshReadyState(ticketId, { type: 'user', userId });
+      await TicketReadinessService.refreshReadyState(ticketId, { type: 'user', userId, role });
       return templateFiles;
     } catch (error) {
       await client.query('ROLLBACK');

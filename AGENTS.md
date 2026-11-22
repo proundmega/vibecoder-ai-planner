@@ -34,7 +34,7 @@ backend/src/
   api/routes.js     → /health, /version, /docs, /metrics, /auth/*, /v1/*
   api/v1/index.js   → 25 route modules via 29 router.use mounts (users, projects, tickets, agent-nodes, provider-registry, approvals, harness, ...) + inlined template/attachment/planning/ip-whitelist routes
   services/         → 48 services
-  controllers/      → 11 controllers
+  controllers/      → 12 controllers
   models/           → approval, project, ticket, user
   migrations/       → 60 registered .sql files + 1 data migration; apply.js runs in array order (not numeric) and records schema_migrations
   middleware/       → 18 files (auth, permissions, validate (Joi), cors, rate limiter, CSP, requestId, error handler, timeout, apiVersion, multer)

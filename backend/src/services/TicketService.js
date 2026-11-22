@@ -7,6 +7,7 @@ const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
 const DependencyService = require('../services/DependencyService');
 const TicketReadinessService = require('../services/TicketReadinessService');
+const ProjectAccessService = require('../services/ProjectAccessService');
 const { ValidationError, NotFoundError, ForbiddenError, ConflictError, ReadinessError } = require('../errors/HttpError');
 
 class TicketService {
@@ -18,38 +19,42 @@ class TicketService {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const ticket = await Ticket.create(projectId, title, description, priority, userId);
+    const role = options.role || 'member';
+    const hasCriteria = Array.isArray(options.acceptanceCriteria)
+      && options.acceptanceCriteria.length > 0;
 
-    // The dedicated small-fix route requires TICKET_READINESS_OVERRIDE. The
-    // create wizard must not become a weaker side door for the same waiver.
-    // Check it before applying any other option so a denied request has no
-    // side effects beyond the draft row itself.
+    // Validate every scoped option BEFORE creating the draft. Otherwise a 403
+    // after Ticket.create() leaves an orphan draft for a rejected request.
+    if (hasCriteria || options.template) {
+      await ProjectAccessService.assertProjectMember(userId, projectId, { role });
+    }
     if (options.smallFix && options.smallFix.reason) {
-      const canOverride = await PermissionService.hasPermission(
-        options.role || 'member',
-        'TICKET_READINESS_OVERRIDE'
-      );
+      const canOverride = await PermissionService.hasPermission(role, 'TICKET_READINESS_OVERRIDE');
       if (!canOverride) {
         throw new ForbiddenError('TICKET_READINESS_OVERRIDE is required to record a small-fix exemption');
       }
+      await ProjectAccessService.assertProjectMember(userId, projectId, { role });
     }
+
+    const ticket = await Ticket.create(projectId, title, description, priority, userId);
 
     // Criteria are inserted before applying a template so a specification's
     // seed step sees a non-empty table and does not duplicate them.
-    if (Array.isArray(options.acceptanceCriteria) && options.acceptanceCriteria.length > 0) {
+    if (hasCriteria) {
       await TicketReadinessService.addCriteria(ticket.id, options.acceptanceCriteria, {
         type: 'user',
         userId,
+        role,
       });
     }
     if (options.template) {
-      await TicketPlanningService.applyTemplate(ticket.id, options.template, userId);
+      await TicketPlanningService.applyTemplate(ticket.id, options.template, userId, role);
     }
     if (options.smallFix && options.smallFix.reason) {
       await TicketReadinessService.smallFix(ticket.id, options.smallFix.reason, {
         type: 'user',
         userId,
-        role: options.role,
+        role,
       });
     }
 

@@ -284,6 +284,112 @@ describe('TicketReadinessService approve and refresh', () => {
   });
 });
 
+describe('TicketReadinessService override membership and events', () => {
+  function clientFor(row) {
+    const client = {
+      query: jest.fn(async (sql) => {
+        if (String(sql).includes('FOR UPDATE')) return { rows: [row] };
+        return { rows: [] };
+      }),
+      release: jest.fn(),
+    };
+    pool.connect.mockResolvedValue(client);
+    return client;
+  }
+
+  const row = {
+    id: 1,
+    project_id: '7',
+    readiness_waived_codes: ['MISSING_ROLLBACK'],
+    readiness_override_expires_at: '2026-12-01T00:00:00Z',
+  };
+  const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    ReadinessEvaluator.evaluate.mockReset();
+    ProjectAccessService.assertProjectMember.mockReset();
+    ProjectAccessService.assertProjectMember.mockResolvedValue(undefined);
+    pool.query.mockReset();
+    pool.query.mockResolvedValue({ rows: [] });
+  });
+
+  test.each([
+    ['small fix', () => TicketReadinessService.smallFix(1, 'A bounded reason', { type: 'user', userId: 5, role: 'member' })],
+    ['replan', () => TicketReadinessService.replan(1, { type: 'user', userId: 5, role: 'member' })],
+    ['override', () => TicketReadinessService.override(1, {
+      codes: ['MISSING_ROLLBACK'],
+      reason: 'A bounded reason',
+      expiresAt: future,
+    }, { type: 'user', userId: 5, role: 'member' })],
+  ])('%s requires project membership', async (_label, action) => {
+    clientFor(row);
+    ProjectAccessService.assertProjectMember.mockRejectedValueOnce(
+      new ForbiddenError('Not a project member')
+    );
+
+    await expect(action()).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  test('override grants and revocations write audit events', async () => {
+    clientFor(row);
+    jest.spyOn(TicketReadinessService, 'loadContext').mockResolvedValue(context());
+    ReadinessEvaluator.evaluate.mockReturnValue({ ...notReadyResult(), ready: true, issues: [], allIssues: [] });
+    jest.spyOn(TicketReadinessService, 'refreshReadyState').mockResolvedValue(undefined);
+    const record = jest.spyOn(TicketReadinessService, 'recordEvent').mockResolvedValue(undefined);
+
+    await TicketReadinessService.override(1, {
+      codes: ['MISSING_ROLLBACK'],
+      reason: 'A bounded reason',
+      expiresAt: future,
+    }, { type: 'user', userId: 5, role: 'project_admin' });
+    expect(record).toHaveBeenCalledWith(
+      1,
+      'override_granted',
+      expect.any(Object),
+      expect.objectContaining({ waivedCodes: ['MISSING_ROLLBACK'] })
+    );
+
+    await TicketReadinessService.revokeOverride(1, {
+      type: 'user',
+      userId: 5,
+      role: 'project_admin',
+    });
+    expect(record).toHaveBeenCalledWith(
+      1,
+      'override_revoked',
+      expect.any(Object),
+      expect.objectContaining({ waivedCodes: ['MISSING_ROLLBACK'] })
+    );
+  });
+
+  test('the expiry sweep ignores deleted tickets and writes override_expired once', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          readiness_waived_codes: ['MISSING_ROLLBACK'],
+          readiness_override_expires_at: '2026-11-01T00:00:00Z',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    jest.spyOn(TicketReadinessService, 'refreshReadyState').mockResolvedValue(undefined);
+    const record = jest.spyOn(TicketReadinessService, 'recordEvent').mockResolvedValue(undefined);
+
+    const result = await TicketReadinessService.sweepExpiredOverrides(new Date('2026-11-22T00:00:00Z'));
+
+    expect(result.swept).toBe(1);
+    expect(String(pool.query.mock.calls[0][0])).toContain('deleted_at IS NULL');
+    expect(record).toHaveBeenCalledWith(
+      1,
+      'override_expired',
+      expect.any(Object),
+      expect.objectContaining({ waivedCodes: ['MISSING_ROLLBACK'] })
+    );
+  });
+});
+
 describe('TicketReadinessService overrides and audit', () => {
   afterEach(() => {
     jest.restoreAllMocks();

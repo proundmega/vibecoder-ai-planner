@@ -44,6 +44,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D5 | Readiness/blocked metrics | fg-46 | Observability | fg-46-flow-observability | open |
 | D6 | Traceability consumes the requirement IDs exported by this ticket | self | Review | fg-51-requirement-traceability | open |
 | D7 | Root/product template drift test (only one copy changes) | self | Testing | fg-50-planning-template-hygiene | open |
+| D9 | Single-query/cached readiness projection for large backlogs (`findBacklog` is N+1 in enforce) | self | Performance | fg-46 or a follow-up | open |
 
 ## Important design decisions
 

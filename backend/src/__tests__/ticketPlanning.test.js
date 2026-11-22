@@ -17,6 +17,14 @@ jest.mock('../services/TicketReadinessService', () => ({
   seedCriteriaFromPlanning: jest.fn().mockResolvedValue([]),
 }));
 
+jest.mock('../models/ticket', () => ({
+  findById: jest.fn().mockResolvedValue({ id: 'ticket-1', projectId: 'project-1' }),
+}));
+
+jest.mock('../services/ProjectAccessService', () => ({
+  assertProjectMember: jest.fn().mockResolvedValue(undefined),
+}));
+
 describe('TicketPlanningService', () => {
   const { pool } = require('../db');
 

@@ -5,6 +5,9 @@ jest.mock('../services/TicketPlanningService', () => ({
   applyTemplate: jest.fn().mockResolvedValue([]),
 }));
 jest.mock('../services/TicketAttachmentService', () => ({}));
+jest.mock('../services/ProjectAccessService', () => ({
+  assertProjectMember: jest.fn().mockResolvedValue(undefined),
+}));
 jest.mock('../services/TicketReadinessService', () => ({
   addCriteria: jest.fn().mockResolvedValue([]),
   smallFix: jest.fn().mockResolvedValue({}),
@@ -16,6 +19,7 @@ jest.mock('../services/TicketReadinessService', () => ({
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
 const PermissionService = require('../services/PermissionService');
+const ProjectAccessService = require('../services/ProjectAccessService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketReadinessService = require('../services/TicketReadinessService');
 const TicketService = require('../services/TicketService');
@@ -26,6 +30,7 @@ describe('fg-45 permissive ticket creation', () => {
     Project.findById.mockResolvedValue({ id: '1', ownerId: '100' });
     Ticket.create.mockResolvedValue({ id: '10', projectId: '1', title: 'Title' });
     PermissionService.hasPermission.mockResolvedValue(true);
+    ProjectAccessService.assertProjectMember.mockResolvedValue(undefined);
   });
 
   test('a title-only ticket is created without readiness state', async () => {
@@ -48,9 +53,14 @@ describe('fg-45 permissive ticket creation', () => {
     expect(TicketReadinessService.addCriteria).toHaveBeenCalledWith(
       '10',
       ['Given a draft, when it starts, then it is gated'],
-      { type: 'user', userId: '100' }
+      { type: 'user', userId: '100', role: 'project_admin' }
     );
-    expect(TicketPlanningService.applyTemplate).toHaveBeenCalledWith('10', 'simple', '100');
+    expect(TicketPlanningService.applyTemplate).toHaveBeenCalledWith(
+      '10',
+      'simple',
+      '100',
+      'project_admin'
+    );
     expect(TicketReadinessService.smallFix).toHaveBeenCalledWith(
       '10',
       'Single-file label change',
@@ -74,6 +84,57 @@ describe('fg-45 permissive ticket creation', () => {
     ).rejects.toMatchObject({ statusCode: 403 });
 
     expect(TicketReadinessService.smallFix).not.toHaveBeenCalled();
+    expect(Ticket.create).not.toHaveBeenCalled();
+  });
+
+  test('a super_admin outside the project still inherits the membership bypass for criteria', async () => {
+    await TicketService.create('1', 'Title', 'description', 'medium', '900', {
+      acceptanceCriteria: ['A testable criterion'],
+      role: 'super_admin',
+    });
+
+    expect(ProjectAccessService.assertProjectMember).toHaveBeenCalledWith(
+      '900',
+      '1',
+      { role: 'super_admin' }
+    );
+    expect(TicketReadinessService.addCriteria).toHaveBeenCalledWith(
+      '10',
+      ['A testable criterion'],
+      { type: 'user', userId: '900', role: 'super_admin' }
+    );
+  });
+
+  test('a non-member project_admin with criteria is rejected before the draft is created', async () => {
+    ProjectAccessService.assertProjectMember.mockRejectedValueOnce(
+      Object.assign(new Error('Not a project member'), { statusCode: 403 })
+    );
+
+    await expect(
+      TicketService.create('1', 'Title', 'description', 'medium', '900', {
+        acceptanceCriteria: ['A testable criterion'],
+        role: 'project_admin',
+      })
+    ).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(Ticket.create).not.toHaveBeenCalled();
+    expect(TicketReadinessService.addCriteria).not.toHaveBeenCalled();
+  });
+
+  test('a template seed validates the actor role before the parent insert', async () => {
+    ProjectAccessService.assertProjectMember.mockRejectedValueOnce(
+      Object.assign(new Error('Not a project member'), { statusCode: 403 })
+    );
+
+    await expect(
+      TicketService.create('1', 'Title', 'description', 'medium', '900', {
+        template: 'specification',
+        role: 'project_admin',
+      })
+    ).rejects.toMatchObject({ statusCode: 403 });
+
+    expect(Ticket.create).not.toHaveBeenCalled();
+    expect(TicketPlanningService.applyTemplate).not.toHaveBeenCalled();
   });
 
   test('an unknown project still fails before creation', async () => {

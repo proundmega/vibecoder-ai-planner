@@ -120,6 +120,7 @@ export interface ReadinessResult {
   smallFixReason?: string | null
   securitySensitive?: boolean
   grandfathered?: boolean
+  canEditCriteria?: boolean
   requirements?: ReadinessRequirement[]
 }
 
