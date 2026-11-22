@@ -25,6 +25,14 @@ final class BackendHealthGate {
     static final String HEALTH_PATH = "/api/health";
 
     private static final Logger log = LoggerFactory.getLogger(BackendHealthGate.class);
+    // Reuse one client. A client owns a selector manager thread and file
+    // descriptors; creating one per monitor tick would leak resources in a
+    // supervisor that runs for days. The request timeout still carries the
+    // remaining startup budget; only the connect phase can overshoot by up to
+    // this fixed bound.
+    private static final HttpClient CLIENT = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
 
     private BackendHealthGate() {
     }
@@ -177,13 +185,7 @@ final class BackendHealthGate {
             .build();
         HttpResponse<Void> response;
         try {
-            // Bind connect and request timeouts to the remaining startup budget;
-            // a static 5s connect timeout could overshoot a short configured
-            // SUPERVISOR_HEALTH_TIMEOUT_SECONDS.
-            HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(requestTimeout)
-                .build();
-            response = client.send(request, HttpResponse.BodyHandlers.discarding());
+            response = CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("Backend health check interrupted", e);

@@ -38,7 +38,7 @@ endpoint is green.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | Implemented in slice B (`BackendHealthMonitor`); startup gate remains unchanged | scheduled (PR #203) |
+| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | fg-56 PR #203 (slice B; merge pending) | scheduled |
 | D2 | Health-gated restarts without Compose restart policy | self | Operations | follow-up if needed | open |
 
 ## Decisions needed from the user

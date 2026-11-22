@@ -5,11 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,9 +28,14 @@ class SupervisorMainHealthWiringTest {
 
     @Test
     void runStopsAtTheHealthGateBeforeCredentialsOrDeclaration() throws Exception {
+        List<String> requestPaths = new CopyOnWriteArrayList<>();
         HttpServer unhealthy = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        unhealthy.createContext("/api/health", exchange -> {
-            exchange.sendResponseHeaders(503, -1);
+        unhealthy.createContext("/", exchange -> {
+            String path = exchange.getRequestURI().getPath();
+            requestPaths.add(path);
+            // Only /api/health is present and unhealthy. Any other request
+            // (enrollment/declaration) proves startup advanced past the gate.
+            exchange.sendResponseHeaders(path.equals("/api/health") ? 503 : 200, -1);
             exchange.close();
         });
         unhealthy.start();
@@ -44,10 +50,12 @@ class SupervisorMainHealthWiringTest {
                 """);
 
             String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+            Path outputFile = tempDir.resolve("child.out");
             ProcessBuilder builder = new ProcessBuilder(
                 java, "-cp", classpath(),
                 SupervisorMainHarness.class.getName(), ini.toString());
             builder.redirectErrorStream(true);
+            builder.redirectOutput(outputFile.toFile());
             builder.environment().put(
                 "BACKEND_URL", "http://127.0.0.1:" + unhealthy.getAddress().getPort());
             builder.environment().put("ENROLLMENT_TOKEN", "test-enrollment-token");
@@ -59,12 +67,11 @@ class SupervisorMainHealthWiringTest {
             builder.environment().put("SUPERVISOR_HEALTH_MONITOR_ENABLED", "false");
 
             Process process = builder.start();
-            String output;
-            try (InputStream stream = process.getInputStream()) {
-                output = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            }
             boolean exited = process.waitFor(15, TimeUnit.SECONDS);
             if (!exited) process.destroyForcibly();
+            String output = Files.exists(outputFile)
+                ? Files.readString(outputFile, StandardCharsets.UTF_8)
+                : "";
 
             assertTrue(exited, "SupervisorMain.run did not stop after the health timeout: " + output);
             assertNotEquals(0, process.exitValue(), output);
@@ -72,6 +79,9 @@ class SupervisorMainHealthWiringTest {
                 "expected the gate failure before any startup work: " + output);
             assertFalse(output.contains("No node credentials"),
                 "startup reached credential handling before health passed: " + output);
+            assertFalse(requestPaths.isEmpty(), "the fake backend received no health probe");
+            assertTrue(requestPaths.stream().allMatch("/api/health"::equals),
+                "startup made a non-health request before the gate passed: " + requestPaths);
         } finally {
             unhealthy.stop(0);
         }
