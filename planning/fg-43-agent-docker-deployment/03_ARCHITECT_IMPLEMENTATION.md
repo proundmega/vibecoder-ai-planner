@@ -61,4 +61,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `d75ea45` (PR #197) | shell 62/62; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
+| 2026-11-22 | `150c7a3` (PR #197) | shell 62/62; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
