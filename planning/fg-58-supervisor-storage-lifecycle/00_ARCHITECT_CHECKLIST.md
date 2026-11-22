@@ -1,14 +1,14 @@
 ---
 id: "fg-58"
 title: "Supervisor Storage Lifecycle and Events"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-11-22"
 updated: "2026-11-22"
 pr: null
-branch: null
+branch: "feat/fg-58-supervisor-storage-lifecycle"
 depends_on: ["fg-44", "fg-43", "fg-54"]
 ---
 

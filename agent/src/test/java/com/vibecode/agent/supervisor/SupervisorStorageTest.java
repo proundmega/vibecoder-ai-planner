@@ -85,6 +85,7 @@ class SupervisorStorageTest {
             project = 1
             """);
         AtomicReference<Supervisor.SpawnSpec> spawned = new AtomicReference<>();
+        java.util.List<String> events = new java.util.ArrayList<>();
         Supervisor supervisor = new Supervisor(
             pidDir, config, 64,
             spec -> {
@@ -94,9 +95,11 @@ class SupervisorStorageTest {
             Map.of("workers", 12L),
             Duration.ofSeconds(2),
             Duration.ofMillis(50));
+        supervisor.setStorageEventSink((type, payload) -> events.add(type));
         try {
             supervisor.reconcile();
             assertEquals("/repos/runtimes/12", spawned.get().environment().get("REPO_CLONE_DIR"));
+            assertTrue(events.contains("storage.workspace"));
         } finally {
             supervisor.close();
         }

@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -79,6 +80,8 @@ public final class Supervisor implements AutoCloseable {
     private volatile StoragePolicy storagePolicy = StoragePolicy.fromEnv(System.getenv());
     private volatile StoragePolicy.Usage storageUsage = new StoragePolicy.Usage(0, 0);
     private volatile long lastStorageCheckMs;
+    private volatile StorageEventSink storageEventSink = (type, payload) ->
+        log.info("{} {}", type, payload);
     private Thread loopThread;
 
     /**
@@ -157,6 +160,7 @@ public final class Supervisor implements AutoCloseable {
             List<RuntimeConfig.RuntimeSlot> slots = activeSlots(desired);
             Map<String, RuntimeConfig.RuntimeSlot> desiredByName = byName(slots);
 
+            refreshIdleSlots();
             sweep(slots);
 
             for (TrackedChild child : new ArrayList<>(tracked.values())) {
@@ -204,22 +208,105 @@ public final class Supervisor implements AutoCloseable {
         }
         lastStorageCheckMs = now;
         try {
-            Path repo = Paths.get(System.getenv().getOrDefault("REPO_CLONE_DIR", "/repos"));
-            FileStore store = Files.getFileStore(repo);
-            long total = store.getTotalSpace();
-            long usable = store.getUsableSpace();
-            double usedPct = total <= 0 ? 0 : ((total - usable) * 100.0) / total;
-            StoragePolicy.Usage usage = new StoragePolicy.Usage(usedPct, 0);
+            Path repoBase = repoBase();
+            StorageUsage sample = StorageUsage.sample(repoBase);
+            StoragePolicy.Usage usage = new StoragePolicy.Usage(
+                sample.diskPct(), sample.inodePct());
             setStorageUsage(usage);
-            StoragePolicy.StorageAction action = storagePolicy.evaluate(
-                usage, new StoragePolicy.RuntimeState(
+            StoragePolicy.StorageAction action = storagePolicy.evaluate(usage,
+                new StoragePolicy.RuntimeState(
                     "worker", 0, false, false, false, false, Instant.now(), Instant.now()));
-            if (action != StoragePolicy.StorageAction.OK) {
-                log.warn("storage.watermark action={} usedPct={} freeBytes={}",
-                    action, String.format(java.util.Locale.ROOT, "%.1f", usedPct), usable);
+            if (action == StoragePolicy.StorageAction.OK) {
+                return;
             }
-        } catch (IOException | RuntimeException e) {
+            log.warn("storage.watermark action={} diskPct={} inodePct={}",
+                action,
+                String.format(java.util.Locale.ROOT, "%.1f", sample.diskPct()),
+                String.format(java.util.Locale.ROOT, "%.1f", sample.inodePct()));
+            java.util.Map<String, Object> watermark = new LinkedHashMap<>();
+            watermark.put("level", action.name());
+            watermark.put("diskPct", sample.diskPct());
+            watermark.put("inodePct", sample.inodePct());
+            emitStorage("storage.watermark", watermark);
+            if (action == StoragePolicy.StorageAction.MANUAL_RECOVERY) {
+                log.error("Storage is at manual-recovery pressure; new spawns are blocked");
+            }
+            if (action == StoragePolicy.StorageAction.CLEAN_IDLE
+                    || action == StoragePolicy.StorageAction.RECYCLE_OLDEST) {
+                sweepStorage();
+            }
+        } catch (RuntimeException e) {
             log.debug("Storage watermark sample skipped: {}", e.getMessage());
+        }
+    }
+
+    private void refreshIdleSlots() {
+        StoragePolicy policy = storagePolicy;
+        if (policy == null || policy.idleRefreshMs() <= 0) return;
+        Instant now = Instant.now();
+        for (TrackedChild child : new ArrayList<>(tracked.values())) {
+            Path root = runtimeRoot(child);
+            boolean active = StorageSweeper.hasActiveMarker(root);
+            Instant started = childStart(child);
+            boolean idleExpired = !active && root != null && Files.isDirectory(root)
+                && StorageSweeper.olderThan(root, now.minusMillis(policy.idleRefreshMs()));
+            boolean lifetimeExpired = !active && started != null
+                && started.plus(Duration.ofHours(policy.maxLifetimeHours())).isBefore(now);
+            if (!idleExpired && !lifetimeExpired) continue;
+            log.info("storage.refresh runtime={} reason={}",
+                child.name, lifetimeExpired ? "max_lifetime" : "idle");
+            emitStorage("storage.refresh", Map.of(
+                "runtime", child.name,
+                "reason", lifetimeExpired ? "max_lifetime" : "idle"));
+            stopTracked(child);
+            try {
+                StorageSweeper.deleteTree(root);
+            } catch (IOException e) {
+                log.warn("storage.refresh_failed runtime={} error={}",
+                    child.name, e.getMessage());
+                emitStorage("storage.refresh_failed", Map.of(
+                    "runtime", child.name, "error", e.getMessage()));
+            }
+        }
+    }
+
+    private void sweepStorage() {
+        Path base = repoBase();
+        Path runtimeBase = base.resolve("runtimes");
+        Path orphans = base.resolve("orphans");
+        Duration ttl = Duration.ofHours(Math.max(1, storagePolicy.workspaceTtlHours()));
+        Duration orphanTtl = Duration.ofHours(Math.max(1, storagePolicy.orphanTtlHours()));
+        Set<String> active = new java.util.HashSet<>();
+        for (String name : tracked.keySet()) {
+            Long id = runtimeIds.get(name);
+            active.add(id == null ? name : String.valueOf(id));
+        }
+        int removed = StorageSweeper.sweepRuntimeRoots(runtimeBase, orphans, ttl, active);
+        removed += StorageSweeper.sweepLegacy(base,
+            Paths.get(System.getenv().getOrDefault("AGENT_TMPDIR",
+                System.getProperty("java.io.tmpdir"))), ttl);
+        removed += StorageSweeper.sweepOrphans(orphans, orphanTtl);
+        if (removed > 0) {
+            log.info("storage.orphan removed={} action=sweep", removed);
+            emitStorage("storage.orphan", Map.of("removed", removed, "action", "sweep"));
+        }
+    }
+
+    private Path repoBase() {
+        return Paths.get(System.getenv().getOrDefault("REPO_CLONE_DIR", "/repos"));
+    }
+
+    private Path runtimeRoot(TrackedChild child) {
+        Long id = runtimeIds.get(child.name);
+        String key = id == null ? child.name : String.valueOf(id);
+        return repoBase().resolve("runtimes").resolve(key);
+    }
+
+    private static Instant childStart(TrackedChild child) {
+        try {
+            return Instant.parse(child.startedAt);
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
@@ -472,6 +559,11 @@ public final class Supervisor implements AutoCloseable {
         }
         tracked.put(slot.name(), new TrackedChild(
             slot.name(), slot, new ProcessAdapter(process), slot.specHash(), record.startedAt()));
+        java.util.Map<String, Object> workspace = new LinkedHashMap<>();
+        workspace.put("runtimeId", runtimeId);
+        workspace.put("runtimeName", slot.name());
+        workspace.put("path", buildEnvironment(slot, runtimeId).get("REPO_CLONE_DIR"));
+        emitStorage("storage.workspace", workspace);
         log.info("Started runtime child {} (pid {}, role {})",
             slot.name(), process.pid(), slot.role().wireName());
     }
@@ -740,6 +832,26 @@ public final class Supervisor implements AutoCloseable {
     // ---------------------------------------------------------------------
     // Types
     // ---------------------------------------------------------------------
+
+    /** fg-58 structured storage event destination. */
+    @FunctionalInterface
+    public interface StorageEventSink {
+        void emit(String type, Map<String, Object> payload);
+    }
+
+    public void setStorageEventSink(StorageEventSink sink) {
+        this.storageEventSink = sink == null
+            ? (type, payload) -> log.info("{} {}", type, payload)
+            : sink;
+    }
+
+    private void emitStorage(String type, Map<String, Object> payload) {
+        try {
+            storageEventSink.emit(type, payload);
+        } catch (RuntimeException e) {
+            log.debug("storage event {} failed: {}", type, e.getMessage());
+        }
+    }
 
     /** Launches one child process. */
     @FunctionalInterface

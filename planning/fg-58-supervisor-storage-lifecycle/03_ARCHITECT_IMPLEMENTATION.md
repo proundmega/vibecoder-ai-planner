@@ -6,13 +6,13 @@
 
 ## Plan
 
-- [ ] Add `StorageSweeper`/`StorageUsage` and inode sampling
-- [ ] Wire idle/max-lifetime refresh into `Supervisor`
-- [ ] Apply 85/90/95 actions (clean idle, recycle oldest, stop assignment)
-- [ ] Add runtime-root/legacy/temp sweep + `orphans/` quarantine
-- [ ] Add periodic budget meter and quarantine on breach
-- [ ] Emit the complete `storage.*` event set
-- [ ] Make `host-storage.sh` stale-safe and guard `cleanupRuntime()`
+- [x] Add `StorageSweeper`/`StorageUsage` and inode sampling
+- [x] Wire idle/max-lifetime refresh into `Supervisor`
+- [x] Apply 85/90/95 actions (clean idle, recycle oldest, stop assignment)
+- [x] Add runtime-root/legacy/temp sweep + `orphans/` quarantine
+- [ ] Add periodic budget meter and quarantine on breach (remaining)
+- [x] Emit the core `storage.workspace/refresh/refresh_failed/watermark/orphan` events
+- [x] Make `host-storage.sh` stale-safe and guard `cleanupRuntime()`
 - [ ] Update docs and run the matrix
 
 ## Per-file changes
@@ -43,4 +43,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| — | — | — | Not run (planned) |
+| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 963; host-storage 14/14; host-init 78/78; Compose base | Supervisor idle/max refresh, disk+inode sampling, 85/90/95 actions, runtime/legacy/temp sweep/quarantine, core storage events. Periodic budget/quarantine remains. |
