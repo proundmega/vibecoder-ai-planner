@@ -175,9 +175,10 @@ CREATE TABLE ticket_readiness_events (
   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
   action VARCHAR(32) NOT NULL,          -- approved|approval_invalidated|replan_started|small_fix|override_granted|override_revoked|override_expired|blocked
   attempt_id UUID UNIQUE,               -- set for blocked rows; dedupes retries
-  actor_type VARCHAR(16) NOT NULL CHECK (actor_type IN ('user','agent','system')),
-  actor_user_id BIGINT REFERENCES users(id),   -- user actor, or the agent's owner
-  actor_agent_id BIGINT REFERENCES agents(id), -- set when actor_type='agent'
+  actor_type VARCHAR(16) NOT NULL CHECK (actor_type IN ('user','runtime','system')),
+  actor_user_id BIGINT REFERENCES users(id),          -- human, or the runtime's owner
+  actor_runtime_id BIGINT REFERENCES agent_runtimes(id) ON DELETE SET NULL,
+  actor_node_id BIGINT REFERENCES agent_nodes(id) ON DELETE SET NULL,
   actor_role VARCHAR(32),
   reason TEXT,
   waived_codes TEXT[] NOT NULL DEFAULT '{}',
@@ -195,10 +196,26 @@ Why not `audit_log`: it is referenced by dead code but was never created (bp-124
 
 ### Actor identity and rollback safety
 
-- Agent auth sets `req.user.id = agent.id` (the `agents.id` row) and `req.user.userId = agent.owner_id` (`middleware/auth.js:300-305`). An agent ID is **not** a `users.id`, so the event table cannot use a single `actor_id` FK to `users`.
-- Write `actor_type='agent'`, `actor_agent_id=req.user.id`, `actor_user_id=req.user.userId`, `actor_role=req.user.role`. Human actions use `actor_type='user'` + `actor_user_id`. Scheduled work uses `actor_type='system'`.
-- `blocked` events are emitted **after** the status transaction ends (after `COMMIT` in `warn`, after `ROLLBACK` in `enforce`) by `emitBlocked`: a metric, a structured log, and one `ticket_readiness_events` row on a separate pooled connection (best-effort, `attempt_id`-guarded). Writing earlier would take `FOR KEY SHARE` on the ticket row already locked `FOR UPDATE` by the caller, which blocks or deadlocks. The error handler does not write a second row, so enforce-mode blocks are not duplicated and warn-mode blocks are still audited even though the transition succeeds.
-- `DELETE /readiness/override` writes `override_revoked`; the sweep writes `override_expired` once per waiver (guarded by `expires_at` + existing event check).
+- Node auth sets `req.node` (the `agent_nodes` row), `req.runtime` (the
+  `agent_runtimes` row when `X-Agent-Runtime` is present) and
+  `req.user = { userId: node.owner_id, id: runtime?.id ?? node.id, role }`.
+  The runtime id is **not** a `users.id`, so the event table cannot use a single
+  `actor_id` FK to `users`.
+- Write `actor_type='runtime'`, `actor_runtime_id=req.runtime?.id`,
+  `actor_node_id=req.node?.id`, `actor_user_id=req.user.userId` (the owner) and
+  `actor_role=req.runtime?.role` (or the section role). Human actions use
+  `actor_type='user'` + `actor_user_id`. Scheduled work uses `actor_type='system'`.
+- `blocked` events are emitted **after** the status transaction ends (after
+  `COMMIT` in `warn`, after `ROLLBACK` in `enforce`) by `emitBlocked`: a metric,
+  a structured log, and one `ticket_readiness_events` row on a separate pooled
+  connection (best-effort, `attempt_id`-guarded). Writing earlier would take
+  `FOR KEY SHARE` on the ticket row already locked `FOR UPDATE` by the caller,
+  which blocks or deadlocks. The error handler does not write a second row, so
+  enforce-mode blocks are not duplicated and warn-mode blocks are still audited
+  even though the transition succeeds.
+- `DELETE /readiness/override` writes `override_revoked`; the sweep writes
+  `override_expired` once per waiver (guarded by `expires_at` + existing event
+  check).
 
 ## State machine
 
@@ -334,7 +351,7 @@ Both checks also require project membership via the shared helper below. `requir
 
 ### Project membership helper
 
-There is no project-membership enforcement today: `ProjectService.getOne` ignores `_userId` (`ProjectService.js:11-15`), `Ticket.findByProject` ignores `_uid` (`models/ticket.js:42-52`), and the only ownership check is the assignee validation in `TicketService.js:84-89`. Without a helper, a global `project_admin` could approve or override any project.
+There is no project-membership enforcement today: `ProjectService.getOne` ignores `_userId`, `Ticket.findByProject` ignores `_uid`, and the only ownership check is the assignee validation in `TicketService`. Without a helper, a global `project_admin` could approve or override any project.
 
 Add `backend/src/services/ProjectAccessService.js`:
 
@@ -386,7 +403,7 @@ async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = 
 - New `ReadinessError extends AppError` with `statusCode = 409`, `code = 'READINESS_FAILED'`, `details.issues`, and a `result` property carrying `{ ticketId, toStatus, toPhase, issues, waivedCodes, mode, attemptId, source, actor }`. `result` is what `emitBlocked` persists after rollback (it contains `ticketId` for the FK); the HTTP handler serializes `details.issues` only (minus actor/attempt internals).
 - `ValidationError` stays 400/`VALIDATION_ERROR`; readiness must not reuse it.
 - Java: `ApiResponse.Error` gains `details` (map/JsonNode); add `ReadinessIssue`. `ApiService` throws `ReadinessException` carrying the issues instead of a generic `IOException`.
-- `ReadinessException` is handled in **both** `TicketProcessor.processTicket` (`TicketProcessor.java:80`) and `HarnessTicketProcessor.processTicket` (`HarnessTicketProcessor.java:147`): post a `status` message with the codes, call `releaseTicket`, return without cloning or starting the harness, and log `readiness_blocked`.
+- `ReadinessException` is handled in `HarnessTicketProcessor.processTicket` (the only processor after fg-54): post a `status` message with the codes, call `releaseTicket`, return without cloning or starting the harness, and log `readiness_blocked`.
 
 ## UI
 
@@ -450,12 +467,48 @@ Rollback: delete the readiness routes and set `READINESS_GATE_MODE=off`; the col
 - grandfathered backfill keeps tickets claimable;
 - frontend `updateTicket`/`createTicket` propagate errors; TicketDetail **and** TicketBoard render readiness issues.
 
+## Failure modes and recovery
+
+| Failure | Trigger | Detection | Mitigation / test | Operator action |
+|---|---|---|---|---|
+| Evaluator is slow or locks the ticket | large planning files, concurrent edit | query/time budget; p95 metric | bounded parse, `SELECT ... FOR UPDATE`, per-request timeout test | inspect the plan size; split the ticket |
+| Blocked audit insert fails | DB unavailable after COMMIT/ROLLBACK | `emitBlocked` error log + metric | best-effort, `attempt_id` dedupe; the transition still succeeds in `warn` and the block still stands in `enforce` | retry the audit separately; no ticket reset |
+| Override expiry sweep misses | scheduler down | `ready_at` vs `expires_at` metric | `assertReadyForExecution` always re-evaluates; sweep test | run the sweep manually |
+| Template/file parse error | malformed JSON or missing file | issue code, not a 500 | return `MISSING_REQUIRED_FILE`/`EMPTY_REQUIRED_FILE`; test | fix the template/file |
+| Project membership query fails | DB error | 500/403 | fail closed; test | restore DB; retry |
+| Concurrent edit flips readiness | two writers | row lock/timeout | evaluate inside the same transaction; test | retry the request |
+| Legacy ticket blocked | backfill missing | ticket has no `readiness_grandfathered_at` | backfill test; run the migration | re-run the backfill |
+| Java client cannot parse `details` | old agent build | generic failure + log | `ReadinessException` fallback; test | upgrade the agent |
+| UI drag ignores 409 | network/error path | board state mismatch | restore the previous column + show issues; Cypress test | refresh the board |
+| Migration rollback needed | bad deploy | health/metrics | `_rollback.sql`; `READINESS_GATE_MODE=off` | roll back and disable the gate |
+
+## Security considerations
+
+- **Authentication:** all readiness routes require a JWT or node token; there is
+  no anonymous evaluation.
+- **Authorization:** `TICKET_READINESS_APPROVE` / `TICKET_READINESS_OVERRIDE`
+  are `project_admin`/`super_admin` only; every action also calls
+  `assertProjectMember` (owner or `project_memberships`), with a `super_admin`
+  bypass.
+- **Project/tenant scoping:** readiness is resolved from the ticket's
+  `project_id`; a global admin cannot approve another project's ticket without
+  membership or super_admin.
+- **Secrets:** errors expose issue codes, field names and file names, never file
+  contents, tokens or diffs; reason/waiver text is length-capped and redacted.
+- **Audit:** `ticket_readiness_events` is append-only; no update/delete route;
+  blocked rows are written after the transaction ends.
+- **Rate limiting:** approve/override/small-fix/replan use the existing auth
+  rate limiter; a repeated blocked attempt is deduped by `attempt_id`.
+- **Input validation:** override codes must be known issue codes; expiry is
+  required and capped at 30 days; reason is required (1-1000 chars).
+- **Data exposure:** `GET /readiness` returns issues to project members only;
+  the board/detail components render text with Vue escaping.
+
 ## Open questions
 
-1. Minimum description length (proposal: 80 characters) needs product confirmation.
-2. Should `member` ever hold `TICKET_READINESS_OVERRIDE`? Phase 1: no.
-3. Do custom templates require `requiredSections`, or stay presence-only? Phase 1: presence-only with a visible warning.
-4. Should `ready_at` be cleared automatically on any planning-file edit, or on the next evaluation? Phase 1: clear on write, recompute on read.
+Resolved 2026-11-22: 80-character description; `member` does not hold override;
+custom templates keep optional `requiredSections`; `ready_at` is cleared on a
+failing edit and recomputed on read. The remaining tuning items are D8/D9/D10.
 
 ## Deferred scope
 

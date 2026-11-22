@@ -1,178 +1,247 @@
-# 02_ARCHITECT_DESIGN.md - Agent Docker Deployment and Host Sizing (fg-43)
+# 02 — Design (fg-43)
 
-**Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
+> **Owns:** current-state audit, design, data flow, contracts, risks, rollout.
+> **Not here:** requirements (`01`), verification matrix (`03`), file operations
+> (`04`), status and deferrals (`00`).
+
+## Current State
+
+- `agent/docker-compose.yml` runs one `supervisor` with a hardcoded `2G / 2.0`
+  container limit; `AGENT_RUNTIME_HEAP_MB` defaults to `768` and
+  `SUPERVISOR_MEMORY_BUDGET_MB` to `0` (per-child heap).
+- `agent.ini` declares one or more `[runtime]` sections with `count`; nothing
+  checks the total against the host.
+- Each runtime may create a sandbox with `SANDBOX_CPUS=2.0`,
+  `SANDBOX_MEMORY_MB=2048`, `SANDBOX_DISK_MB=5120`.
+- `PoolManager`, `MAX_POOL_SIZE`, `POOL_PAUSED` and `POOL_ADMIN_TOKEN` no
+  longer exist after fg-54/`057`.
+- There is no `host-init.sh`, no dry-run, no capacity log and no failure when a
+  declaration exceeds the host.
 
 ## Design summary
 
-A host init script detects resources, computes a safe pool size and writes an env file. Compose starts the planner stack/pool controller with those values, and `PoolManager` applies the same limits to each container it creates.
-
 ```
 agent/host-init.sh
-  -> detect CPU/RAM/disk/docker
-  -> choose profile (build/review/fixer/light)
-  -> compute pool + limits
-  -> write .env.agent-host
-  -> docker compose -f agent/docker-compose.host.yml up -d
-       -> backend PoolManager reads MAX_POOL_SIZE, limits
-       -> creates agent containers with NanoCpus, Memory, PidsLimit, log config
+  -> detect CPU/RAM/disk/Docker/image/repo path
+  -> parse agent.ini (role, count)
+  -> compute required vs available (reservations, 80% disk)
+  -> fail if declared > capacity; warn if under-utilized
+  -> write .env.agent-host (umask 077)
+  -> docker compose -f agent/docker-compose.yml
+       [-f agent/docker-compose.sandbox.yml] up -d supervisor
+  -> wait for backend /health
+       -> supervisor enrolls the node and declares runtimes
+       -> one child JVM per runtime (AGENT_RUNTIME_HEAP_MB)
+       -> sandbox containers per active run (SANDBOX_*)
 ```
 
-## Init script
+The script never rewrites `agent.ini`; the declaration stays operator-owned.
+It validates the declaration and writes only derived limits.
 
-Proposed `agent/host-init.sh`:
+## Host-init CLI
 
 ```
-Usage: ./host-init.sh [--role build|review|fixer|light] [--dry-run] [--yes]
+Usage: ./host-init.sh [--dry-run] [--explain] [--check] [--yes] [--force]
+```
 
-1. Require docker + docker compose.
+- `--dry-run`: print the table and computed env; write nothing, start nothing.
+- `--explain`: print the formula with actual numbers (implies dry-run).
+- `--check`: re-run the calculation against current usage/declaration.
+- `--yes`: start Compose after a successful validation.
+- `--force`: overwrite an existing `.env.agent-host` (never overwrite
+  `agent.ini`).
+
+Steps:
+
+1. Require Linux Docker and `docker compose`; fail closed on Docker Desktop or
+   a non-Linux kernel (D8).
 2. Detect:
-   - CPU threads (nproc or /proc/cpuinfo)
-   - MemTotal (/proc/meminfo)
-   - disk free on the repo volume: resolve AGENT_REPO_DIR, defaulting to
-     `docker volume inspect -f '{{.Mountpoint}}' ${REPO_VOLUME:-vibecode_repos}`,
-     then run df -B1 on it
-   - existing agent containers and image presence
-3. Load profile defaults and env overrides.
-4. Compute reservations and pool size (see formula).
-5. Print a table:
-   Detected: 48 threads, 192 GB RAM, 1.8 TB free
-   Profile: build (2 CPU, 4 GB, 20 GB)
-   Limits: CPU 15, RAM 43, disk 70
-   Pool: 15 (CPU-bound)
-6. With --dry-run: exit 0 without writing.
-7. Write .env.agent-host atomically (umask 077).
-8. Validate image/volume/network. If the backend is already reachable, validate /health.
-9. With --yes, start compose (or print the command) with the persisted
-   POOL_PAUSED=false and computed MAX_POOL_SIZE. The backend startup gate keeps
-   assignments off until /health is green.
-10. Wait for /health with a bounded timeout and exit 0 once healthy. No unpause
-    call is required; runtime changes use POST /api/v1/pool/config with
-    X-Pool-Admin-Token. On timeout, leave the stack up with assignments gated
-    and exit non-zero.
-```
+   - CPU threads (`nproc` or `/proc/cpuinfo`);
+   - `MemTotal` (`/proc/meminfo`);
+   - free disk on `AGENT_REPO_DIR`, defaulting to the bind path mounted at
+     `/repos` (or `docker volume inspect` for a named volume);
+   - `docker info`, the `vibecode-agent` image and the repo path.
+3. Parse `agent.ini`:
+   - every `[runtime "..."]` section must have `role` and `count`;
+   - unknown roles fail;
+   - count is `1..64`;
+   - the total is `declared`.
+4. Compute the required CPU/RAM/disk from the role mix (see `01`).
+5. Compute available resources with the reservations and 80% disk target.
+6. `capacity = min(max_by_cpu, max_by_ram, max_by_disk, AGENT_HOST_MAX_RUNTIMES)`.
+7. If `declared > capacity`: print required vs available, the binding limit and
+   the largest feasible mix; exit non-zero; do not start.
+8. If `declared < capacity`: print the unused capacity (D6 follow-up).
+9. Write `.env.agent-host` atomically with:
+   - `AGENT_RUNTIME_HEAP_MB`, `SUPERVISOR_MEMORY_BUDGET_MB`
+   - `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_CPUS`
+   - `SANDBOX_CPUS`, `SANDBOX_MEMORY_MB`, `SANDBOX_DISK_MB`
+   - `AGENT_HOST_MAX_RUNTIMES`, `AGENT_HOST_DECLARED_RUNTIMES`,
+     `AGENT_HOST_BINDING_LIMIT`
+10. If `--yes`: start Compose with the file(s) above; wait for
+    `BACKEND_URL/health` (or `http://localhost:${API_PORT}/health`) with a
+    bounded timeout. On timeout, leave the stack up but gated and exit
+    non-zero.
 
-If the backend is already running (upgrade path), skip the compose start, validate health, and use the token-authenticated config endpoint only if the pool size/pause state needs to change. The backend must never spawn agents before its own `/health` is green, even when `POOL_PAUSED=false`.
-
-The script must be idempotent, never print secrets, and fail closed. It should support `.env` overrides but never overwrite an existing file without `--force`.
+The script is idempotent and never prints tokens or provider keys.
 
 ## Capacity calculation
 
 ```
-threads       = host threads
-ram_gb        = total memory in GB
-disk_gb       = free disk on repo volume in GB
-utilization   = AGENT_UTILIZATION_TARGET (default 0.80)
-reserve_cpu   = max(2, threads * 0.15)
-reserve_ram   = max(8, ram_gb * 0.10)
-reserve_disk  = max(100, disk_gb * 0.10)
+threads      = host threads
+ram_gb       = total RAM in GB
+disk_gb      = free disk on the repo volume in GB
+utilization  = AGENT_UTILIZATION_TARGET (default 0.80)
 
-max_cpu  = max(0, floor((threads * utilization - reserve_cpu) / cpu_per_agent))
-max_ram  = max(0, floor((ram_gb - reserve_ram) / ram_per_agent))
-max_disk = max(0, floor((disk_gb * 0.80 - reserve_disk) / disk_per_agent))
-computed = max(0, min(max_cpu, max_ram, max_disk, AGENT_MAX_POOL_SIZE))
-if AGENT_POOL_SIZE is set:
-  pool = min(AGENT_POOL_SIZE, computed)   # can only lower the safe pool
-else:
-  pool = computed
+reserve_cpu  = max(2, threads * 0.15)
+reserve_ram  = max(8, ram_gb * 0.10)
+reserve_disk = max(100, disk_gb * 0.10)
+
+max_by_cpu   = floor((threads * utilization - reserve_cpu) / cpu_per_runtime)
+max_by_ram   = floor((ram_gb - reserve_ram) / ram_per_runtime)
+max_by_disk  = floor((disk_gb * 0.80 - reserve_disk) / disk_per_runtime)
+capacity     = max(0, min(max_by_cpu, max_by_ram, max_by_disk, AGENT_HOST_MAX_RUNTIMES))
 ```
 
-`0` is a valid result and means "no agent fits": write `MAX_POOL_SIZE=0`, keep `POOL_PAUSED=true`, and report the binding constraint. `AGENT_MAX_POOL_SIZE` is the formula hard cap; `AGENT_POOL_SIZE` is a capped override that can only lower the pool; `MAX_POOL_SIZE` is the runtime value `PoolManager` reads.
+`cpu_per_runtime`, `ram_per_runtime` and `disk_per_runtime` are computed from
+the declared mix:
 
-Notes:
+| Role | CPU | RAM | Disk |
+|---|---|---|---|
+| worker | 2.0 | 3.0 GB | 20 GB |
+| reviewer | 1.5 | 2.5 GB | 10 GB |
+| planner | 1.5 | 2.5 GB | 10 GB |
+| light | 0.5 | 1.5 GB | 5 GB |
 
-- Use threads, not physical cores, for CPU checks; Java agents and OpenCode are concurrent.
-- Do not overcommit memory. `utilization` only affects CPU.
-- Disk uses 80% of free space as the workspace budget; fg-44 enforces cleanup.
-- The script should include a `--explain` mode that prints the formula with actual numbers.
+`ram_per_runtime` includes the child JVM (768 MB), the sandbox (2 GB for a
+worker, 1.5 GB for reviewer/planner) and ~256 MB of JVM/OS overhead. Disk is
+the fg-44 workspace budget; the sandbox disk is included in that budget.
 
-## Profiles
+## Profiles and `agent.ini`
 
-| Profile | CPU | RAM | Disk | Typical use |
-|---|---|---|---|---|
-| `build` | 2.0 | 4 GB | 20 GB | Full build + tests + OpenCode |
-| `fixer` | 2.0 | 4 GB | 15 GB | Review-driven fixes |
-| `review` | 1.0 | 2 GB | 10 GB | Read-only review |
-| `light` | 0.5 | 1 GB | 5 GB | Pollers/small repos |
+`agent.ini` stays the source of truth for the role mix:
 
-Phase 1 runs **one pool per role**: each `PoolManager`/controller process has a single `AGENT_ROLE` and is sized with that profile. A mixed build/review/fixer pool is deferred because it would require per-request role and limits. A shared host partitions the computed capacity across the role pools (for example a build pool and a review pool with separate `MAX_POOL_SIZE`/profile values).
+```ini
+[runtime "workers"]
+role = worker
+model = acme/claude-sonnet
+count = 6
+effort = high
+project = 1
 
-## PoolManager changes
-
-- Read `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_PIDS_LIMIT`, `AGENT_LOG_MAX_SIZE`, `AGENT_LOG_MAX_FILE`.
-- Parse `MAX_POOL_SIZE` as a non-negative integer; do not use `parseInt(...) || 50` (0 would become 50). `0` means paused.
-- Add `POOL_PAUSED` and a token-authenticated pool config endpoint (`POST /api/v1/pool/config` with `{ paused, maxPoolSize }` and `X-Pool-Admin-Token` from the `POOL_ADMIN_TOKEN` env). Host-init generates the token with mode `0600`; fg-44 recovery uses the same token. `requestAgent` rejects with a clear error when paused or full.
-- **Control-plane secret scoping:** `POOL_ADMIN_TOKEN` is injected only into the backend/PoolManager container. If `agent/docker-compose.host.yml` loads `.env.agent-host`, filter this variable out or use a separate backend-only env file. The PoolManager agent-container env allowlist must exclude `POOL_ADMIN_TOKEN`. Never mount it into the workspace or pass it to OpenCode, `WorkspaceManager`, fixes/reviews, or prompts.
-- Startup health gate: assignments stay disabled until DB/Redis health is green and `/health` is served, then apply `MAX_POOL_SIZE`/`POOL_PAUSED`. A restart with `POOL_PAUSED=false` resumes automatically. Env values are startup defaults; the endpoint sets runtime values until restart.
-- `AGENT_ROLE` is process-wide; Phase 1 runs one pool per role (see Profiles).
-- Set `HostConfig.NanoCpus = cpu * 1e9`, `Memory = bytes`, `MemorySwap = Memory`, `PidsLimit`.
-- Set `LogConfig` with `max-size`/`max-file`.
-- Add labels: `vibecode.role`, `vibecode.pool`, `vibecode.host`.
-- Expose computed capacity/pool size in `getStatus()` and heartbeat.
-- Keep `AutoRemove: true`; fg-44 handles workspace cleanup.
-
-Example:
-
-```js
-HostConfig: {
-  Binds: [`${REPO_VOLUME}:/repos`],
-  NetworkMode: CONTAINER_NETWORK,
-  AutoRemove: true,
-  Memory: memoryBytes,
-  MemorySwap: memoryBytes,
-  NanoCpus: Math.round(cpu * 1e9),
-  PidsLimit: 512,
-  LogConfig: {
-    Type: 'json-file',
-    Config: { 'max-size': '10m', 'max-file': '3' },
-  },
-}
+[runtime "planners"]
+role = planner
+model = acme/claude-opus
+count = 1
+effort = max
 ```
 
-## Compose deployment
+The script sums `count` across sections. It does not guess a missing `count`
+and does not rewrite the file. A section that the backend later marks
+`stopped`/`draining` still counts for capacity; the operator can lower the
+count and reload.
 
-Two options:
+## Compose changes
 
-1. **Same-host planner (Phase 1):** use the existing planner compose, add `.env.agent-host`, and ensure the backend container has the Docker socket. `host-init.sh` writes the computed `MAX_POOL_SIZE` and `POOL_PAUSED=false`, starts Compose, and waits for `/health`; the backend startup gate holds assignments until health is green, so no unpause call is needed. Runtime changes use the `POOL_ADMIN_TOKEN` config endpoint, including when the backend was already running.
-2. **Dedicated agent host (follow-up):** run a small pool controller on the agent host that talks to the backend API and the local Docker socket. Do not expose the Docker socket over TCP without TLS/mTLS.
+`agent/docker-compose.yml` gains env-driven limits:
 
-`agent/docker-compose.host.yml` can be a thin override that:
-- sets `MAX_POOL_SIZE` and agent limits from `.env.agent-host`;
-- adds logging options and health checks;
-- mounts the repo volume;
-- does not define a fixed `agent` replica count (PoolManager owns replicas).
+```yaml
+deploy:
+  resources:
+    limits:
+      memory: ${SUPERVISOR_MEMORY_LIMIT:-2G}
+      cpus: ${SUPERVISOR_CPUS:-2.0}
+logging:
+  driver: json-file
+  options:
+    max-size: ${AGENT_LOG_MAX_SIZE:-10m}
+    max-file: ${AGENT_LOG_MAX_FILE:-3}
+```
 
-## Validation
+- `SUPERVISOR_MEMORY_LIMIT` must cover all child heaps plus supervisor
+  overhead: `ceil(declared * AGENT_RUNTIME_HEAP_MB / 1024) + 1 GB`.
+- `SUPERVISOR_CPUS` is the supervisor/child orchestration limit; the sandbox
+  CPU is enforced per sandbox container.
+- Docker mode also loads `agent/docker-compose.sandbox.yml`; host-init requires
+  `SANDBOX_HOST_WORKSPACE_ROOT` and a writable repo bind.
 
-- `docker info` succeeds.
-- `vibecode-agent` image exists (or build it).
-- repo volume exists and is writable; `AGENT_REPO_DIR` resolves to its mountpoint for `df`.
-- backend health: if the backend is already running, check `/health` first; otherwise start Compose and wait for `/health`. Assignments are health-gated until then; no unpause call is required.
-- at least one slot is available, **or** the computed value is 0/`POOL_PAUSED=true` and the script reports the paused state without starting an agent.
-- on failure: exit non-zero, leave the pool paused, do not start a partial pool.
+## Supervisor changes
+
+- `SupervisorMain` reads `AGENT_HOST_MAX_RUNTIMES` (optional). If the declared
+  total exceeds it, fail before spawning.
+- Log the declared role mix, per-child heap, computed capacity and binding
+  limit at startup; include `declared_runtimes`/`max_runtimes` in the existing
+  heartbeat/status payload where available.
+- `SUPERVISOR_MEMORY_BUDGET_MB` remains the budget the supervisor divides
+  across children; host-init sets it to `declared * AGENT_RUNTIME_HEAP_MB`.
+- No pool-control endpoint, token or `POOL_PAUSED` flag.
+
+## Control and reload
+
+- Change `agent.ini`, then `docker kill -s HUP <supervisor-container>`; the
+  supervisor reconciles added/removed children (existing fg-54 behavior).
+- Pause: stop the supervisor container (`docker compose stop supervisor`) or
+  remove the section and HUP.
+- Resume: start the container or restore the section and HUP.
+- No new secret or admin endpoint is introduced.
+
+## Validation and failure modes
+
+| Case | Behavior |
+|---|---|
+| Docker missing / non-Linux | Exit non-zero with a clear message; start nothing |
+| Image missing | Exit non-zero; suggest the build command |
+| Repo path missing/not writable | Exit non-zero; print the expected path/uid |
+| `agent.ini` unreadable/invalid | Exit non-zero; name the section/line |
+| Declared > capacity | Exit non-zero; print required vs available and the binding limit |
+| Declared = 0 | Exit non-zero; nothing to run |
+| Backend `/health` timeout | Leave the stack up but children unspawned; exit non-zero |
+| `SIGHUP` with an invalid file | Keep the previous children; log the parse error |
+| Sandbox mode without host root | Exit non-zero before Compose |
+| Computed capacity 0 | Start nothing; explain the binding limit |
 
 ## Observability
 
-- Log detected capacity, profile, formula inputs, computed pool and binding limit.
-- Expose `pool_size`, `active_agents`, `idle_agents`, `host_cpu`, `host_ram`, `disk_free` in status/heartbeat.
-- Add a `--check` mode that re-runs the calculation against current usage.
+- Print a table: detected values, declared mix, required resources, reservations,
+  computed capacity, binding limit and the unused gap.
+- Write the same values to `.env.agent-host` for reproducibility.
+- Supervisor startup log includes the same fields; the existing heartbeat
+  exposes the runtime count.
+- Add structured log lines (not a new metrics endpoint) for capacity and
+  reload events; fg-41 event shipping remains optional.
+
+## Security considerations
+
+- `agent.ini` must never contain keys/tokens; the existing parser rejects
+  secret-looking keys and values.
+- `.env.agent-host` is mode 0600 and contains limits only, no secrets.
+- The supervisor fetches provider keys per runtime over the node channel; the
+  script never sees them.
+- Docker mode uses the restricted socket proxy; the supervisor never mounts the
+  raw daemon socket.
+- No `POOL_ADMIN_TOKEN` is generated, injected or logged.
+
+## Alternatives considered
+
+1. **Keep PoolManager as a compatibility layer** — rejected: it was removed by
+   fg-54 and would create a second lifecycle to maintain.
+2. **Add a host-control API/token** — rejected for this ticket: `agent.ini` +
+   SIGHUP + Compose covers pause/scale without a new secret. A control API can
+   be a follow-up if remote control is needed.
+3. **Dynamic per-role autoscaling now** — deferred (D6); fixed counts are
+   sufficient for the pilot and keep the formula auditable.
+4. **Rewrite `agent.ini` from host-init** — rejected: the declaration stays
+   operator-owned; the script validates and reports.
 
 ## Rollout
 
 1. Add `host-init.sh --dry-run` and verify on the reference host.
-2. Add `.env.agent-host` output and compose override.
-3. Apply limits in PoolManager.
-4. Run a canary with 25% of the computed pool.
-5. Increase to the computed pool; monitor OOM/CPU/disk.
-6. Document overrides and failure recovery.
-
-## Open questions
-
-1. Should the pool controller run inside the backend or as a dedicated service on the agent host?
-2. Resolved for Phase 1: one pool per role; a mixed build/review/fixer pool is deferred until per-request limits exist.
-3. Should CPU be overcommitted for bursty agents (`utilization > 1.0`)?
-4. How do we handle Docker Desktop vs Linux Docker differences?
-5. Do we want a generated systemd unit in addition to Compose?
+2. Add `.env.agent-host`, Compose limits and supervisor capacity validation.
+3. Start with a canary count (about 25% of capacity), watch OOM/CPU/disk.
+4. Raise to the declared count; keep the health gate and log rotation.
+5. Record the unused-capacity gap for D6.
 
 ## Deferred scope
 
-See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not
+keep a copy.

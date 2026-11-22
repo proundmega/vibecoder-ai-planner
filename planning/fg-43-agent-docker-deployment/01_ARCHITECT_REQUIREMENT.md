@@ -1,162 +1,207 @@
-# 01_ARCHITECT_REQUIREMENT.md - Agent Docker Deployment and Host Sizing (fg-43)
+# 01 — Requirement (fg-43)
 
-**Related code:** `agent/docker-compose.yml`, `backend/src/services/PoolManager.js`
+> **Owns:** problem, goals, numbered requirements, acceptance.
+> **Not here:** design (`02`), verification matrix (`03`), file operations
+> (`04`), deferred table (`00`).
+
+**Related code:** `agent/docker-compose.yml`,
+`agent/docker-compose.sandbox.yml`, `agent/agent.ini.example`,
+`agent/src/main/java/com/vibecode/agent/supervisor/SupervisorMain.java`,
+`agent/host-init.sh` (new).
 
 ## Problem
 
-The agent deployment is manual and does not scale with the host:
+fg-54 replaced container-per-agent with **one supervisor per host** that spawns
+one child JVM per declared runtime. The deployment is still manual and does not
+scale with the host:
 
-- `agent/docker-compose.yml` runs one agent with 2 GB / 2 CPU;
-- `PoolManager` creates containers with a hardcoded 2 GB memory limit and no CPU limit;
-- pool size is a fixed `MAX_POOL_SIZE` (default 50) unrelated to host capacity;
-- the pool shares one `vibecode_repos` volume across all agents;
-- there is no init script, capacity check, dry-run or health validation;
-- agents are all treated as the same workload even though build, review and fixer roles have very different footprints.
+- `agent/docker-compose.yml` hardcodes `2 GB / 2 CPU` for the supervisor, while
+  `agent.ini` can declare any number of runtimes;
+- each runtime child defaults to `768 MB` heap, and each runtime can create a
+  sandbox with `2 CPU / 2 GB / 5 GB`;
+- there is no capacity check, dry-run, one-command init or validation that the
+  declared runtime count fits the host;
+- `agent.ini` is the only source of truth for the count, so a typo can
+  overcommit CPU/RAM or exhaust disk;
+- nothing logs the binding constraint or the difference between declared and
+  safe capacity.
 
-On a beefy host this either underuses the machine or overcommits it and triggers OOM/CPU starvation.
+On a large host this underuses the machine; on a small host it overcommits it
+and triggers OOM/CPU starvation. Disk pressure then looks like code failure.
 
 ## Goals
 
-1. Provide a one-command host deployment for the Docker agent pool.
-2. Compute a safe pool size from CPU, RAM and disk, with explicit reservations.
-3. Support override values and a dry-run that prints the calculation.
-4. Apply per-container CPU, memory, PID and log limits.
-5. Support role profiles (build, review, fixer, light poller).
-6. Keep the design single-host and Docker-native.
-7. Make the calculation observable and reproducible.
-8. Leave a clean path to a remote/multi-host pool controller later.
+1. Provide a one-command host deployment for the fg-54 supervisor stack.
+2. Detect CPU threads, RAM and the repo volume's free space.
+3. Compute a safe runtime capacity from the declared `agent.ini` sections,
+   with explicit reservations.
+4. Validate the declared count **before** starting the supervisor; fail closed
+   when it exceeds capacity and report the binding limit.
+5. Apply per-child heap, supervisor memory/CPU, sandbox CPU/RAM/disk and log
+   limits from the computed values.
+6. Write a reproducible `.env.agent-host` and support `--dry-run`/`--explain`.
+7. Start the supervisor (and the sandbox overlay in Docker mode), wait for the
+   backend `/health`, and never spawn children before enrollment/health.
+8. Keep the design single-host, Docker-native and secret-free.
+9. Leave a clean path to dynamic per-role autoscaling later (D6).
 
 ## Non-goals
 
 - Kubernetes or Swarm.
-- Autoscaling based on queue depth (later, with the durable queue).
-- Multi-host scheduling in this ticket.
-- Replacing `PoolManager` with a new scheduler.
-- Sandboxing (fg-34) or storage lifecycle (fg-44).
+- Queue-depth autoscaling (D1) or dynamic per-role autoscaling (D6).
+- Multi-host scheduling (D4).
+- Replacing the supervisor with a new scheduler.
+- Sandbox runtime (fg-34) or storage cleanup (fg-44).
+- A host-control API, admin token or `PoolManager` compatibility layer.
 
 ## Functional requirements
 
-- **FR1 - Detect host capacity:** CPU cores/threads, total RAM, free disk on the repo volume, Docker availability and existing containers.
-- **FR2 - Reservations:** reserve CPU, RAM and disk for the OS, Docker, the backend/pool controller and caches.
-- **FR3 - Sizing formula:** compute max agents by CPU, RAM and disk; take the minimum; clamp to `[0, AGENT_MAX_POOL_SIZE]`. A result of 0 means no agent fits: write 0, keep the pool paused, and report why.
-- **FR4 - Profiles:** build = 2 CPU / 4 GB / 20 GB workspace; review = 1 CPU / 2 GB / 10 GB; planner = 1 CPU / 2 GB / 10 GB; fixer = 2 CPU / 4 GB / 15 GB (worker variant); light poller = 0.5 CPU / 1 GB / 5 GB. Profiles size fg-54 runtime children, not containers.
-- **FR5 - Overrides:** `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_DISK_BUDGET_GB`, `AGENT_POOL_SIZE` (capped override, 0 allowed), `AGENT_MAX_POOL_SIZE`, `AGENT_ROLE`, `AGENT_UTILIZATION_TARGET`, `POOL_PAUSED`.
-- **FR6 - Output:** write `.env.agent-host` with the computed values and print a summary; `--dry-run` prints without writing.
-- **FR7 - Deploy:** `docker compose -f agent/docker-compose.remote.yml up -d` with the computed env (one supervisor stack; fg-54 supersedes the container-per-agent deployment).
-- **FR8 - Validate:** fail if Docker is unavailable, the image is missing or the volume does not exist. If the backend is already running, validate it first; otherwise start Compose, wait for `/health`, and only then enable the pool (see the init ordering below).
-- **FR9 - Limits:** the fg-54 supervisor applies CPU, memory, PID and log limits to each runtime child (cgroup per child or per-process limits) from the computed values; `PoolManager` container limits are no longer the enforcement point.
-- **FR10 - Observability:** log the calculation inputs/outputs and expose pool size/host capacity in status/heartbeat.
-- **FR11 - Safety:** never exceed host capacity; memory is not overcommitted; disk target is 80% of usable space; hard cap remains. A computed pool of 0, `AGENT_POOL_SIZE=0`, `MAX_POOL_SIZE=0` or `POOL_PAUSED=true` must stop spawning, not start one agent.
-- **FR12 - Runtime pool control:** expose an admin endpoint to set `{ paused, maxPoolSize }` guarded by `POOL_ADMIN_TOKEN` (generated by host-init, mode `0600`, sent as `X-Pool-Admin-Token`); no user JWT is required. The token is **control-plane only**: it is injected only into the backend/PoolManager container and is never passed to agent containers, `WorkspaceManager`, the OpenCode session, or fixer/reviewer prompts. `requestAgent` honors it immediately.
-- **FR13 - Startup health gate:** assignments stay disabled until DB/Redis health is green and `/health` is served; then apply `MAX_POOL_SIZE`/`POOL_PAUSED`. A restart with `POOL_PAUSED=false` resumes automatically without re-running host-init.
+| ID | Requirement | Acceptance (testable) |
+|---|---|---|
+| FR1 | Detect host capacity: CPU threads, total RAM, free disk on the repo volume, Docker availability, the `vibecode-agent` image and the repo bind/volume. | `host-init.sh --dry-run` prints each detected value; a missing Docker/image/repo path exits non-zero with a specific message. |
+| FR2 | Reserve resources for the OS, Docker, the backend and caches: `reserve_cpu = max(2, threads*0.15)`, `reserve_ram = max(8 GB, ram*0.10)`, `reserve_disk = max(100 GB, disk*0.10)`. | Unit tests cover small, reference and large hosts. |
+| FR3 | Parse `agent.ini` (sections, `role`, `count`) and compute the required CPU, RAM and disk from the profile table. | A 6-worker + 1-planner file reports 13.5 CPU, 20.5 GB and 130 GB. |
+| FR4 | Profiles: worker `2 CPU / 3 GB / 20 GB` (768 MB child + 2 GB sandbox + overhead), reviewer `1.5 / 2.5 / 10`, planner `1.5 / 2.5 / 10`, light `0.5 / 1.5 / 5`. | The formula uses the profile values and the declared counts. |
+| FR5 | Overrides: `AGENT_RUNTIME_HEAP_MB`, `SANDBOX_CPUS`, `SANDBOX_MEMORY_MB`, `SANDBOX_DISK_MB`, `AGENT_UTILIZATION_TARGET`, `AGENT_HOST_MAX_RUNTIMES`, `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_CPUS`. | Each override changes the result and is printed in the summary. |
+| FR6 | Compute `max_by_cpu`, `max_by_ram`, `max_by_disk`; `computed = min(...)`, capped by `AGENT_HOST_MAX_RUNTIMES`. Declared count must be `<= computed`; otherwise fail with the binding limit and the required vs available numbers. | 7 declared on a host that fits 5 exits non-zero and starts nothing. |
+| FR7 | Write `.env.agent-host` atomically (umask 077) with the computed child heap, supervisor memory/CPU, sandbox limits and host metadata; `--dry-run` writes nothing. | Diff/read of the file; dry-run leaves no file. |
+| FR8 | Start `docker compose -f agent/docker-compose.yml` (plus the sandbox overlay when `SANDBOX_MODE=docker`), wait for the backend `/health`, and exit non-zero on timeout without starting a partial pool. | Integration test with a fake health endpoint; timeout leaves the stack gated. |
+| FR9 | Apply limits: per-child `AGENT_RUNTIME_HEAP_MB`, supervisor container `memory`/`cpus`, sandbox `SANDBOX_CPUS`/`SANDBOX_MEMORY_MB`/`SANDBOX_DISK_MB`, and Docker log rotation. | Compose config render and a container inspect in the integration test. |
+| FR10 | Observability: log detected capacity, declared counts, formula inputs, computed capacity, binding limit and the under/over-utilization gap; include the same in the supervisor startup log/heartbeat. | Log assertions; a `--explain` output contains every input. |
+| FR11 | Safety: never start more runtimes than the computed capacity; never overcommit memory; use 80% of free disk; fail closed on missing Docker/image/volume; no secret in output or logs. | Negative tests for each failure; grep for token-shaped output. |
+| FR12 | Control: edit `agent.ini` and send `SIGHUP` to reload; stop the supervisor (or remove the section) to pause. No admin API, `POOL_ADMIN_TOKEN` or `POOL_PAUSED`. | A HUP reload test changes the declared count; no pool endpoint exists. |
+| FR13 | Health gate: the supervisor must not spawn a child before the backend is healthy and the runtime declaration succeeds; host-init waits for `/health` and reports the supervisor/child status. | Fake backend down → no children, host-init exits non-zero; healthy backend → children spawn. |
 
 ## Sizing formula
 
 ```
-reserve_cpu   = max(2, threads * 0.15)
-reserve_ram   = max(8 GB, ram_gb * 0.10)
-reserve_disk  = max(100 GB, disk_gb * 0.10)
+threads      = detected CPU threads
+ram_gb       = detected total RAM in GB
+disk_gb      = free disk on the repo volume in GB
+utilization  = AGENT_UTILIZATION_TARGET (default 0.80)
 
-max_by_cpu  = floor((threads * utilization - reserve_cpu) / cpu_per_agent)
-max_by_ram  = floor((ram_gb - reserve_ram) / ram_per_agent)
-max_by_disk = floor((disk_gb * 0.80 - reserve_disk) / disk_per_agent)
+reserve_cpu  = max(2, threads * 0.15)
+reserve_ram  = max(8, ram_gb * 0.10)
+reserve_disk = max(100, disk_gb * 0.10)
 
-max_by_cpu  = max(0, max_by_cpu)
-max_by_ram  = max(0, max_by_ram)
-max_by_disk = max(0, max_by_disk)
+max_by_cpu   = max(0, floor((threads * utilization - reserve_cpu) / cpu_per_runtime))
+max_by_ram   = max(0, floor((ram_gb - reserve_ram) / ram_per_runtime))
+max_by_disk  = max(0, floor((disk_gb * 0.80 - reserve_disk) / disk_per_runtime))
+capacity     = max(0, min(max_by_cpu, max_by_ram, max_by_disk, AGENT_HOST_MAX_RUNTIMES))
 
-computed = min(max_by_cpu, max_by_ram, max_by_disk, AGENT_MAX_POOL_SIZE)
-if AGENT_POOL_SIZE is set:
-  pool = min(AGENT_POOL_SIZE, computed)   # override can only lower the safe pool
-else:
-  pool = computed
-pool = max(0, pool)   # 0 is valid: no capacity, stay paused
+declared     = sum(count for every [runtime] section)
+if declared > capacity: fail closed (binding limit + numbers)
+if declared < capacity: warn about under-utilization (D6 dynamic autoscaling)
 ```
 
-`utilization` defaults to `0.80`; CPU may be overcommitted only with an explicit opt-in. Memory is never overcommitted.
+`ram_per_runtime` and `disk_per_runtime` are weighted by the declared role mix,
+not a single profile:
 
-Variable mapping:
+```
+ram_required  = worker_count * 3.0 + reviewer_count * 2.5 + planner_count * 2.5 + light_count * 1.5
+disk_required = worker_count * 20 + reviewer_count * 10 + planner_count * 10 + light_count * 5
+cpu_required  = worker_count * 2.0 + reviewer_count * 1.5 + planner_count * 1.5 + light_count * 0.5
+```
 
-- `AGENT_MAX_POOL_SIZE` is the hard cap for the formula.
-- `AGENT_POOL_SIZE` is a capped override: it can only lower the computed pool, never exceed host capacity.
-- The final value is written to `MAX_POOL_SIZE`, which is what `PoolManager` reads at runtime.
-- `POOL_PAUSED=true` (or `MAX_POOL_SIZE=0`) stops new assignments independently of the formula.
+`capacity` is the maximum **total** runtime count at the declared role mix. The
+formula is intentionally conservative: the sandbox is counted per active
+runtime, and memory is never overcommitted.
 
 ### Example: 24 cores / 48 threads, 192 GB, 2 TB
 
-Build profile (2 CPU, 4 GB, 20 GB):
+Declared: 6 workers + 1 planner.
 
 - reserve: 7.2 threads, 19.2 GB, 200 GB
-- CPU: `(48*0.8 - 7.2)/2` = 15
-- RAM: `(192 - 19.2)/4` = 43
-- disk: `(2000*0.8 - 200)/20` = 70
-- **pool = 15** (CPU-bound)
+- available CPU: `48*0.8 - 7.2 = 31.2` threads
+- required CPU: `6*2 + 1*1.5 = 13.5` → fits
+- available RAM: `192 - 19.2 = 172.8` GB
+- required RAM: `6*3 + 1*2.5 = 20.5` → fits
+- available disk: `2000*0.8 - 200 = 1400` GB
+- required disk: `6*20 + 1*10 = 130` → fits
 
-Light profile (0.5 CPU, 1 GB, 5 GB):
-
-- CPU: 76, RAM: 172, disk: 280 → **pool = min(AGENT_MAX_POOL_SIZE)** (usually the cap)
-
-This shows the important point: with active build agents the host is CPU-bound, not RAM-bound.
+The host is CPU-bound at about 15 workers; the declared 7 uses less than half.
+At `AGENT_UTILIZATION_TARGET=0.9`, available CPU rises to 36 threads and the
+same host fits about 18 workers. D6 (dynamic autoscaling) is the follow-up that
+would raise the counts automatically; this ticket only reports the gap and
+keeps the fixed declaration.
 
 ## Deployment topology
 
-Phase 1 assumes the planner backend (`PoolManager`) runs on the same Docker host as the agents, so it can use the Docker socket. The init script configures that backend and ensures the agent image/volume are present.
+```
+host-init.sh
+  -> detect CPU/RAM/disk/Docker
+  -> parse agent.ini (roles + counts)
+  -> compute capacity + limits
+  -> write .env.agent-host
+  -> docker compose up -d supervisor (+ sandbox overlay)
+       -> supervisor enrolls the node and declares runtimes
+       -> one child JVM per runtime (AGENT_RUNTIME_HEAP_MB)
+       -> each run may create one sandbox (SANDBOX_* limits)
+```
 
-If the backend runs elsewhere, the pool controller must talk to the agent host through a secured Docker API or a small dedicated controller. That is a follow-up, not part of this ticket.
+Phase 1 assumes the backend is reachable from the supervisor host. The
+supervisor needs Docker only for the fg-34 sandbox; it joins the restricted
+socket proxy, never the raw daemon socket.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `AGENT_ROLE` | `build` | build/review/fixer/light |
-| `AGENT_CPU_LIMIT` | profile | Per-agent CPU (e.g. `2.0`) |
-| `AGENT_MEMORY_LIMIT` | profile | Per-agent memory (e.g. `4g`) |
-| `AGENT_DISK_BUDGET_GB` | profile | Workspace budget per agent |
-| `AGENT_POOL_SIZE` | unset | Capped override: can only lower the computed pool; `0` pauses |
-| `AGENT_UTILIZATION_TARGET` | `0.80` | CPU utilization target |
-| `AGENT_RESERVED_CPU` | computed | CPU reserved for host/backend |
-| `AGENT_RESERVED_MEMORY_GB` | computed | RAM reserved |
-| `AGENT_RESERVED_DISK_GB` | computed | Disk reserved |
-| `AGENT_MAX_POOL_SIZE` | `50` | Hard cap for the formula |
-| `MAX_POOL_SIZE` | computed | Runtime value read by `PoolManager`; host-init writes the computed/overridden pool |
-| `POOL_PAUSED` | `false` | Startup pause flag; assignments are also health-gated until `/health` is green; `false` resumes after restart |
-| `POOL_ADMIN_TOKEN` | generated | Backend-only secret for the pool config endpoint; host-init writes it with mode `0600`; never injected into agent containers or the workspace |
-| `AGENT_REPO_DIR` | volume mountpoint | Host path used for `df`/`du`; resolve with `docker volume inspect` if unset |
-| `AGENT_PIDS_LIMIT` | `512` | Per-container PID limit |
+| `AGENT_UTILIZATION_TARGET` | `0.80` | CPU utilization target (D6 may raise it deliberately) |
+| `AGENT_HOST_MAX_RUNTIMES` | `50` | Hard cap for the computed capacity |
+| `AGENT_RUNTIME_HEAP_MB` | `768` | Per-child JVM heap |
+| `SUPERVISOR_MEMORY_LIMIT` | computed | Supervisor container memory limit (child heaps + overhead) |
+| `SUPERVISOR_CPUS` | computed | Supervisor container CPU limit |
+| `SUPERVISOR_MEMORY_BUDGET_MB` | computed | Budget the supervisor divides across children |
+| `SANDBOX_CPUS` | `2.0` | Per-sandbox CPU |
+| `SANDBOX_MEMORY_MB` | `2048` | Per-sandbox memory |
+| `SANDBOX_DISK_MB` | `5120` | Per-sandbox disk budget |
 | `AGENT_LOG_MAX_SIZE` | `10m` | Docker log rotation |
 | `AGENT_LOG_MAX_FILE` | `3` | Docker log files |
+| `AGENT_REPO_DIR` | repo bind root | Host path used for `df`/`du` |
+| `SANDBOX_MODE` | `host` | `docker` enables the sandbox overlay |
+
+Removed by fg-54: `MAX_POOL_SIZE`, `AGENT_POOL_SIZE`, `POOL_PAUSED`,
+`POOL_ADMIN_TOKEN`, `AGENT_ROLE` as a process-wide pool role.
 
 ## Safety requirements
 
-- Never start more agents than the computed limit.
-- Fail closed if Docker is unreachable or the agent image is missing.
-- Do not silently fall back to host execution.
-- Memory limits are enforced; CPU limits are enforced with `NanoCpus`.
-- Disk budgeting is enforced by fg-44; this ticket only computes the budget.
-- Secrets stay in the environment/secret store; the init script never prints keys.
+- Never start more runtimes than the computed capacity.
+- Fail closed if Docker is unreachable, the image is missing, the repo path is
+  not writable, or `agent.ini` declares more than fits.
+- Memory is never overcommitted; CPU overcommit is only via an explicit
+  `AGENT_UTILIZATION_TARGET > 1.0`.
+- Disk target is 80% of usable space; fg-44 enforces per-runtime budgets.
+- Secrets are never printed, written to `.env.agent-host`, or injected into a
+  sandbox; the supervisor fetches provider keys per runtime.
+- A computed capacity of 0 starts nothing and reports why.
 
 ## Acceptance criteria
 
-1. `agent/host-init.sh --dry-run` prints detected capacity, profile, formula inputs and computed pool size.
-2. Running without `--dry-run` writes `.env.agent-host` with the computed size and `POOL_PAUSED=false`, starts the stack, and relies on the backend health gate so assignments stay off until `/health` is green. A restart resumes automatically; if health never passes, assignments stay gated and the script exits non-zero.
-3. On the reference host, the build profile computes a safe pool (about 15) and the light profile respects the hard cap.
-4. Overrides change the result and are reflected in logs.
-5. Containers are created with CPU/RAM/PID/log limits.
-6. The script fails clearly if Docker, the image or the volume is missing; a not-yet-started backend is started first rather than treated as a failure.
-7. The calculated pool and host capacity are visible in status/logs.
-8. No secret appears in the script output or logs.
-9. No capacity (all maxima 0) writes `MAX_POOL_SIZE=0`, logs the binding limit, and starts no agents.
-10. `POOL_PAUSED=true`, `MAX_POOL_SIZE=0`, or the authenticated admin config endpoint pauses/resumes the pool at runtime, and `PoolManager` honors it immediately.
-11. The pool config endpoint rejects a missing/invalid `POOL_ADMIN_TOKEN`; the token is readable only by the backend/PoolManager, is absent from agent containers/workspaces/OpenCode/fixer/reviewer prompts, and never appears in logs or the prompt.
+1. `host-init.sh --dry-run` prints detected capacity, the parsed role mix,
+   formula inputs, computed capacity and the binding limit.
+2. A declared count above capacity exits non-zero, starts nothing, and names
+   the binding limit and the required vs available numbers.
+3. A valid declaration writes `.env.agent-host` and starts the supervisor; the
+   backend health gate holds children until `/health` is green.
+4. The reference host (24c/48t, 192 GB, 2 TB, 6 workers + 1 planner) fits and
+   reports the unused capacity.
+5. Overrides change the result and are logged.
+6. The supervisor container, child heaps and sandbox limits match the computed
+   values; log rotation is configured.
+7. `SIGHUP` reloads a changed `agent.ini`; stopping the supervisor pauses work.
+8. No `PoolManager`/`POOL_ADMIN_TOKEN`/`MAX_POOL_SIZE` path remains.
+9. No secret appears in output, `.env.agent-host` or logs.
 
 ## Out of scope
 
-- Kubernetes/Minikube.
-- Autoscaling on queue depth.
-- Multi-host scheduling.
+- Queue-depth autoscaling (D1) and dynamic per-role autoscaling (D6).
+- Multi-host scheduling (D4).
 - Storage cleanup/idle refresh (fg-44).
-- Sandbox runtime (fg-34).
+- Sandbox runtime internals (fg-34).
+- systemd units (D7) and Docker Desktop (D8).
 
 ## Deferred scope
 
-See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not keep a copy.
+See `00_ARCHITECT_CHECKLIST.md` → Deferred register. This document does not
+keep a copy.

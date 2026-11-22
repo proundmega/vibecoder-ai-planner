@@ -90,6 +90,25 @@ Create `harnessE2EFixtures.js` following existing integration-test patterns:
   - if a failed test leaves rows, run the cleanup SQL in `05_RUNBOOK.md`.
 - Never use existing product rows.
 
+Fixture flow (fg-54, exact service calls):
+
+1. Create the owner and project rows.
+2. Insert a project-scoped `provider_credentials` row and a `provider_models`
+   row with `status='verified'`, `roles=['worker']` (the fixture does not call
+   the provider). `AgentNodeService.declareRuntimes` resolves this ref.
+3. `AgentNodeService.mint({ ownerId, name })` → one-time enrollment token.
+4. `AgentNodeService.enroll({ token, name })` → `{ node, access_token }`.
+5. `AgentNodeService.createGrant(node.id, projectId, 'worker', { actorId: ownerId })`.
+6. `AgentNodeService.declareRuntimes(node, [{ name, role: 'worker',
+   modelRef: '<credential>/<model>', count: 1, projectId }])` → runtime row.
+7. Insert the ticket with `assigned_runtime_id = runtime.id`,
+   `status='in_progress'`.
+8. Requests use `X-API-Key: <access_token>` and
+   `X-Agent-Runtime: <runtime.id>`.
+
+The revoked-node case mints a second access token, then revokes the node (or
+token) before E5.
+
 ### Phase 2: Backend HTTP/Postgres e2e
 
 Create `harnessHttpE2E.test.js` using `supertest` and the real app. Do not mock

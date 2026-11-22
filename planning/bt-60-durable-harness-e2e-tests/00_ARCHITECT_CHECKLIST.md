@@ -46,7 +46,8 @@ now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan merged | PR #111 | ☑ |
-| Implementation merged | pending — staging credentials required | ☐ |
+| Phase A spec ready | 2026-11-22: fixtures, auth and cleanup rebased on fg-54 nodes/runtimes | ☑ |
+| Implementation merged | pending — staging credentials required for Phase B | ☐ |
 | Verification results | n/a — planned | ☐ |
 
 ## Deferred register (canonical)
@@ -62,7 +63,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Idempotent publish: branch/PR detection and duplicate-PR prevention | fg-33 | Reliability | fg-33 (#110) | done |
 | D5 | Dead-letter/adoption flow for operators | fg-33 | Operations | fg-33 (#110) | done |
 | D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | fg-44-agent-storage-lifecycle | open |
-| D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B | open |
+| D7 | Automated fault injection for `/finish`, lease loss, mid-run node revocation, crash/restart | self | Testing | bt-60 Phase B | open |
 | D8 | Fully containerized real-agent e2e in CI | self | Testing | follow-up | open |
 | D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |
 | D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
@@ -73,7 +74,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
 | 1 | Staging project/repo/node/runtime and provider/GitHub credentials | provide now / defer | Use a dedicated disposable set, never production | Pending |
-| 2 | Phase split | A only / A+B now | Both dependencies are satisfied; run A+B | Pending |
+| 2 | Phase split | A only / A+B now | Phase A now; Phase B when the disposable repo/key/App installation exists | Answered 2026-11-22: Phase A now, Phase B later |
 
 ## Completion gate
 

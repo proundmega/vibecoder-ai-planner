@@ -1,34 +1,56 @@
 # 03 — Implementation (fg-44)
 
 > **Owns:** work order, per-file changes, verification matrix, results.
-> **Not here:** design rationale (`02`), exact signatures (`04`), status (`00`).
+> **Not here:** design rationale (`02`), exact signatures (`04`), status
+> (`00`).
+
+## Test-First Requirement
+
+Create these stubs **before** production code:
+
+1. `agent/src/test/java/.../service/WorkspaceManagerStorageTest.java` — layout,
+   keyed cleanup, runtime cleanup, traversal refusal, byte/inode measurement.
+2. `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` — idle
+   refresh, max lifetime, watermarks, active safety, orphan sweep.
+3. `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` —
+   cleanup after terminal + lease, sandbox-before-delete, budget breach.
+4. `agent/scripts/host-storage.test.sh` — dry-run/apply, watermark actions,
+   orphan TTL, full-disk recovery.
 
 ## Plan
 
-- [ ] Measure current disk/inode growth per agent and per ticket
-- [ ] Define per-agent workspace layout and TTL
-- [ ] Add cleanup on ticket end, clean container stop and idle, only after a terminal run and lease release
-- [ ] Preserve workspaces on unclean exit/active lease until the fg-33 reaper expires the lease
-- [ ] Add a periodic `du`/inode budget meter that fails the ticket at the profile budget
-- [ ] Define the 2-hour idle refresh policy and identity handling
-- [ ] Add disk watermarks (warn/stop-spawn/cleanup/emergency)
-- [ ] Add Docker log rotation and image cleanup
-- [ ] Protect active tickets/leases from cleanup
-- [ ] Add orphan workspace reaper and metrics
-- [ ] Add tests for cleanup, refresh, watermarks and active-ticket safety
-- [ ] Document manual recovery when the disk is full, using the pool pause endpoint and reaper
+1. **Workspace layout** — `WorkspaceManager` gains a `workspaceKey` and
+   `cleanup(workspaceKey)`, `cleanupRuntime()`, `workspaceBytes()`; the
+   supervisor passes `REPO_CLONE_DIR=/repos/runtimes/<runtimeId>`.
+2. **Ticket cleanup** — `HarnessTicketProcessor` destroys the sandbox, finishes
+   the run/lease, then cleans the ticket workspace; failure preserves it and
+   emits an event.
+3. **Supervisor storage policy** — idle 2h / max 24h refresh, disk/inode
+   watermarks, budget meter, orphan sweep, dangling-image prune, log rotation.
+4. **Host script** — `agent/scripts/host-storage.sh --dry-run|--apply`.
+5. **Compose** — log rotation for supervisor and sandbox.
+6. **Docs** — `agent/README.md` storage section, env table, recovery.
+7. **Verification** — run the matrix and record results.
 
 ## Per-file changes
 
-To be filled in when implementation starts.
-
 | File | Action | Change |
 |---|---|---|
-| | | |
-
-## Dependencies
-
-- fg-43, fg-33
+| `agent/src/main/java/.../service/WorkspaceManager.java` | change | Runtime/ticket keyed root, `cleanup(key)`, `cleanupRuntime()`, `workspaceBytes()`, traversal guards |
+| `agent/src/main/java/.../supervisor/Supervisor.java` | change | Pass `REPO_CLONE_DIR` per runtime; idle/max-lifetime refresh; active-slot guard |
+| `agent/src/main/java/.../supervisor/SupervisorMain.java` | change | Storage sweep wiring, env parse, watermark log |
+| `agent/src/main/java/.../supervisor/StoragePolicy.java` | add | Watermarks, budget, orphan/refresh decisions |
+| `agent/src/main/java/.../harness/HarnessTicketProcessor.java` | change | Destroy sandbox → finish → cleanup; budget event |
+| `agent/src/main/java/.../harness/HarnessEvent.java` | change | Add `storage.*` event types |
+| `agent/scripts/host-storage.sh` | add | Dry-run/apply recovery and sweep |
+| `agent/scripts/host-storage.test.sh` | add | Bash fixtures/assertions |
+| `agent/docker-compose.yml` | change | Log rotation for supervisor |
+| `agent/docker-compose.sandbox.yml` | change | Log rotation for sandbox |
+| `agent/README.md` | change | Layout, env vars, refresh, budget, recovery |
+| `agent/src/test/java/.../service/WorkspaceManagerStorageTest.java` | add | Keyed layout/cleanup/size |
+| `agent/src/test/java/.../supervisor/SupervisorStorageTest.java` | add | Refresh/watermark/orphan/active safety |
+| `agent/src/test/java/.../harness/HarnessTicketProcessorStorageTest.java` | add | Cleanup order/budget |
+| `agent/scripts/host-storage.test.sh` | add | Recovery script |
 
 ## Verification matrix (canonical)
 
@@ -36,31 +58,31 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | | | | |
-| FR2 | | | | |
-| FR3 | | | | |
-| FR4 | | | | |
-| FR5 | | | | |
-| FR6 | | | | |
-| FR7 | | | | |
-| FR8 | | | | |
-| FR9 | | | | |
-| FR10 | | | | |
-| FR11 | | | | |
-| FR12 | | | | |
-| FR13 | | | | |
+| FR1 | Agent | `WorkspaceManagerStorageTest.java` | runtime 12 / ticket 34 path; traversal refused | `cd agent && mvn test` |
+| FR2 | Agent | `HarnessTicketProcessorStorageTest.java` | terminal + lease → cleanup; unclean exit preserved | `mvn test` |
+| FR3 | Agent | `SupervisorStorageTest.java` | idle 2h stops/restarts child, keeps id | `mvn test` |
+| FR4 | Agent | `SupervisorStorageTest.java` | 24h between tickets only | `mvn test` |
+| FR5 | Agent | `SupervisorStorageTest.java` | 70/80/85/90/95 actions; inode same | `mvn test` |
+| FR6 | Agent | `HarnessTicketProcessorStorageTest.java` | budget breach → `storage_budget_exceeded`, quarantine | `mvn test` |
+| FR7 | Compose | `docker compose config` | log rotation on supervisor/sandbox | `docker compose -f agent/docker-compose.yml config` |
+| FR8 | Agent | `SupervisorStorageTest.java` | dangling prune keeps active tag | `mvn test` |
+| FR9 | Agent | `SupervisorStorageTest.java` | orphan TTL; active/lease kept | `mvn test` |
+| FR10 | Agent | `SupervisorStorageTest.java` | active lease/process skipped | `mvn test` |
+| FR11 | Agent | `HarnessEvent` assertions | `storage.*` fields and counts | `mvn test` |
+| FR12 | Script | `host-storage.test.sh` | dry-run/apply, full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
+| FR13 | Agent | `HarnessTicketProcessorStorageTest.java` | destroy before delete; failed destroy keeps dir | `mvn test` |
 
 ## Review checklist
 
-- [ ] Every `FR*`/`NFR*` has a passing row in the matrix
-- [ ] Error paths and edge cases are covered, not only the happy path
-- [ ] Migration has a rollback and is registered in `apply.js`
-- [ ] API contract matches `02`; OpenAPI/types regenerated if it changed
-- [ ] No secret, `.env`, `Jenkinsfile`, or unrelated file touched
-- [ ] `04` (if present) matches what was actually built
+- [ ] Every `FR*` acceptance statement has a passing row
+- [ ] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
+- [ ] No active lease/process is ever deleted or stopped
+- [ ] Sandbox destroy precedes workspace deletion
+- [ ] No `PoolManager`/`POOL_ADMIN_TOKEN` reference remains
+- [ ] `04` matches what was built
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| | | | |
+| — | — | — | Not run (planned) |

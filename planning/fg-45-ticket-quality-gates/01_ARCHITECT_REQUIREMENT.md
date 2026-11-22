@@ -1,6 +1,6 @@
 # 01_ARCHITECT_REQUIREMENT.md - Ticket Quality Gates and Definition of Ready (fg-45)
 
-**Related code:** `validators/tickets.js`, `TemplateService`, `TicketPlanningService`, `PhaseService`, `TicketService`, `models/ticket.js`, `TicketController`, `middleware/permissions.js`, `agent/harness/HarnessTicketProcessor.java`, `agent/service/TicketProcessor.java`, `TicketBoard.vue`, `TicketDetail.vue`, `frontend/src/api/tickets.ts`
+**Related code:** `validators/tickets.js`, `TemplateService`, `TicketPlanningService`, `PhaseService`, `TicketService`, `models/ticket.js`, `TicketController`, `middleware/permissions.js`, `agent/harness/HarnessTicketProcessor.java`, `TicketBoard.vue`, `TicketDetail.vue`, `frontend/src/api/tickets.ts`
 
 ## Problem
 
@@ -22,11 +22,11 @@ The gate only helps if it covers all of them. Today the following paths move a t
 
 | Path | Entry point | Current write |
 |---|---|---|
-| Agent pickup | `POST /api/v1/tickets/:id/pickup` → `TicketService.pickUpTicket` (`TicketService.js:267-272`) | `UPDATE status='in_progress', assigned_runtime_id, locked_at` |
-| UI “Start Work” | `TicketDetail.vue:115` → `updateTicket` → `PUT /api/v1/tickets/:id` (`frontend/src/api/tickets.ts:36`) → `TicketService.update` → `Ticket.update` (`models/ticket.js:89-97`) | sets `status`; `VALID_TRANSITIONS` allows `backlog -> in_progress` |
-| Status endpoint | `POST /api/v1/tickets/:id/status` (`api/tickets.js:146`) → `TicketService.updateStatus` (`TicketService.js:207`) → `Ticket.updateStatus` (`models/ticket.js:169-181`) | sets `status` only |
-| Phase transition | `POST /api/v1/tickets/:id/phases/transition` → `PhaseService.transition` (`PhaseService.js:51-68`) | writes `phase` **and** `status`; `PHASE_TO_STATUS` maps `assigned`/`in_progress`/`blocked` → `in_progress` |
-| Planning status | `PATCH /api/v1/tickets/:id/planning/status` (`api/v1/index.js:181`) | `verifyToken` only; `TicketPlanningService.updateStatus` accepts `completed` directly |
+| Agent pickup | `POST /api/v1/tickets/:id/pickup` → `TicketService.pickUpTicket` | `UPDATE status='in_progress', assigned_runtime_id, locked_at` |
+| UI “Start Work” | `TicketDetail.vue` → `updateTicket` → `PUT /api/v1/tickets/:id` → `TicketService.update` → `Ticket.update` | sets `status`; `VALID_TRANSITIONS` allows `backlog -> in_progress` |
+| Status endpoint | `POST /api/v1/tickets/:id/status` → `TicketService.updateStatus` → `Ticket.updateStatus` | sets `status` only |
+| Phase transition | `POST /api/v1/tickets/:id/phases/transition` → `PhaseService.transition` | writes `phase` **and** `status`; `PHASE_TO_STATUS` maps `assigned`/`in_progress`/`blocked` → `in_progress` |
+| Planning status | `PATCH /api/v1/tickets/:id/planning/status` | `verifyToken` only; `TicketPlanningService.updateStatus` accepts `completed` directly |
 
 Two consequences shape the design:
 
@@ -66,6 +66,16 @@ Phase transitions into `in_progress` come from `assigned`, `blocked`, `review` a
   considerations or change impact.
 - Semantically scoring the quality of those sections; that remains reviewer
   and human work.
+
+## Assumptions
+
+| ID | Assumption | Impact if wrong | Validation / evidence | State |
+|---|---|---|---|---|
+| A1 | The five execution paths in the audit are the complete set; no other route writes `in_progress`. | A side door bypasses the gate. | Route/service audit in `02`; spy test on the assertion. | open |
+| A2 | `ticket_acceptance_criteria` is authoritative; planning-file text only seeds it. | Two sources diverge. | Service tests; `apply-template` seeds once. | open |
+| A3 | Project membership resolves from `projects.owner_id` + `project_memberships` without a new table. | A new membership source is needed. | `ProjectAccessService` tests. | open |
+| A4 | `HarnessTicketProcessor` is the only agent processor after fg-54. | A legacy path would skip the readiness error. | Code search + processor tests. | open |
+| A5 | Human review is available during the pilot, so fg-31 is an integration follow-up, not a blocker. | Readiness integration waits for fg-31. | D2. | accepted |
 
 ## Definition of Ready
 
@@ -159,7 +169,7 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - **FR7 - Placeholder detection:** reject `{{...}}`, `TBD`, `TODO`, `FIXME` and empty required sections.
 - **FR8 - Override:** `POST /tickets/:id/readiness/override` requires `TICKET_READINESS_OVERRIDE`, project membership, a reason, explicit `waivedCodes[]` and an expiry; writes a `ticket_readiness_events` audit row. `DELETE` writes a revocation row.
 - **FR9 - Small-fix exemption:** `POST /tickets/:id/readiness/small-fix` requires the same permission and project membership, records a reason, and waives template presence, required files and required sections (`MISSING_TEMPLATE`, `MISSING_REQUIRED_FILE`, `EMPTY_REQUIRED_FILE`, `MISSING_REQUIRED_SECTION`). Title, description, scope, acceptance criteria, placeholder and approval checks still apply; dependencies/test/rollback (`MISSING_TEST_PLAN`, `MISSING_DEPENDENCIES`, `MISSING_ROLLBACK`) do not apply to a small fix.
-- **FR10 - Agent behavior:** on `READINESS_FAILED`, both the legacy `TicketProcessor` and `HarnessTicketProcessor` post the issue list to the ticket, release it, and do not clone or start a harness.
+- **FR10 - Agent behavior:** on `READINESS_FAILED`, `HarnessTicketProcessor` posts the issue list to the ticket, releases it, and does not clone or start a harness. It is the only agent processor after fg-54.
 - **FR11 - UI:** creation wizard with template/small-fix selection; readiness panel with issues and actions; both `TicketDetail` **and** the `TicketBoard` drag/drop path must surface readiness issues, and `frontend/src/api/tickets.ts` must propagate errors for `updateTicket` and `createTicket` (no `.catch(() => null)`).
 - **FR12 - Migration:** grandfather existing in-progress/review/done tickets; gate only new work.
 - **FR13 - Metrics:** readiness rate, blocked count, time-to-ready, waived-code frequency, agent pickups rejected.
@@ -190,6 +200,16 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - Risk content must not contain secret values; use names, paths and
   placeholders.
 
+## Non-functional requirements
+
+| ID | Requirement | Acceptance |
+|---|---|---|
+| NFR1 | The gate adds bounded work per execution attempt; it never blocks the event loop or holds a transaction open for a plan file scan. | Evaluator query/time budget test; p95 under 100 ms on the reference fixture. |
+| NFR2 | Backward compatible: `READINESS_GATE_MODE=off` skips evaluation, `warn` allows, `enforce` blocks; columns are additive; existing tickets are grandfathered. | Mode tests; migration rollback; backfill test. |
+| NFR3 | Audit is append-only; no user route can update or delete `ticket_readiness_events`. | No update/delete route; permission test. |
+| NFR4 | Security: authorization, project scoping, input caps and no secret/file contents in errors. | Route tests; redaction test. |
+| NFR5 | Coverage: backend/frontend stay at or above 60%; every FR/NFR has a passing verification row. | CI coverage; `03` matrix. |
+
 ## Acceptance criteria
 
 1. A title-only ticket is created as a draft (`status=backlog`, `phase=draft`) and, in `enforce` mode, cannot be picked up or moved to `in_progress` (`warn` records the block and allows).
@@ -199,7 +219,7 @@ Required sections are declared per template file (`requiredSections` in `file_de
 5. `GET /tickets/:id/readiness` returns accurate results.
 6. Pickup, `POST /tickets/:id/status`, `PUT /tickets/:id` with `status=in_progress`, and phase transitions mapping to `in_progress` all return 409 `READINESS_FAILED` in `enforce` mode.
 7. `PATCH /tickets/:id/planning/status` rejects `completed` and any move out of `completed` (`REPLAN_REQUIRED`); `apply-template`/planning-file edits that still pass keep `planning_status='completed'`; a post-approval edit that fails invalidates approval (`approval_invalidated`) and returns to `in_progress`; fixing it requires re-approval; `POST /readiness/replan` clears approval/ready and is audited.
-8. Agents post the issues and release unready tickets; neither processor starts a harness.
+8. The runtime posts the issues and releases unready tickets; `HarnessTicketProcessor` starts no harness.
 9. An authorized override requires a reason, an expiry, a permission, project membership, and is audited; unlisted codes still block; revocation is audited.
 10. `ready_at` tracks evaluation: passing edits re-set it, failing edits clear approval + `ready_at`, override revocation clears it, and waiver expiry clears it via the sweep. Approval is content-bound: a failing edit cannot become ready again without `approve-plan`.
 11. Existing in-progress/review tickets are grandfathered during rollout.
@@ -217,7 +237,7 @@ Required sections are declared per template file (`requiredSections` in `file_de
 | Area | Impact | Evidence / owner |
 |---|---|---|
 | API | New readiness routes; `PUT /tickets/:id` and `POST /tickets/:id/status` can now return 409; `PATCH /planning/status` rejects `completed` | readiness routes + contract tests |
-| Agent | New structured error type in the Java client; both processors need the failure branch | `agent/src/main/java/...` |
+| Agent | New structured error type in the Java client; `HarnessTicketProcessor` needs the failure branch | `agent/src/main/java/...` |
 | Database | Migration adds readiness columns, `ticket_acceptance_criteria`, `ticket_readiness_events` | `backend/src/migrations/` |
 | Frontend | New wizard fields, readiness panel, error propagation in `api/tickets.ts`; the panel shows missing risk sections | `frontend/src/views/`, `frontend/src/api/tickets.ts` |
 | Templates | Root `01`/`02`, lightweight `00`/`03` and product templates gain the risk sections; `fg-50` adds the drift test | `planning/`, `backend/src/services/TemplateService.js` |
@@ -234,15 +254,28 @@ Required sections are declared per template file (`requiredSections` in `file_de
 7. Presence is deterministic; quality is human/reviewer judgement. The checker never “approves” an assumption or a security control.
 8. Requirement IDs are the hand-off contract to `fg-51`; traceability does not re-parse prose.
 
+## Resolved decisions
+
+- 80-character description minimum (2026-11-22); D8 tracks tuning.
+- `project_admin` + `super_admin` hold `TICKET_READINESS_OVERRIDE` and
+  `TICKET_READINESS_APPROVE`; `member` does not (2026-11-22).
+- `architecture`, `technical` and `specification` require all four risk
+  sections; `simple` requires assumptions and change impact; a
+  security-sensitive `simple` ticket always requires security (2026-11-22).
+- Custom project templates may omit `requiredSections`; the evaluator reports
+  `sectionsEnforced: false` and only checks presence/placeholders (D9).
+- `ticket_acceptance_criteria` is authoritative; `04` parsing is D10.
+- fg-31 and fg-50 are integration/quality follow-ups (D2/D7), not hard
+  dependencies (2026-11-22).
+
 ## Known unknowns
 
-- Whether `ticket_acceptance_criteria` should also support checklists embedded in `04_SPECIFICATION.md`; the table is authoritative in Phase 1.
-- Minimum description length (proposed 80 characters) needs product confirmation.
-- How project templates expose `requiredSections` today (some have arbitrary `file_definitions`); the design specifies a schema.
-- Whether `member` should ever hold `TICKET_READINESS_OVERRIDE`; Phase 1 restricts it to `project_admin`/`super_admin`.
-- Which templates require which risk sections. Phase 1 proposal: `architecture`, `technical` and `specification` require all four; `simple` requires assumptions and change impact.
-- How to detect security-sensitive scope without false positives (keyword/scope hints plus a human-visible issue code, not an automatic security judgement).
-- Whether a security-sensitive `simple` ticket must always carry a security section; Phase 1 proposal: yes.
+- The right 80-character threshold after real usage (D8).
+- Whether custom templates should eventually require `requiredSections` (D9).
+- Whether acceptance criteria should also parse `04_SPECIFICATION.md` (D10).
+- How to detect security-sensitive scope without false positives (keyword/scope
+  hints plus a human-visible issue code, not an automatic security judgement);
+  the proposal is retained.
 
 ## Testing checklist
 
@@ -253,7 +286,7 @@ Required sections are declared per template file (`requiredSections` in `file_de
 - [ ] Service: `approve-plan` on an incomplete ticket sets neither `completed` nor `ready_at`.
 - [ ] Service: approve then edit → readiness recomputed false.
 - [ ] Permission: override without `TICKET_READINESS_OVERRIDE` → 403; expired/waived scope honored.
-- [ ] Agent: both processors post issues, release, start no harness.
+- [ ] Agent: `HarnessTicketProcessor` posts issues, releases, starts no harness.
 - [ ] Frontend: `updateTicket` propagates the 409; TicketDetail shows issues, including missing risk sections.
 - [ ] Migration: grandfathered tickets stay claimable.
 - [ ] Risk sections: missing, empty and placeholder content produce the expected codes for assumptions, failure modes, security and change impact.
