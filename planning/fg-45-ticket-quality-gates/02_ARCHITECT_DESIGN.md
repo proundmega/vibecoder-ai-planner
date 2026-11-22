@@ -177,7 +177,7 @@ CREATE TABLE ticket_readiness_events (
   attempt_id UUID UNIQUE,               -- set for blocked rows; dedupes retries
   actor_type VARCHAR(16) NOT NULL CHECK (actor_type IN ('user','agent','system')),
   actor_user_id BIGINT REFERENCES users(id),   -- user actor, or the agent's owner
-  actor_agent_id BIGINT REFERENCES agents(id), -- set when actor_type='agent'
+  actor_agent_id BIGINT,                       -- set when actor_type='agent'; no FK (057 drops agents)
   actor_role VARCHAR(32),
   reason TEXT,
   waived_codes TEXT[] NOT NULL DEFAULT '{}',
@@ -195,7 +195,7 @@ Why not `audit_log`: it is referenced by dead code but was never created (bp-124
 
 ### Actor identity and rollback safety
 
-- Agent auth sets `req.user.id = agent.id` (the `agents.id` row) and `req.user.userId = agent.owner_id` (`middleware/auth.js:300-305`). An agent ID is **not** a `users.id`, so the event table cannot use a single `actor_id` FK to `users`.
+- Agent auth sets `req.user.id = agent.id` and `req.user.userId = agent.owner_id` (`middleware/auth.js:300-305`). An agent ID is **not** a `users.id`, so the event table cannot use a single `actor_id` FK to `users`. `actor_agent_id` also has no FK: the fg-54 clean cut (057) drops the legacy `agents` table after this migration runs, so the id is a historical reference only.
 - Write `actor_type='agent'`, `actor_agent_id=req.user.id`, `actor_user_id=req.user.userId`, `actor_role=req.user.role`. Human actions use `actor_type='user'` + `actor_user_id`. Scheduled work uses `actor_type='system'`.
 - `blocked` events are emitted **after** the status transaction ends (after `COMMIT` in `warn`, after `ROLLBACK` in `enforce`) by `emitBlocked`: a metric, a structured log, and one `ticket_readiness_events` row on a separate pooled connection (best-effort, `attempt_id`-guarded). Writing earlier would take `FOR KEY SHARE` on the ticket row already locked `FOR UPDATE` by the caller, which blocks or deadlocks. The error handler does not write a second row, so enforce-mode blocks are not duplicated and warn-mode blocks are still audited even though the transition succeeds.
 - `DELETE /readiness/override` writes `override_revoked`; the sweep writes `override_expired` once per waiver (guarded by `expires_at` + existing event check).

@@ -172,6 +172,28 @@ if (process.env.NODE_ENV !== 'test') {
     logger.info('Harness reaper disabled (HARNESS_REAPER_INTERVAL_SECONDS=0)');
   }
 
+  // fg-45: clear ready_at for expired readiness waivers and emit one
+  // override_expired event per waiver. READINESS_SWEEP_INTERVAL_MINUTES=0
+  // disables it (e.g. before overrides are enabled).
+  const TicketReadinessService = require('./services/TicketReadinessService');
+  const readinessSweepMinutes = Number(
+    process.env.READINESS_SWEEP_INTERVAL_MINUTES === undefined
+      ? 60
+      : process.env.READINESS_SWEEP_INTERVAL_MINUTES
+  );
+  const readinessSweepTick = () => {
+    TicketReadinessService.sweepExpiredOverrides().catch(err => {
+      logger.error('Readiness override sweep failed:', err.message);
+    });
+  };
+  const readinessSweepInterval = readinessSweepMinutes > 0
+    ? setInterval(readinessSweepTick, readinessSweepMinutes * 60 * 1000)
+    : null;
+  if (readinessSweepInterval) {
+    readinessSweepInterval.unref();
+    readinessSweepTick();
+  }
+
   // Bounded retention for the append-only event store (fg-41 FR5). Retention
   // is the only delete path and opts in to the trigger guard inside the
   // service transaction. Audit events keep a longer window.
@@ -206,6 +228,9 @@ if (process.env.NODE_ENV !== 'test') {
   gracefulShutdown(server, pool, [
     () => {
       if (reaperInterval) clearInterval(reaperInterval);
+    },
+    () => {
+      if (readinessSweepInterval) clearInterval(readinessSweepInterval);
     },
     () => clearInterval(eventRetentionInterval),
     () => clearInterval(agentTokenRetentionInterval),

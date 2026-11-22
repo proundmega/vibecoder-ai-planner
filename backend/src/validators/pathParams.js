@@ -14,6 +14,7 @@ const pathParams = {
   messageId: Joi.number().integer().positive(),
   templateId: Joi.number().integer().positive(),
   attachmentId: Joi.number().integer().positive(),
+  criterionId: Joi.string().uuid(),
   providerId: Joi.number().integer().positive(),
 };
 

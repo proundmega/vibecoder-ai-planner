@@ -1,6 +1,7 @@
 package com.vibecode.agent.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.Map;
 
@@ -39,12 +40,16 @@ public class ApiResponse<T> {
     public static class Error {
         private String code;
         private String message;
+        private JsonNode details;
 
         public String getCode() { return code; }
         public void setCode(String code) { this.code = code; }
 
         public String getMessage() { return message; }
         public void setMessage(String message) { this.message = message; }
+
+        public JsonNode getDetails() { return details; }
+        public void setDetails(JsonNode details) { this.details = details; }
 
         @Override
         public String toString() {

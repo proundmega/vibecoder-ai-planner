@@ -12,6 +12,11 @@ jest.mock('../db', () => ({
   transaction: jest.fn(),
 }));
 
+jest.mock('../services/TicketReadinessService', () => ({
+  refreshReadyState: jest.fn().mockResolvedValue(undefined),
+  seedCriteriaFromPlanning: jest.fn().mockResolvedValue([]),
+}));
+
 describe('TicketPlanningService', () => {
   const { pool } = require('../db');
 
@@ -89,7 +94,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['architecture', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -103,7 +108,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['specification', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -116,7 +121,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['technical', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');
@@ -129,7 +134,7 @@ describe('TicketPlanningService', () => {
 
       expect(client.query).toHaveBeenCalledWith('BEGIN');
       expect(client.query).toHaveBeenCalledWith(
-        'UPDATE tickets SET planning_status = \'template_selected\', template_schema = $1 WHERE id = $2',
+        expect.stringContaining('template_schema = $1'),
         ['simple', 'ticket-1']
       );
       expect(client.query).toHaveBeenCalledWith('COMMIT');

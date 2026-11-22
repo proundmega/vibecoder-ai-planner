@@ -75,13 +75,13 @@ describe('tickets API', () => {
     expect(result).toEqual({ id: 't1', milestoneId: null, estimate: 3, dependsOn: ['46'] })
   })
 
-  it('updateTicket returns null on error', async () => {
+  it('updateTicket propagates errors so readiness 409s reach the view (fg-45)', async () => {
     const { put } = await import('../api/client')
     put.mockRejectedValue(new Error('Update failed'))
 
-    const result = await tickets.updateTicket('t1', { status: 'in_progress' })
-
-    expect(result).toBeNull()
+    await expect(
+      tickets.updateTicket('t1', { status: 'in_progress' })
+    ).rejects.toThrow('Update failed')
   })
 
   it('createTicket calls post with correct URL and body', async () => {
@@ -98,13 +98,13 @@ describe('tickets API', () => {
     expect(result).toEqual({ id: 't1', title: 'New ticket' })
   })
 
-  it('createTicket returns null on error', async () => {
+  it('createTicket propagates validation errors (fg-45)', async () => {
     const { post } = await import('../api/client')
     post.mockRejectedValue(new Error('Create failed'))
 
-    const result = await tickets.createTicket('proj-1', 'New ticket', 'Description')
-
-    expect(result).toBeNull()
+    await expect(
+      tickets.createTicket('proj-1', 'New ticket', 'Description')
+    ).rejects.toThrow('Create failed')
   })
 
   it('deleteTicket calls del with correct URL', async () => {

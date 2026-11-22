@@ -116,35 +116,27 @@ describe('TicketBoard', () => {
       expect(getTickets).toHaveBeenCalledWith('/api/v1/projects/proj-1/tickets')
     })
 
-    it('should set creationError on createTicket failure (null result)', async () => {
+    it('should propagate createTicket errors instead of resolving null (fg-45)', async () => {
       const { post } = await import('../api/client')
-      post.mockResolvedValue(null)
+      post.mockRejectedValue(new Error('Creation failed'))
 
-      const creationError = ref(null)
-
-      const result = await ticketsApi.createTicket('proj-1', 'New ticket', 'Desc')
-
-      if (!result) {
-        creationError.value = 'Failed to create ticket. Please try again.'
-      }
-
-      expect(creationError.value).toBe('Failed to create ticket. Please try again.')
+      await expect(
+        ticketsApi.createTicket('proj-1', 'New ticket', 'Desc')
+      ).rejects.toThrow('Creation failed')
     })
 
     it('should not reload tickets when createTicket fails', async () => {
-      const { post } = await import('../api/client')
-      post.mockResolvedValue(null)
-
-      const { get: getTickets } = await import('../api/client')
+      const { post, get: getTickets } = await import('../api/client')
+      post.mockRejectedValue(new Error('Creation failed'))
       getTickets.mockResolvedValue([{ id: 't1', title: 'Existing' }])
 
-      const result = await ticketsApi.createTicket('proj-1', 'New ticket', 'Desc')
-
-      // Should not reload when result is null (error case)
       let ticketsReloaded = false
-      if (result) {
+      try {
+        await ticketsApi.createTicket('proj-1', 'New ticket', 'Desc')
         await ticketsApi.fetchTickets('proj-1')
         ticketsReloaded = true
+      } catch {
+        // Expected: the caller surfaces the error and does not reload.
       }
 
       expect(ticketsReloaded).toBe(false)

@@ -11,6 +11,11 @@ jest.mock('../models/user');
 jest.mock('../services/PermissionService');
 jest.mock('../services/TicketPlanningService');
 jest.mock('../services/TicketAttachmentService');
+jest.mock('../services/TicketReadinessService', () => ({
+  assertReadyForExecution: jest.fn().mockResolvedValue({ ready: true }),
+  emitBlocked: jest.fn().mockResolvedValue(undefined),
+  refreshReadyState: jest.fn().mockResolvedValue(undefined),
+}));
 
 describe('TicketService', () => {
   beforeEach(() => {

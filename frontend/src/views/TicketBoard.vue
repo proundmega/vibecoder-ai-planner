@@ -3,7 +3,8 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { fetchProjects } from '@/api/projects'
-import { fetchTickets, fetchTicket, updateTicket, createTicket, blockerSummary, dependencyBlockedMessage } from '@/api/tickets'
+import { fetchTickets, fetchTicket, updateTicket, createTicket, blockerSummary, dependencyBlockedMessage, readinessIssueSummary } from '@/api/tickets'
+import ReadinessIssues from '@/components/ReadinessIssues.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,14 +18,23 @@ const selectedProjectId = ref(null)
 const showCreateTicket = ref(false)
 const newTicketTitle = ref('')
 const newTicketDesc = ref('')
+const newTicketTemplate = ref('')
+const newTicketSmallFix = ref(false)
+const newTicketSmallFixReason = ref('')
+const newTicketCriteria = ref('')
 const creating = ref(false)
 const creationError = ref(null)
 const statusError = ref(null)
+const statusIssues = ref([])
 
 watch(showCreateTicket, (value) => {
   if (!value) {
     newTicketTitle.value = ''
     newTicketDesc.value = ''
+    newTicketTemplate.value = ''
+    newTicketSmallFix.value = false
+    newTicketSmallFixReason.value = ''
+    newTicketCriteria.value = ''
     creationError.value = null
   }
 })
@@ -78,13 +88,15 @@ async function handleDrop(ticketId, newStatus) {
   const ticket = tickets.value.find(t => t.id === ticketId)
   if (!ticket || !canUpdateThisTicket(ticket)) return
 
+  const previousStatus = ticket.status
   try {
     await updateTicket(ticket.id, { status: newStatus })
     ticket.status = newStatus
     statusError.value = null
+    statusIssues.value = []
 
-    // Readiness depends on dependencies, not on the new status column.
-    // Re-read it so a blocked ticket moved back to backlog keeps its badge.
+    // Readiness depends on dependencies and the plan, not on the new status
+    // column. Re-read it so a blocked ticket keeps its badge and issues.
     const fresh = await fetchTicket(ticket.id)
     if (fresh) {
       ticket.status = fresh.status
@@ -93,10 +105,17 @@ async function handleDrop(ticketId, newStatus) {
     }
   } catch (err) {
     console.error('Failed to update ticket status:', err)
+    // The card never moved optimistically, but restore explicitly so an
+    // interrupted update cannot leave the board inconsistent.
+    ticket.status = previousStatus
+    statusIssues.value = err?.details?.issues || []
     const blocked = dependencyBlockedMessage(err?.details)
+    const readiness = readinessIssueSummary(err?.details)
     statusError.value = blocked
       ? `Cannot move ticket: blocked by ${blocked}`
-      : (err.message || 'Failed to update ticket status')
+      : (readiness
+          ? `Ticket is not ready: ${readiness}`
+          : (err.message || 'Failed to update ticket status'))
   }
 }
 
@@ -111,14 +130,24 @@ async function handleCreateTicket() {
   if (!newTicketTitle.value.trim() || !selectedProjectId.value) return
   creating.value = true
   creationError.value = null
+  const criteria = newTicketCriteria.value
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+
+  const options = {}
+  if (newTicketTemplate.value) options.template = newTicketTemplate.value
+  if (criteria.length > 0) options.acceptanceCriteria = criteria
+  if (newTicketSmallFix.value) options.smallFix = { reason: newTicketSmallFixReason.value.trim() }
+
+  const projectId = selectedProjectId.value
+  const title = newTicketTitle.value.trim()
+  const description = newTicketDesc.value.trim()
+
   try {
-    const newTicket = await createTicket(selectedProjectId.value, newTicketTitle.value.trim(), newTicketDesc.value.trim())
-    if (!newTicket) {
-      // createTicket() resolves to null on failure, so surface it here instead
-      // of silently closing the modal.
-      creationError.value = 'Failed to create ticket. Please try again.'
-      return
-    }
+    const newTicket = Object.keys(options).length > 0
+      ? await createTicket(projectId, title, description, options)
+      : await createTicket(projectId, title, description)
 
     tickets.value.unshift(newTicket)
     showCreateTicket.value = false
@@ -134,7 +163,7 @@ async function handleCreateTicket() {
     })
   } catch (err) {
     console.error('Failed to create ticket:', err)
-    creationError.value = 'Failed to create ticket. Please try again.'
+    creationError.value = err?.message || 'Failed to create ticket. Please try again.'
   } finally {
     creating.value = false
   }
@@ -165,7 +194,35 @@ async function handleCreateTicket() {
               <label>Title</label>
               <input v-model="newTicketTitle" type="text" placeholder="Enter ticket title" required />
               <label>Description</label>
-              <textarea v-model="newTicketDesc" placeholder="Optional description" rows="3"></textarea>
+              <textarea v-model="newTicketDesc" placeholder="Problem, context and expected behavior (readiness needs at least 80 characters)" rows="3"></textarea>
+
+              <label>Planning template</label>
+              <select v-model="newTicketTemplate">
+                <option value="">No template (draft only)</option>
+                <option value="architecture">Architecture</option>
+                <option value="technical">Technical</option>
+                <option value="simple">Simple</option>
+                <option value="specification">Specification</option>
+              </select>
+
+              <label class="checkbox-row">
+                <input v-model="newTicketSmallFix" type="checkbox" />
+                Small fix (bounded change, no schema/API/contract change)
+              </label>
+              <textarea
+                v-if="newTicketSmallFix"
+                v-model="newTicketSmallFixReason"
+                placeholder="Why this is a small fix (at least 10 characters)"
+                rows="2"
+              ></textarea>
+
+              <label>Acceptance criteria (one per line)</label>
+              <textarea
+                v-model="newTicketCriteria"
+                placeholder="At least one testable criterion"
+                rows="3"
+              ></textarea>
+
               <p v-if="creationError" class="creation-error">{{ creationError }}</p>
               <div class="modal-actions">
                 <button type="button" @click="showCreateTicket = false" class="btn-cancel">Cancel</button>
@@ -191,7 +248,8 @@ async function handleCreateTicket() {
     <div v-else class="board-container">
       <div v-if="statusError" class="status-error">
         <span>{{ statusError }}</span>
-        <button @click="statusError = null">Dismiss</button>
+        <ReadinessIssues v-if="statusIssues.length > 0" :issues="statusIssues" compact />
+        <button @click="statusError = null; statusIssues = []">Dismiss</button>
       </div>
       <div v-for="columnDef in statusColumns" :key="columnDef.id"
            class="status-column"

@@ -129,12 +129,22 @@ public class ApiService implements QuestionBridge.Transport {
     public Ticket pickUpTicket(Long ticketId) throws IOException {
         String url = baseUrl + "/tickets/" + ticketId + "/pickup";
         ApiResponse<Ticket> response = executePost(url, null, new TypeReference<ApiResponse<Ticket>>() {});
-        
+
         if (response.hasError()) {
+            if (isReadinessFailed(response)) {
+                throw new ReadinessException(response.getError().getMessage(),
+                    response.getError().getDetails());
+            }
             throw new IOException("Failed to pick up ticket " + ticketId + ": " + response.getError());
         }
-        
+
         return response.getData();
+    }
+
+    /** fg-45: `READINESS_FAILED` has a machine-readable issue list. */
+    private static boolean isReadinessFailed(ApiResponse<?> response) {
+        return response.getError() != null
+            && "READINESS_FAILED".equalsIgnoreCase(response.getError().getCode());
     }
 
     /**
@@ -158,11 +168,15 @@ public class ApiService implements QuestionBridge.Transport {
         String url = baseUrl + "/tickets/" + ticketId;
         Map<String, String> body = Map.of("status", newStatus);
         ApiResponse<Ticket> response = executePut(url, body, new TypeReference<ApiResponse<Ticket>>() {});
-        
+
         if (response.hasError()) {
+            if (isReadinessFailed(response)) {
+                throw new ReadinessException(response.getError().getMessage(),
+                    response.getError().getDetails());
+            }
             throw new IOException("Failed to update ticket status: " + response.getError());
         }
-        
+
         return response.getData();
     }
 

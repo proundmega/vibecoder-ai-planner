@@ -6,14 +6,39 @@ const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
 const DependencyService = require('../services/DependencyService');
-const { ValidationError, NotFoundError, ForbiddenError, ConflictError } = require('../errors/HttpError');
+const TicketReadinessService = require('../services/TicketReadinessService');
+const { ValidationError, NotFoundError, ForbiddenError, ConflictError, ReadinessError } = require('../errors/HttpError');
 
 class TicketService {
-  async create(projectId, title, description, priority, userId) {
+  /**
+   * fg-45: creation stays permissive. Optional template/acceptance/small-fix
+   * inputs seed planning state but never fail for readiness reasons.
+   */
+  async create(projectId, title, description, priority, userId, options = {}) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    return await Ticket.create(projectId, title, description, priority, userId);
+    const ticket = await Ticket.create(projectId, title, description, priority, userId);
+
+    // Criteria are inserted before applying a template so a specification's
+    // seed step sees a non-empty table and does not duplicate them.
+    if (Array.isArray(options.acceptanceCriteria) && options.acceptanceCriteria.length > 0) {
+      await TicketReadinessService.addCriteria(ticket.id, options.acceptanceCriteria, {
+        type: 'user',
+        userId,
+      });
+    }
+    if (options.template) {
+      await TicketPlanningService.applyTemplate(ticket.id, options.template, userId);
+    }
+    if (options.smallFix && options.smallFix.reason) {
+      await TicketReadinessService.smallFix(ticket.id, options.smallFix.reason, {
+        type: 'user',
+        userId,
+      });
+    }
+
+    return ticket;
   }
 
   async findByProject(projectId, userId) {
@@ -194,10 +219,18 @@ class TicketService {
     const entersExecution = data.status === 'in_progress' && ticket.status !== 'in_progress';
     if (!entersExecution) {
       // Single SQL round-trip; returns the persisted ticket.
-      return await Ticket.update(id, updates);
+      const updated = await Ticket.update(id, updates);
+      // Content edits can satisfy or invalidate the approved plan. Approval is
+      // content-bound: a failing edit clears it and requires re-approval.
+      if (data.title !== undefined || data.description !== undefined) {
+        await TicketReadinessService.refreshReadyState(id, { type: 'user', userId, role });
+      }
+      return updated;
     }
 
     const client = await pool.connect();
+    let committed = false;
+    let readiness = null;
     try {
       await client.query('BEGIN');
       const locked = await client.query(
@@ -212,11 +245,20 @@ class TicketService {
         dependsOn,
         action: 'ticket_update',
       });
+      readiness = await TicketReadinessService.assertReadyForExecution(id, {
+        toStatus: 'in_progress',
+        source: 'ticket_update',
+        actor: { type: 'user', userId, role },
+        db: client,
+      });
       const updated = await Ticket.update(id, updates, client);
       await client.query('COMMIT');
+      committed = true;
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
       return updated;
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();
@@ -248,12 +290,13 @@ class TicketService {
     await Ticket.delete(id);
   }
 
-  async updateStatus(ticketId, status, userId) {
+  async updateStatus(ticketId, status, userId, userRole = null) {
     if (status !== 'in_progress') {
       return await Ticket.updateStatus(ticketId, status, userId);
     }
 
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
       const locked = await client.query(
@@ -267,10 +310,19 @@ class TicketService {
         lock: true,
         action: 'status_transition',
       });
+      const readiness = await TicketReadinessService.assertReadyForExecution(ticketId, {
+        toStatus: 'in_progress',
+        source: 'status_transition',
+        actor: { type: 'user', userId, role: userRole || 'member' },
+        db: client,
+      });
       await Ticket.updateStatus(ticketId, status, userId, client);
       await client.query('COMMIT');
+      committed = true;
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();
@@ -310,6 +362,7 @@ class TicketService {
     }
 
     const client = await pool.connect();
+    let committed = false;
     try {
       await client.query('BEGIN');
       const ticketResult = await client.query(
@@ -337,6 +390,17 @@ class TicketService {
         action: 'pickup',
       });
 
+      const readiness = await TicketReadinessService.assertReadyForExecution(ticketId, {
+        toStatus: 'in_progress',
+        source: 'pickup',
+        actor: {
+          type: 'agent',
+          userId: normalizedActor.operatorId || null,
+          role: normalizedActor.role || null,
+        },
+        db: client,
+      });
+
       const result = await client.query(
         `UPDATE tickets
          SET assigned_runtime_id = $1, locked_at = CURRENT_TIMESTAMP, status = 'in_progress'
@@ -350,9 +414,12 @@ class TicketService {
       }
 
       await client.query('COMMIT');
+      committed = true;
+      if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
       return result.rows[0];
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!committed) await client.query('ROLLBACK');
+      if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);
       throw error;
     } finally {
       client.release();

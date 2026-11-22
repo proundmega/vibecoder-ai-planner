@@ -1,28 +1,104 @@
 const { pool } = require('../db');
 
+// fg-45: `requiredSections` is optional metadata. When present the readiness
+// evaluator checks the heading exists and is non-empty; when absent (custom
+// templates may omit it) it only enforces file presence and placeholders.
 const ARCHITECT_TEMPLATE_FILES = [
   { key: '00_ARCHITECT_CHECKLIST.md', title: 'Pre-Implementation Checklist', required: true },
-  { key: '01_ARCHITECT_REQUIREMENT.md', title: 'Requirement', required: true },
-  { key: '02_ARCHITECT_DESIGN.md', title: 'Design', required: true },
-  { key: '03_ARCHITECT_IMPLEMENTATION.md', title: 'Implementation', required: true },
-  { key: '04_SPECIFICATION.md', title: 'Specification', required: true },
+  {
+    key: '01_ARCHITECT_REQUIREMENT.md',
+    title: 'Requirement',
+    required: true,
+    requiredSections: ['Assumptions', 'Change impact'],
+  },
+  {
+    key: '02_ARCHITECT_DESIGN.md',
+    title: 'Design',
+    required: true,
+    requiredSections: ['Failure modes and recovery', 'Security considerations'],
+  },
+  {
+    key: '03_ARCHITECT_IMPLEMENTATION.md',
+    title: 'Implementation',
+    required: true,
+    requiredSections: ['Dependencies', 'Verification matrix (canonical)', 'Results'],
+  },
+  {
+    key: '04_SPECIFICATION.md',
+    title: 'Specification',
+    required: true,
+    requiredSections: ['Test-first requirement', 'File operations', 'Assumptions', 'Change impact'],
+  },
 ];
 
 const TECHNICAL_TEMPLATE_FILES = [
-  { key: '01_TECHNICAL_REQUIREMENT.md', title: 'Technical Requirements', required: true },
-  { key: '02_TECHNICAL_DESIGN.md', title: 'Technical Design', required: true },
-  { key: '03_TECHNICAL_IMPLEMENTATION.md', title: 'Implementation Plan', required: true },
+  {
+    key: '01_TECHNICAL_REQUIREMENT.md',
+    title: 'Technical Requirements',
+    required: true,
+    requiredSections: ['Assumptions', 'Change impact'],
+  },
+  {
+    key: '02_TECHNICAL_DESIGN.md',
+    title: 'Technical Design',
+    required: true,
+    requiredSections: ['Failure modes and recovery', 'Security considerations'],
+  },
+  {
+    key: '03_TECHNICAL_IMPLEMENTATION.md',
+    title: 'Implementation Plan',
+    required: true,
+    requiredSections: ['Implementation Plan'],
+  },
 ];
 
 const SIMPLE_TEMPLATE_FILES = [
-  { key: '01_SIMPLE_TASKS.md', title: 'Task List', required: true },
+  {
+    key: '01_SIMPLE_TASKS.md',
+    title: 'Task List',
+    required: true,
+    requiredSections: ['Assumptions', 'Change impact'],
+  },
 ];
 
 const SPECIFICATION_TEMPLATE_FILES = [
-  { key: '04_SPECIFICATION.md', title: 'Specification', required: true },
+  {
+    key: '04_SPECIFICATION.md',
+    title: 'Specification',
+    required: true,
+    requiredSections: [
+      'Test-first requirement',
+      'File operations',
+      'Assumptions',
+      'Change impact',
+      'Failure modes and recovery',
+      'Security considerations',
+    ],
+  },
 ];
 
 class TemplateService {
+  /**
+   * Resolve a built-in template definition for readiness evaluation.
+   * `sectionsEnforced` is false when no file declares requiredSections.
+   */
+  static getTemplateDefinition(name) {
+    if (!name) return null;
+    const files = {
+      architecture: ARCHITECT_TEMPLATE_FILES,
+      technical: TECHNICAL_TEMPLATE_FILES,
+      simple: SIMPLE_TEMPLATE_FILES,
+      specification: SPECIFICATION_TEMPLATE_FILES,
+    }[name];
+    if (!files) return null;
+    return {
+      name,
+      files,
+      custom: false,
+      sectionsEnforced: files.some(file => Array.isArray(file.requiredSections) && file.requiredSections.length > 0),
+    };
+  }
+
   static getArchitectTemplate() {
     return ARCHITECT_TEMPLATE_FILES;
   }
@@ -116,6 +192,25 @@ Summarise only. The authoritative list with reasons and follow-ups is
 00 -> Deferred register.
 - {{item}} — see 00 D1
 
+## Assumptions
+| ID | Assumption | Impact if wrong | Validation / evidence |
+|---|---|---|---|
+| A1 | {{what must be true}} | {{what breaks if it is false}} | {{test or accepted risk}} |
+
+If none: *No material assumptions — {{one-line reason}}.*
+
+## Change impact
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API routes/contracts | {{...}} | {{test or owner}} |
+| Database / migrations | {{...}} | {{file or owner}} |
+| Frontend | {{...}} | {{test or owner}} |
+| Agent / harness | {{...}} | {{test or owner}} |
+| Permissions / auth | {{...}} | {{test or owner}} |
+| Background jobs / external calls | {{...}} | {{owner}} |
+| Downstream tickets | {{...}} | {{ticket ID}} |
+| Rollback | {{...}} | {{runbook}} |
+
 ## Open questions
 | # | Question | Assumption if unanswered |
 |---|---|---|
@@ -181,6 +276,21 @@ trigger -> layer -> layer -> storage -> response
 - Expected load:
 - Query/index risks:
 - Pagination:
+
+## Failure modes and recovery
+| Failure mode | Trigger | Detection | Mitigation / test | Operator action |
+|---|---|---|---|---|
+| {{...}} | {{...}} | {{signal}} | {{test or command}} | {{action}} |
+
+## Security considerations
+- Authentication: {{how callers authenticate}}
+- Authorization / permissions: {{permission codes}}
+- Project / tenant scoping: {{how rows are scoped}}
+- Secrets: {{names and storage, never values}}
+- Audit: {{event or log}}
+- Rate limiting: {{limit or n/a}}
+- Input validation: {{schema}}
+- Data exposure: {{fields never returned}}
 
 ## Risks & edge cases
 | Risk / edge case | Impact | Mitigation |
@@ -265,6 +375,40 @@ file makes file operations exact; it does not restate 01, 02 or 03.
 **Target agent**: {{implementation agent / model}}
 **Requirement IDs covered**: {{FR1, FR2, NFR1}}
 
+## Assumptions
+| ID | Assumption | Impact if wrong | Validation / evidence |
+|---|---|---|---|
+| A1 | {{what must be true}} | {{what breaks if it is false}} | {{test or accepted risk}} |
+
+If none: *No material assumptions — {{one-line reason}}.*
+
+## Change impact
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API routes/contracts | {{...}} | {{test or owner}} |
+| Database / migrations | {{...}} | {{file or owner}} |
+| Frontend | {{...}} | {{test or owner}} |
+| Agent / harness | {{...}} | {{test or owner}} |
+| Permissions / auth | {{...}} | {{test or owner}} |
+| Background jobs / external calls | {{...}} | {{owner}} |
+| Downstream tickets | {{...}} | {{ticket ID}} |
+| Rollback | {{...}} | {{runbook}} |
+
+## Failure modes and recovery
+| Failure mode | Trigger | Detection | Mitigation / test | Operator action |
+|---|---|---|---|---|
+| {{...}} | {{...}} | {{signal}} | {{test or command}} | {{action}} |
+
+## Security considerations
+- Authentication: {{how callers authenticate}}
+- Authorization / permissions: {{permission codes}}
+- Project / tenant scoping: {{how rows are scoped}}
+- Secrets: {{names and storage, never values}}
+- Audit: {{event or log}}
+- Rate limiting: {{limit or n/a}}
+- Input validation: {{schema}}
+- Data exposure: {{fields never returned}}
+
 ## Test-first requirement
 Create the empty test stubs listed under Test expectations before any
 production code. Then implement. Then fill in the assertions.
@@ -339,6 +483,25 @@ Describe the technical requirements here.
 
 ---
 
+## Assumptions
+| ID | Assumption | Impact if wrong | Validation / evidence |
+|---|---|---|---|
+| A1 | {{what must be true}} | {{what breaks if it is false}} | {{test or accepted risk}} |
+
+If none: *No material assumptions — {{one-line reason}}.*
+
+## Change impact
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API routes/contracts | {{...}} | {{test or owner}} |
+| Database / migrations | {{...}} | {{file or owner}} |
+| Frontend | {{...}} | {{test or owner}} |
+| Agent / harness | {{...}} | {{test or owner}} |
+| Permissions / auth | {{...}} | {{test or owner}} |
+| Background jobs / external calls | {{...}} | {{owner}} |
+| Downstream tickets | {{...}} | {{ticket ID}} |
+| Rollback | {{...}} | {{runbook}} |
+
 ## Technical Constraints
 
 - Constraint 1
@@ -377,6 +540,21 @@ GET /api/endpoint
 POST /api/endpoint
 \`\`\`
 
+## Failure modes and recovery
+| Failure mode | Trigger | Detection | Mitigation / test | Operator action |
+|---|---|---|---|---|
+| {{...}} | {{...}} | {{signal}} | {{test or command}} | {{action}} |
+
+## Security considerations
+- Authentication: {{how callers authenticate}}
+- Authorization / permissions: {{permission codes}}
+- Project / tenant scoping: {{how rows are scoped}}
+- Secrets: {{names and storage, never values}}
+- Audit: {{event or log}}
+- Rate limiting: {{limit or n/a}}
+- Input validation: {{schema}}
+- Data exposure: {{fields never returned}}
+
 ### Implementation Plan
 
 1. Phase 1: Setup
@@ -398,7 +576,8 @@ POST /api/endpoint
 **PR**: TBD
 **Branch**: TBD
 
-**Dependencies**: None
+## Dependencies
+- None
 
 ---
 
@@ -419,14 +598,14 @@ Describe the purpose and value delivered.
 
 ---
 
-### c) Testing
+## Testing
 
 - [ ] Test 1
 - [ ] Test 2
 
 ---
 
-### d) Rollback Plan
+## Rollback
 
 - **How**: \`git revert <commit>\`
 - **Data impact**: None
@@ -459,6 +638,21 @@ Describe the purpose and value delivered.
 - [ ] Task 1
 - [ ] Task 2
 - [ ] Task 3
+
+## Assumptions
+| ID | Assumption | Impact if wrong | Validation / evidence |
+|---|---|---|---|
+| A1 | {{what must be true}} | {{what breaks if it is false}} | {{test or accepted risk}} |
+
+If none: *No material assumptions — {{one-line reason}}.*
+
+## Change impact
+| Area | Impact | Evidence / owner |
+|---|---|---|
+| API routes/contracts | {{...}} | {{test or owner}} |
+| Database / migrations | {{...}} | {{file or owner}} |
+| Frontend | {{...}} | {{test or owner}} |
+| Rollback | {{...}} | {{runbook}} |
 
 ---
 

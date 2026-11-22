@@ -48,6 +48,33 @@ class DependencyConflictError extends ConflictError {
   }
 }
 
+/**
+ * fg-45: a ticket is not ready for execution. 409 because the ticket state
+ * conflicts with the requested transition. `details.issues` is machine-readable
+ * and `result` carries the internal context for the post-transaction audit row.
+ */
+class ReadinessError extends AppError {
+  constructor(result = {}, message = 'Ticket is not ready') {
+    super(message, 409, 'READINESS_FAILED');
+    this.result = result;
+    this.details = {
+      issues: Array.isArray(result.issues) ? result.issues : [],
+      waivedCodes: Array.isArray(result.waivedCodes) ? result.waivedCodes : [],
+    };
+  }
+}
+
+/**
+ * fg-45: `planning_status=completed` is service-owned. The planning status
+ * route rejects direct completion and any move out of the completed state.
+ */
+class PlanningStatusError extends ConflictError {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
 class RateLimitError extends AppError {
   constructor(message = 'Too many requests') {
     super(message, 429, 'RATE_LIMITED');
@@ -74,6 +101,8 @@ module.exports = {
   UnauthorizedError,
   ConflictError,
   DependencyConflictError,
+  ReadinessError,
+  PlanningStatusError,
   RateLimitError,
   ServiceUnavailableError,
   UtilityError,

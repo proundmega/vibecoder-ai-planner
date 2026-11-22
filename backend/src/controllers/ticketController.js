@@ -16,8 +16,12 @@ async function getTicket(req, res, next) {
 
 async function createTicket(req, res, next) {
   try {
-    const { projectId, title, description, priority } = req.body;
-    const ticket = await TicketService.create(projectId, title, description, priority, req.user.userId);
+    const { projectId, title, description, priority, template, acceptanceCriteria, smallFix } = req.body;
+    const ticket = await TicketService.create(projectId, title, description, priority, req.user.userId, {
+      template,
+      acceptanceCriteria,
+      smallFix,
+    });
     res.status(201).json({ success: true, data: ticket });
   } catch (error) {
     next(error);
@@ -150,7 +154,7 @@ async function changeStatus(req, res, next) {
       });
     }
     
-    await TicketService.updateStatus(req.params.ticketId, status, req.user.userId);
+    await TicketService.updateStatus(req.params.ticketId, status, req.user.userId, req.user.role);
     res.json({ success: true, data: { message: 'Status updated', status } });
   } catch (error) {
     next(error);

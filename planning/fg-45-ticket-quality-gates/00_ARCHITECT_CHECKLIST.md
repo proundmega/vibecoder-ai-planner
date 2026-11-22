@@ -1,14 +1,14 @@
 ---
 id: "fg-45"
 title: "Ticket Quality Gates and Definition of Ready"
-status: planned
+status: in_progress
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
-updated: "2026-11-08"
+updated: "2026-11-22"
 pr: null
-branch: null
+branch: "feat/fg-45-readiness-gate"
 depends_on: ["fg-30", "fg-31"]
 ---
 
@@ -43,6 +43,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Enforce project membership in `ProjectService.getOne`/`Ticket.findByProject` (they currently ignore `userId`) | fg-45 | Security | bp-124 follow-up | open |
 | D5 | Readiness/blocked metrics | fg-46 | Observability | fg-46-flow-observability | open |
 | D6 | Traceability consumes the requirement IDs exported by this ticket | self | Review | fg-51-requirement-traceability | open |
+| D7 | Root/product template drift test (only one copy changes) | self | Testing | fg-50-planning-template-hygiene | open |
 
 ## Important design decisions
 
@@ -73,22 +74,22 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 ## Testing checklist
 
-- [ ] Evaluator unit tests for all issue codes.
-- [ ] Gate tests for pickup, `POST /status`, `PUT /tickets/:id`, phase transitions, planning status.
-- [ ] All three gate modes (`off`/`warn`/`enforce`).
-- [ ] `ready_at` lifecycle: passing/failing edits, criteria, template, revocation, expiry sweep, content-bound re-approval
-- [ ] `approve-plan` transactional tests (no partial completion).
-- [ ] `completed -> in_progress` / `apply-template` / post-approval upsert tests; failing edit invalidates approval; `replan` clears approval/ready and actors.
-- [ ] Override permission/scope/expiry tests; project-membership tests for approve, small-fix, replan and override.
-- [ ] Audit actor types (user/agent/system); blocked rows emitted after COMMIT/ROLLBACK, exactly once (no FK lock, no duplicate).
-- [ ] Java processor tests for both legacy and harness modes.
-- [ ] Backfill/grandfather migration test.
-- [ ] Missing/empty/placeholder assumptions, failure modes, security
+- [x] Evaluator unit tests for all issue codes.
+- [x] Gate tests for pickup, `POST /status`, `PUT /tickets/:id`, phase transitions, planning status.
+- [x] All three gate modes (`off`/`warn`/`enforce`).
+- [x] `ready_at` lifecycle: passing/failing edits, criteria, template, revocation, expiry sweep, content-bound re-approval
+- [x] `approve-plan` transactional tests (no partial completion).
+- [x] `completed -> in_progress` / `apply-template` / post-approval upsert tests; failing edit invalidates approval; `replan` clears approval/ready and actors.
+- [x] Override permission/scope/expiry tests; project-membership tests for approve, small-fix, replan and override.
+- [x] Audit actor types (user/agent/system); blocked rows emitted after COMMIT/ROLLBACK, exactly once (no FK lock, no duplicate).
+- [x] Harness processor readiness tests (the legacy processor was removed with fg-54).
+- [x] Backfill/grandfather migration test.
+- [x] Missing/empty/placeholder assumptions, failure modes, security
       considerations and change impact each produce a specific issue code.
-- [ ] Small-fix exemption waives conditions 11-14 but still checks
+- [x] Small-fix exemption waives conditions 11-14 but still checks
       assumptions, placeholders, criteria and approval.
-- [ ] Security-sensitive scope (auth, permissions, migrations, agent boundary,
+- [x] Security-sensitive scope (auth, permissions, migrations, agent boundary,
       external calls, secrets) requires the security section.
-- [ ] Requirement IDs are stable across re-approval; renaming/removing one
+- [x] Requirement IDs are stable across re-approval; renaming/removing one
       requires `replan`.
-- [ ] Frontend error propagation (detail + board) and readiness panel test.
+- [x] Frontend error propagation (detail + board) and readiness panel test.

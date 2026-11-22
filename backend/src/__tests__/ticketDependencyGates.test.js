@@ -15,6 +15,12 @@ jest.mock('../services/DependencyService', () => ({
   assertReady: jest.fn(),
 }));
 
+jest.mock('../services/TicketReadinessService', () => ({
+  assertReadyForExecution: jest.fn().mockResolvedValue({ ready: true }),
+  emitBlocked: jest.fn().mockResolvedValue(undefined),
+  refreshReadyState: jest.fn().mockResolvedValue(undefined),
+}));
+
 const { pool } = require('../db');
 const Ticket = require('../models/ticket');
 const PermissionService = require('../services/PermissionService');

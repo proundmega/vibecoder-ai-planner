@@ -30,6 +30,7 @@ vi.mock('@/api/tickets', () => ({
   createTicket: vi.fn(),
   blockerSummary: () => null,
   dependencyBlockedMessage: () => null,
+  readinessIssueSummary: () => null,
 }))
 
 import TicketBoard from '@/views/TicketBoard.vue'
@@ -72,7 +73,7 @@ describe('TicketBoard create flow', () => {
   })
 
   it('keeps the modal open and surfaces the error when creation fails', async () => {
-    ticketsApi.createTicket.mockResolvedValue(null)
+    ticketsApi.createTicket.mockRejectedValue(new Error('Creation failed'))
 
     const wrapper = mount(TicketBoard)
     await flushPromises()
