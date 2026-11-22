@@ -17,6 +17,12 @@ storage policy, host script, verify the existing supervisor logs, docs.
 | `agent/src/test/java/.../harness/HarnessEventStorageTest.java` | `storage.*` event names and payload fields |
 | `agent/scripts/host-storage.test.sh` | Bash fixtures for dry-run/apply/recovery, stopped-supervisor and `.active`/PID guards |
 
+## Test-First Requirement
+
+Create the test stubs in §1 before production code, implement the production
+code, then fill the stubs with assertions. The as-built results are recorded in
+`03`.
+
 ## 2. `WorkspaceManager` contract
 
 Add a workspace key without breaking existing callers:
