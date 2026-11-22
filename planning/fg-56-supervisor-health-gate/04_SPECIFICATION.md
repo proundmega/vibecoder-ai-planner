@@ -29,7 +29,8 @@ final class BackendHealthGate {
 non-2xx responses are retried. On exhaustion it throws `IOException` with the
 URL and last reason. It logs attempt/success/failure without credentials. One
 static `HttpClient` is reused (never one per probe); request timeout uses the
-remaining budget, while connect has a fixed 5s ceiling.
+remaining budget, while connect has a fixed 5s ceiling. The configured timeout
+is a retry deadline, not a hard total cap.
 
 ## 3. Supervisor wiring
 

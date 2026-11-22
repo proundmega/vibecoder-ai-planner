@@ -36,20 +36,20 @@
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Java | `BackendHealthGateTest`, `SupervisorMainHealthWiringTest` | 2xx/503 probe and bounded retry; `run()` stops at the gate before credential/declaration work | `mvn test -Dtest=BackendHealthGateTest,SupervisorMainHealthWiringTest` |
+| FR1 | Java | `BackendHealthGateTest`, `SupervisorMainHealthWiringTest` | 2xx/503 probe and bounded retry; `run()` stops at the gate before network auth/declaration (request paths); local credential-store construction is code-reviewed | `mvn test -Dtest=BackendHealthGateTest,SupervisorMainHealthWiringTest` |
 | FR2 | Java | `BackendHealthGateTest` | bounded timeout, retry interval, per-request remaining-time cap and connect timeout | same |
 | FR3 | Java | `BackendHealthGateTest` | default required, explicit opt-out | same |
 | FR4 | Java | `BackendHealthGateTest` | success/failure path; log text is code-reviewed (no appender assertion) | same |
 | FR5 | Java | `SupervisorMainTest`, `SupervisorIntegrationTest` | existing helper and crash-adoption flows remain green | `mvn test -Dtest=SupervisorMainTest,SupervisorIntegrationTest` |
 | FR6 | Docs | review | env vars and D7 closeout recorded | `node planning/check-planning.js` |
-| NFR1 | Java | `SupervisorReconcileTest`, `SupervisorMainHealthWiringTest` | probe gate stops startup before credentials; a dead child is not respawned while unhealthy, including direct/SIGHUP reconcile | `mvn test -Dtest=SupervisorReconcileTest,SupervisorMainHealthWiringTest` |
+| NFR1 | Java | `SupervisorReconcileTest`, `SupervisorMainHealthWiringTest` | probe gate stops startup before network auth/declaration; a dead child is not respawned while unhealthy, including direct/SIGHUP reconcile | `mvn test -Dtest=SupervisorReconcileTest,SupervisorMainHealthWiringTest` |
 | NFR2 | Java | `BackendHealthGateTest` | `safeUrl` strips userinfo from gate/monitor/probe logs | same |
 | FR7 | Java | `BackendHealthMonitorTest`, `SupervisorReconcileTest` | Detects outage/recovery, bounded backoff, disabled/no-URL; runLoop and direct reconcile pause while unhealthy | `mvn test -Dtest=BackendHealthMonitorTest,SupervisorReconcileTest` |
 
 ## Review checklist
 
 - [x] Every `FR*`/`NFR*` has a passing row
-- [x] Gate runs before any child construction; the subprocess harness test proves `run()` stops before credentials
+- [x] Gate runs before any child construction; the subprocess harness test proves `run()` stops before network auth/declaration. Local credential-store construction is code-reviewed.
 - [x] Timeout fails closed
 - [x] Docs updated; no secret in logs
 

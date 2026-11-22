@@ -37,8 +37,9 @@ skips only the gate, not declaration/reconcile.
 A single static `HttpClient` serves startup and monitor probes (one selector
 thread/file descriptor). `HttpRequest.timeout()` uses the remaining startup
 budget; the connect phase has a fixed 5s bound, so a very short overall timeout
-can overshoot by at most that connect timeout. Creating a client per probe would
-leak selector threads and descriptors in a long-running supervisor.
+can overshoot by at most that connect timeout. `SUPERVISOR_HEALTH_TIMEOUT_SECONDS`
+is therefore a retry deadline, not a hard wall-clock cap. Creating a client per
+probe would leak selector threads and descriptors in a long-running supervisor.
 
 ### Slice B: post-start monitor
 
