@@ -21,7 +21,9 @@ describe('Ticket CRUD and Status Transitions', () => {
     cy.visit(`/projects/${projectId}/tickets`);
     cy.contains('button', '+ New Ticket').click();
     cy.get('.modal input[placeholder="Enter ticket title"]').type(title);
-    cy.get('.modal textarea[placeholder="Optional description"]').type('Created by Cypress');
+    // The readiness wizard replaced the old description placeholder; target the
+    // description field positionally so copy changes do not break the spec.
+    cy.get('.modal textarea').first().type('Created by Cypress');
     cy.get('.modal .btn-submit').contains('Create').click();
 
     // Creating now navigates straight into the ticket's edit view.
