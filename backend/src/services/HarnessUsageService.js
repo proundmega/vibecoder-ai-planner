@@ -281,7 +281,7 @@ class HarnessUsageService {
               u.input_tokens, u.output_tokens, u.cost_usd, u.duration_ms,
               u.ticket_id,
               'harness',
-              jsonb_build_object('run_id', $1, 'cached_tokens', u.cached_tokens,
+              jsonb_build_object('run_id', $1::uuid, 'cached_tokens', u.cached_tokens,
                                  'tool_calls', u.tool_calls)
        FROM harness_usage u
        WHERE u.run_id = $1

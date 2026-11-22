@@ -1,6 +1,7 @@
 const { Pool } = require('pg');
 const HarnessRunService = require('../../services/HarnessRunService');
 const HarnessReaper = require('../../services/HarnessReaper');
+const HarnessUsageService = require('../../services/HarnessUsageService');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -88,6 +89,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
 
   afterAll(async () => {
     const owners = [ownerId, otherOwnerId];
+    await pool.query('DELETE FROM harness_usage WHERE ticket_id = ANY($1)', [
+      [ticketId, otherTicketId],
+    ]);
+    await pool.query('DELETE FROM usage_logs WHERE ticket_id = ANY($1)', [
+      [ticketId, otherTicketId],
+    ]);
     await pool.query('DELETE FROM harness_runs WHERE ticket_id = ANY($1)', [
       [ticketId, otherTicketId],
     ]);
@@ -1079,5 +1086,38 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     await expect(
       HarnessRunService.renewLease({ ticketId, runId: run.id, runtimeId, ttlSeconds: 60 })
     ).resolves.toBeNull();
+  });
+
+  test('flushes runtime-owned usage into usage_logs for the run', async () => {
+    const run = await start({ branch: 'harness/usage-flush' });
+    await pool.query(
+      `INSERT INTO harness_usage
+         (run_id, ticket_id, project_id, runtime_id, model,
+          input_tokens, output_tokens, cost_usd)
+       VALUES ($1, $2, $3, $4, 'gpt-4o', 100, 50, 0.25)`,
+      [run.id, ticketId, projectId, runtimeId]
+    );
+
+    const result = await HarnessUsageService.flushRunToUsageLogs(run.id);
+    expect(result.inserted).toBe(1);
+
+    const logs = await pool.query(
+      `SELECT project_id, runtime_id, provider_type, model, tokens_in,
+              tokens_out, cost_usd, ticket_id, request_type, metadata
+       FROM usage_logs
+       WHERE request_type = 'harness' AND metadata->>'run_id' = $1`,
+      [run.id]
+    );
+    expect(logs.rows).toHaveLength(1);
+    expect(logs.rows[0].provider_type).toBe('harness');
+    expect(logs.rows[0].request_type).toBe('harness');
+    expect(logs.rows[0].model).toBe('gpt-4o');
+    expect(Number(logs.rows[0].tokens_in)).toBe(100);
+    expect(Number(logs.rows[0].tokens_out)).toBe(50);
+    expect(Number(logs.rows[0].cost_usd)).toBeCloseTo(0.25, 6);
+    expect(logs.rows[0].metadata.run_id).toBe(run.id);
+    expect(String(logs.rows[0].project_id)).toBe(String(projectId));
+    expect(String(logs.rows[0].runtime_id)).toBe(String(runtimeId));
+    expect(String(logs.rows[0].ticket_id)).toBe(String(ticketId));
   });
 });
