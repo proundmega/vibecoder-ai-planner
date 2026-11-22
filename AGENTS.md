@@ -320,7 +320,7 @@ resumes the same OpenCode session. A timeout fails the run with
 tool signatures to a `doom_loop` question and aborts at the continue cap. With
 the flag off the Phase 1 behavior is unchanged.
 See `planning/fg-30-autonomous-coding-harness/` and
-`planning/fg-55-human-question-loop/`.
+`planning/DONE/fg-55-human-question-loop/`.
 
 ## API
 
@@ -425,7 +425,7 @@ Unplanned defects and flow changes found while testing live in `FUTURE_IDEAS.txt
 under the **Ticket lifecycle, phase flow & defects (intake)** section. Promote an
 item into a planning suite (or attach it to the owning suite) before implementing
 it, then remove/update the intake row instead of duplicating it. Quality-gate and
-Definition-of-Ready enforcement is scoped to `planning/fg-45-ticket-quality-gates/`.
+Definition-of-Ready enforcement is scoped to `planning/DONE/fg-45-ticket-quality-gates/`.
 
 ## Gotchas
 
