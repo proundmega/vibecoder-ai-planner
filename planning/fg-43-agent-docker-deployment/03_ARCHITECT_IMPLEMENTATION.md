@@ -15,6 +15,7 @@
 - [x] Add the supervisor `AGENT_HOST_MAX_RUNTIMES` guard and capacity log
 - [x] Replace the pool-controller assumptions with the fg-54 supervisor model
 - [x] Document host sizing and the declaration contract
+- [x] Add the host-sizing env vars to `AGENTS.md` and the host-init step to the fg-54 enrollment runbook
 
 ## Per-file changes
 
@@ -28,6 +29,8 @@
 | `agent/src/test/java/com/vibecode/agent/supervisor/RuntimeConfigTest.java` | change | 7-runtime reference expansion |
 | `agent/README.md` | change | Host sizing section |
 | `agent/agent.ini.example` | change | Note that host-init sums counts and the supervisor caps growth |
+| `AGENTS.md` | change | List `AGENT_HOST_MAX_RUNTIMES`, `SUPERVISOR_CPUS`, `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_MEMORY_BUDGET_MB` |
+| `planning/DONE/fg-54-agent-fleet/05_RUNBOOK.md` | change | Add the host-init sizing/check step before enrollment |
 
 ## Verification matrix (canonical)
 
@@ -62,3 +65,5 @@
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `f86737b` (PR #197) | shell 65/65; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
+| 2026-11-22 | `ccf5d6a` | Merged (PR #197) | Merged to master after review fixes. |
+| 2026-11-22 | `8fd2e57` | shell 68/68; planning check | Closeout: runbook Docker/manual split, check/dry-run host values, AGENTS/PENDING/roadmap reconciliation and bt-60/fg-45 status. No production code. |

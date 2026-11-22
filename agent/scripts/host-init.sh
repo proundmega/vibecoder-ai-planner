@@ -376,6 +376,14 @@ SUPERVISOR_MEMORY_LIMIT_GB="$(awk -v b="$SUPERVISOR_MEMORY_BUDGET_MB" 'BEGIN {
     printf "%d", int((b / 1024) + 0.999) + 1
 }')"
 echo "Supervisor container: ${SUPERVISOR_MEMORY_LIMIT_GB}G / ${SUPERVISOR_CPUS} cpus (budget ${SUPERVISOR_MEMORY_BUDGET_MB} MB); AGENT_HOST_MAX_RUNTIMES=${HOST_MAX_RUNTIMES}"
+if [[ "$DRY_RUN" -eq 1 || "$CHECK" -eq 1 ]]; then
+    echo "Environment values (apply these for a manual java -jar start):"
+    echo "  SUPERVISOR_CPUS=${SUPERVISOR_CPUS}"
+    echo "  SUPERVISOR_MEMORY_LIMIT=${SUPERVISOR_MEMORY_LIMIT_GB}G"
+    echo "  SUPERVISOR_MEMORY_BUDGET_MB=${SUPERVISOR_MEMORY_BUDGET_MB}"
+    echo "  AGENT_HOST_MAX_RUNTIMES=${HOST_MAX_RUNTIMES}"
+    echo "  AGENT_RUNTIME_HEAP_MB=${HEAP_MB}"
+fi
 
 # Docker-mode prerequisites are validated before writing an env file.
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
