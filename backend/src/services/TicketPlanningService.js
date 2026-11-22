@@ -4,7 +4,7 @@ const Ticket = require('../models/ticket');
 const TemplateService = require('./TemplateService');
 const TicketReadinessService = require('./TicketReadinessService');
 const logger = require('../utils/logger');
-const { NotFoundError, ValidationError, PlanningStatusError, ForbiddenError } = require('../errors/HttpError');
+const { NotFoundError, ValidationError, PlanningStatusError } = require('../errors/HttpError');
 
 class TicketPlanningService {
   async list(ticketId, _userId) {
@@ -196,7 +196,9 @@ class TicketPlanningService {
           role,
         });
       } catch (error) {
-        if (!(error instanceof ForbiddenError)) throw error;
+        // Best-effort by design: the template files are already committed, so
+        // any seed failure is logged and skipped rather than returned as a
+        // post-write error. Explicit criteria writes remain strict.
         logger.warn(
           `[readiness] skipped criteria seed for ticket ${ticketId}: ${error.message}`
         );

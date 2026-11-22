@@ -1,3 +1,6 @@
+jest.mock('../db', () => ({
+  pool: { query: jest.fn().mockResolvedValue({ rows: [] }) },
+}));
 jest.mock('../models/project');
 jest.mock('../models/ticket');
 jest.mock('../services/PermissionService');
@@ -16,6 +19,7 @@ jest.mock('../services/TicketReadinessService', () => ({
   refreshReadyState: jest.fn(),
 }));
 
+const { pool } = require('../db');
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
 const PermissionService = require('../services/PermissionService');
@@ -31,6 +35,7 @@ describe('fg-45 permissive ticket creation', () => {
     Ticket.create.mockResolvedValue({ id: '10', projectId: '1', title: 'Title' });
     PermissionService.hasPermission.mockResolvedValue(true);
     ProjectAccessService.assertProjectMember.mockResolvedValue(undefined);
+    pool.query.mockResolvedValue({ rows: [] });
   });
 
   test('a title-only ticket is created without readiness state', async () => {
@@ -134,6 +139,22 @@ describe('fg-45 permissive ticket creation', () => {
       'specification',
       '900',
       'project_admin'
+    );
+  });
+
+  test('a post-insert option failure removes the draft', async () => {
+    TicketReadinessService.addCriteria.mockRejectedValueOnce(new Error('DB error'));
+
+    await expect(
+      TicketService.create('1', 'Title', 'description', 'medium', '100', {
+        acceptanceCriteria: ['A testable criterion'],
+        role: 'project_admin',
+      })
+    ).rejects.toThrow('DB error');
+
+    expect(pool.query).toHaveBeenCalledWith(
+      'DELETE FROM tickets WHERE id = $1',
+      ['10']
     );
   });
 

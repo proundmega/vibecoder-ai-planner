@@ -1,4 +1,5 @@
 const TicketPlanningService = require('../services/TicketPlanningService');
+const TicketReadinessService = require('../services/TicketReadinessService');
 const TemplateService = require('../services/TemplateService');
 
 jest.mock('../db', () => ({
@@ -202,6 +203,18 @@ describe('TicketPlanningService', () => {
       );
       expect(updateCalls.length).toBe(1);
       expect(updateCalls[0][1]).toEqual(['my-custom-template', 'ticket-1']);
+    });
+
+    it('does not fail a committed template when the criteria seed throws', async () => {
+      const client = createMockClient(jest.fn().mockResolvedValue({ rows: [] }));
+      TicketReadinessService.seedCriteriaFromPlanning.mockRejectedValueOnce(
+        new Error('DB error')
+      );
+
+      await expect(
+        TicketPlanningService.applyTemplate('ticket-1', 'simple', 'user-1', 'member')
+      ).resolves.toBeDefined();
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
     });
 
     it('does not re-check membership for a planner-granted agent actor', async () => {

@@ -355,7 +355,7 @@ async assertProjectMember(userId, projectId, { role, allowSuperAdmin = true } = 
 - Use `req.user.userId` (the agent owner), not `req.user.id`, when the actor is an agent.
 - Call `assertProjectMember` from `approve-plan`, `small-fix`, `replan`, `override` (and `DELETE`) and acceptance-criteria writes after resolving the ticket's `project_id`.
 - `super_admin` is the only explicit bypass; project admins must still be project members. The `GET /readiness` capability (`canEditCriteria`) uses the same bypass.
-- Template application keeps its existing route authorization (JWT ticket access or a `planner` runtime grant) and does not add a second membership gate. A criteria seed from an applied template is best-effort: a membership rejection skips the seed instead of failing after the template files were written.
+- Template application keeps its existing route authorization (JWT ticket access or a `planner` runtime grant) and does not add a second membership gate. A criteria seed from an applied template is best-effort: any seed failure is logged and skipped instead of failing after the template files were written.
 - This ticket scopes the check to readiness routes. Retrofitting `ProjectService.getOne`/`Ticket.findByProject` is a follow-up (recorded in Pending Scope).
 
 `approve-plan` transaction:

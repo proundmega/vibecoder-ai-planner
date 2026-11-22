@@ -2,6 +2,7 @@ const Ticket = require('../models/ticket');
 const Project = require('../models/project');
 const User = require('../models/user');
 const { pool } = require('../db');
+const logger = require('../utils/logger');
 const PermissionService = require('../services/PermissionService');
 const TicketPlanningService = require('../services/TicketPlanningService');
 const TicketAttachmentService = require('../services/TicketAttachmentService');
@@ -13,7 +14,8 @@ const { ValidationError, NotFoundError, ForbiddenError, ConflictError, Readiness
 class TicketService {
   /**
    * fg-45: creation stays permissive. Optional template/acceptance/small-fix
-   * inputs seed planning state but never fail for readiness reasons.
+   * inputs seed planning state but never fail for readiness reasons. A failure
+   * after the draft insert is compensated by removing the draft.
    */
   async create(projectId, title, description, priority, userId, options = {}) {
     const project = await Project.findById(projectId);
@@ -40,24 +42,44 @@ class TicketService {
 
     const ticket = await Ticket.create(projectId, title, description, priority, userId);
 
-    // Criteria are inserted before applying a template so a specification's
-    // seed step sees a non-empty table and does not duplicate them.
-    if (hasCriteria) {
-      await TicketReadinessService.addCriteria(ticket.id, options.acceptanceCriteria, {
-        type: 'user',
-        userId,
-        role,
-      });
-    }
-    if (options.template) {
-      await TicketPlanningService.applyTemplate(ticket.id, options.template, userId, role);
-    }
-    if (options.smallFix && options.smallFix.reason) {
-      await TicketReadinessService.smallFix(ticket.id, options.smallFix.reason, {
-        type: 'user',
-        userId,
-        role,
-      });
+    try {
+      // Criteria are inserted before applying a template so a specification's
+      // seed step sees a non-empty table and does not duplicate them.
+      if (hasCriteria) {
+        await TicketReadinessService.addCriteria(ticket.id, options.acceptanceCriteria, {
+          type: 'user',
+          userId,
+          role,
+        });
+      }
+      if (options.template) {
+        await TicketPlanningService.applyTemplate(ticket.id, options.template, userId, role);
+      }
+      if (options.smallFix && options.smallFix.reason) {
+        await TicketReadinessService.smallFix(ticket.id, options.smallFix.reason, {
+          type: 'user',
+          userId,
+          role,
+        });
+      }
+    } catch (error) {
+      // The prechecks cover authorization, but a DB/template failure can still
+      // happen after the insert. Compensate so a rejected create does not leave
+      // a visible draft. Fall back to a soft delete if the hard delete is
+      // blocked by a foreign key.
+      try {
+        await pool.query('DELETE FROM tickets WHERE id = $1', [ticket.id]);
+      } catch (cleanupError) {
+        logger.warn(
+          `[readiness] could not delete draft ticket ${ticket.id} after create failure: ${cleanupError.message}`
+        );
+        await Ticket.delete(ticket.id).catch(softError => {
+          logger.warn(
+            `[readiness] could not soft-delete draft ticket ${ticket.id}: ${softError.message}`
+          );
+        });
+      }
+      throw error;
     }
 
     return ticket;
