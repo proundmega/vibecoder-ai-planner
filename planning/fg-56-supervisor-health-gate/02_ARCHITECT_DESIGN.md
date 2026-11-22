@@ -34,6 +34,18 @@ any 2xx as healthy and any connection error/5xx/non-2xx as retryable. The wait
 is bounded; on timeout it throws, so no child is created. `SUPERVISOR_HEALTH_REQUIRED=false`
 skips only the gate, not declaration/reconcile.
 
+### Slice B: post-start monitor
+
+After the startup gate, `BackendHealthMonitor` keeps probing the same endpoint
+on a daemon scheduler. A 2xx response is healthy; a failure flips the state to
+unhealthy, logs once, and waits with exponential backoff (base interval,
+doubling up to the max). Success resets the interval and logs recovery. The
+existing declaration/reconcile tick checks `isHealthy()` and skips while the
+backend is down, so it does not declare or spawn against an unavailable API.
+Existing children keep their own retry/heartbeat behavior; the monitor never
+stops the supervisor. `SUPERVISOR_HEALTH_REQUIRED=false` disables monitoring
+along with the startup gate.
+
 ## Configuration
 
 | Variable | Default | Purpose |
@@ -41,6 +53,9 @@ skips only the gate, not declaration/reconcile.
 | `SUPERVISOR_HEALTH_REQUIRED` | `true` | Enable the startup health gate |
 | `SUPERVISOR_HEALTH_TIMEOUT_SECONDS` | `120` | Maximum wait |
 | `SUPERVISOR_HEALTH_INTERVAL_SECONDS` | `2` | Retry interval |
+| `SUPERVISOR_HEALTH_MONITOR_ENABLED` | `true` | Post-start monitor (off when the gate is off) |
+| `SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS` | `10` | Base monitor interval |
+| `SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS` | `60` | Maximum exponential backoff |
 
 ## Failure modes
 
@@ -50,7 +65,7 @@ skips only the gate, not declaration/reconcile.
 | Backend healthy first try | Log success and continue |
 | Timeout | Throw `IOException` with the URL and last reason |
 | Gate disabled | Log the skip and continue |
-| Backend dies after startup | Existing retry/declaration path remains; continuous monitoring is D1 |
+| Backend dies after startup | Monitor flips unhealthy, logs once, backs off, and the declaration/reconcile tick pauses until recovery |
 
 ## Security
 

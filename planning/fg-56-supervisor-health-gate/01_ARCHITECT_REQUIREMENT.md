@@ -31,6 +31,7 @@ an incomplete API.
 | FR4 | The gate logs attempts, success and the final failure reason without secrets. | Gate test captures success/failure messages. |
 | FR5 | After the gate passes, the existing enrollment, declaration and reconcile flow is unchanged; a later backend restart is handled by the existing retry loop. | Existing supervisor tests remain green. |
 | FR6 | Document the env vars in `agent/README.md`/`AGENTS.md` and record the fg-43 D7 closeout. | Docs review + `check-planning.js`. |
+| FR7 | After startup, a background monitor probes `BACKEND_URL/api/health` at a base interval with exponential backoff up to a bound; it logs loss/recovery without credentials and the declaration/reconcile tick pauses while unhealthy. | Monitor test detects an outage and recovery; backoff is bounded; the retry tick skips while unhealthy. |
 
 ## Non-functional / safety
 
@@ -41,5 +42,6 @@ an incomplete API.
 
 ## Out of scope
 
-Continuous health monitoring, circuit-breaker behavior and backend-to-agent
-push are deferred (D1/D2).
+Circuit-breaker behavior, health-gated restarts without Compose and
+backend-to-agent push are deferred (D2). Continuous monitoring is slice B
+(FR7).

@@ -87,6 +87,21 @@ final class BackendHealthGate {
         await(url, () -> probe(url), timeout, interval);
     }
 
+    /**
+     * fg-56 slice B: one non-throwing probe for the post-start monitor.
+     * Returns true only for a 2xx response.
+     */
+    static boolean probeOnce(String backendUrl) {
+        String url = healthUrl(backendUrl);
+        try {
+            probe(url);
+            return true;
+        } catch (IOException | RuntimeException e) {
+            log.debug("Backend health monitor probe failed for {}: {}", url, e.getMessage());
+            return false;
+        }
+    }
+
     static void await(String label, Prober prober, Duration timeout, Duration interval)
         throws IOException {
         Duration wait = timeout == null || timeout.isNegative() || timeout.isZero()

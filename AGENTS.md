@@ -177,7 +177,10 @@ Host sizing (fg-43): `AGENT_HOST_MAX_RUNTIMES` (default 50),
 Supervisor health gate (fg-56): `SUPERVISOR_HEALTH_REQUIRED` (default true),
 `SUPERVISOR_HEALTH_TIMEOUT_SECONDS` (120), `SUPERVISOR_HEALTH_INTERVAL_SECONDS`
 (2) — the supervisor waits for `BACKEND_URL/api/health` before enrollment,
-declaration or child spawn.
+declaration or child spawn. Post-start monitor: `SUPERVISOR_HEALTH_MONITOR_ENABLED`
+(default true; off when the gate is off), `SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS`
+(10) and `SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS` (60); declaration/reconcile
+pauses while the backend is unhealthy.
 Question loop (fg-55): `HARNESS_QUESTION_LOOP` (default off),
 `HARNESS_QUESTION_TIMEOUT_MINUTES`, `HARNESS_QUESTION_POLL_SECONDS`,
 `HARNESS_DOOM_LOOP_MAX`, `HARNESS_DOOM_LOOP_CONTINUES`.

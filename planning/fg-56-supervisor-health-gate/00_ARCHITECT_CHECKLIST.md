@@ -31,13 +31,13 @@ endpoint is green.
 |---|---|---|
 | Plan recorded | This suite; fg-43 D7 | ☑ |
 | Implementation in review | PR #203 | ☑ |
-| Verification results | `03` → Results | ☐ |
+| Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | after the startup gate | open |
+| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | Implemented in slice B (`BackendHealthMonitor`); startup gate remains unchanged | done |
 | D2 | Health-gated restarts without Compose restart policy | self | Operations | follow-up if needed | open |
 
 ## Decisions needed from the user

@@ -56,6 +56,11 @@ public final class SupervisorMain {
         } else {
             log.info("Backend health gate disabled by SUPERVISOR_HEALTH_REQUIRED");
         }
+        // fg-56 slice B: keep watching health after startup. The retry loop
+        // pauses while unhealthy so it does not declare/reconcile against a
+        // backend that is down; children are left to their own retry logic.
+        BackendHealthMonitor healthMonitor = BackendHealthMonitor.fromEnv(agentConfig.getBackendUrl());
+        healthMonitor.start();
         AgentCredentialStore store = new AgentCredentialStore(Path.of(agentConfig.getCredentialsFile()));
         AgentAuthManager auth = new AgentAuthManager(agentConfig, store, new AgentEnrollmentClient(agentConfig));
         auth.initialize();
@@ -107,6 +112,10 @@ public final class SupervisorMain {
         java.util.concurrent.atomic.AtomicInteger tick = new java.util.concurrent.atomic.AtomicInteger();
         retry.scheduleWithFixedDelay(() -> {
             try {
+                if (!healthMonitor.isHealthy()) {
+                    log.debug("Backend is unhealthy; skipping declaration/reconcile tick");
+                    return;
+                }
                 Map<String, Object> config = api.fetchConfig();
                 if (!nodeActive(config)) {
                     log.info("Node is draining or revoked; stopping supervised runtimes");
@@ -186,6 +195,7 @@ public final class SupervisorMain {
             supervisor.runLoop();
         } finally {
             retry.shutdownNow();
+            healthMonitor.close();
             supervisor.close();
         }
     }

@@ -194,7 +194,7 @@ planning suite (`planning/fg-43-dN-...`) when it is scheduled.
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-56** | `fg-56-supervisor-health-gate` | P1 | fg-43, fg-54 | Backend `/api/health` startup gate: wait before enrollment/declaration/child spawn, bounded timeout, explicit offline opt-out, no partial fleet. **In review (PR #203).** |
+| **fg-56** | `fg-56-supervisor-health-gate` | P1 | fg-43, fg-54 | Backend `/api/health` startup gate: wait before enrollment/declaration/child spawn, bounded timeout, explicit offline opt-out, no partial fleet; post-start monitor with bounded exponential backoff pauses declaration/reconcile while unhealthy. **In review (PR #203).** |
 
 ## Human Loop (fg-55)
 

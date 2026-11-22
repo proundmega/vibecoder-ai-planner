@@ -35,6 +35,15 @@ URL and last reason. It logs attempt/success/failure without credentials.
 `auth.initialize()` and before `Supervisor` construction. The env values are
 read once at startup; a missing/invalid value falls back to the defaults.
 
+## 3b. Post-start monitor (slice B)
+
+`BackendHealthMonitor` starts after the gate passes. It probes
+`BackendHealthGate.probeOnce(BACKEND_URL)` on a daemon scheduler, exposes
+`isHealthy()`, and logs loss/recovery. Failure delay starts at the base
+interval, doubles on each consecutive failure up to the max, and resets on
+success. `SupervisorMain` skips the declaration/reconcile tick while unhealthy
+and closes the monitor in the run loop's `finally`.
+
 ## 4. Configuration
 
 | Variable | Default |
@@ -42,11 +51,14 @@ read once at startup; a missing/invalid value falls back to the defaults.
 | `SUPERVISOR_HEALTH_REQUIRED` | `true` |
 | `SUPERVISOR_HEALTH_TIMEOUT_SECONDS` | `120` |
 | `SUPERVISOR_HEALTH_INTERVAL_SECONDS` | `2` |
+| `SUPERVISOR_HEALTH_MONITOR_ENABLED` | `true` (off when the gate is off) |
+| `SUPERVISOR_HEALTH_MONITOR_INTERVAL_SECONDS` | `10` |
+| `SUPERVISOR_HEALTH_MONITOR_MAX_BACKOFF_SECONDS` | `60` |
 
 ## 5. Verification commands
 
 ```bash
-cd agent && mvn test -Dtest=BackendHealthGateTest,SupervisorMainTest,SupervisorIntegrationTest
+cd agent && mvn test -Dtest=BackendHealthGateTest,BackendHealthMonitorTest,SupervisorMainTest,SupervisorIntegrationTest
 node planning/check-planning.js
 git diff --check
 ```
