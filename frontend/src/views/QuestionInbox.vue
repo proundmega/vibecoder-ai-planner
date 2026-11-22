@@ -13,19 +13,34 @@
           <option value="">All</option>
         </select>
       </label>
+      <label class="filter">
+        Project
+        <select v-model="projectFilter" data-testid="question-project-filter">
+          <option value="">All projects</option>
+          <option v-for="project in projectOptions" :key="project.id" :value="String(project.id)">
+            {{ project.name }}
+          </option>
+        </select>
+      </label>
     </div>
 
     <p v-if="loading" class="inbox-status">Loading questions…</p>
     <p v-else-if="error" class="inbox-status inbox-error" data-testid="inbox-error">{{ error }}</p>
-    <div v-else-if="questions.length === 0" class="inbox-empty" data-testid="inbox-empty">
+    <div v-else-if="visibleQuestions.length === 0" class="inbox-empty" data-testid="inbox-empty">
       <p>No questions right now.</p>
     </div>
     <ul v-else class="question-list">
-      <li v-for="question in questions" :key="question.id" class="question-card">
+      <li v-for="question in visibleQuestions" :key="question.id" class="question-card">
         <div class="question-meta">
           <span class="question-kind" :class="question.kind">{{ question.kind }}</span>
           <span v-if="question.project_name">{{ question.project_name }}</span>
           <span v-if="question.ticket_title">· {{ question.ticket_title }}</span>
+          <router-link
+            class="run-link"
+            :to="{ name: 'ProjectHarness', params: { id: question.project_id }, query: { run: question.run_id } }"
+          >
+            Open run
+          </router-link>
         </div>
         <p class="question-prompt">{{ question.prompt }}</p>
         <p v-if="question.status !== 'pending'" class="question-answer">
@@ -51,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   answerQuestion,
   listInboxQuestions,
@@ -63,9 +78,27 @@ const status = ref<QuestionStatus | ''>('pending')
 const questions = ref<TicketQuestion[]>([])
 const loading = ref(true)
 const error = ref('')
+const projectFilter = ref('')
 const drafts = reactive<Record<string, string>>({})
 const submitting = reactive<Record<string, boolean>>({})
 const errors = reactive<Record<string, string>>({})
+
+const projectOptions = computed(() => {
+  const seen = new Map<string, string>()
+  for (const question of questions.value) {
+    const id = String(question.project_id)
+    if (!seen.has(id)) {
+      seen.set(id, question.project_name || `Project ${id}`)
+    }
+  }
+  return [...seen.entries()].map(([id, name]) => ({ id, name }))
+})
+
+const visibleQuestions = computed(() => (
+  projectFilter.value
+    ? questions.value.filter((question) => String(question.project_id) === projectFilter.value)
+    : questions.value
+))
 
 async function load(): Promise<void> {
   loading.value = true
@@ -133,6 +166,17 @@ onMounted(load)
   gap: 4px;
   font-size: 12px;
   color: var(--color-text-secondary, #64748b);
+}
+
+.inbox-header {
+  gap: 16px;
+}
+
+.run-link {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--color-primary, #2563eb);
+  white-space: nowrap;
 }
 
 .inbox-status,
