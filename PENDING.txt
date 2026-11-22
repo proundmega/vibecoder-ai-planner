@@ -134,7 +134,7 @@ are pilot work.
 | ~~bt-53~~ | `bt-53-backfill-redis-integration-tests` | bp-53 | ~~Redis integration tests~~ ✅ Covered in bp-53 PR |
 | ~~bt-56~~ | `bt-56-backfill-design-system-tests` | bp-56 | ~~Design system tests~~ ✅ Done (this session) |
 | ~~bt-57~~ | `bt-57-backfill-typescript-migration-tests` | bp-57 | ~~TypeScript migration tests~~ ✅ Done (this session) |
-| **bt-60** | `bt-60-durable-harness-e2e-tests` | fg-33 | **In review (#198) — Phase A** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). Phase A (17 fixture/lifecycle cases, real app + real Postgres) is implemented; Phase B staging is blocked on a dedicated disposable project/repo/agent, provider key and GitHub token. No production code; never use a product ticket. |
+| **bt-60** | `bt-60-durable-harness-e2e-tests` | fg-33 | **In review (#198) — Phase A** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). Phase A (16 fixture/lifecycle cases, real app + real Postgres) is implemented; Phase B staging is blocked on a dedicated disposable project/repo/agent, provider key and GitHub token. No production code; never use a product ticket. |
 
 ## Feature Gaps (fg-*)
 

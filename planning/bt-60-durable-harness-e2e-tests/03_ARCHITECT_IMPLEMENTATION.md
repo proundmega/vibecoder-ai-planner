@@ -272,7 +272,7 @@ original scenarios; E23-E28 cover the non-scenario requirements so every
 | FR3/FR5 | E10 | Checkpoint after finish | Backend HTTP | 404 | A |
 | FR3 | E11 | Heartbeat updates `agent_step`/`heartbeat_at` | Backend HTTP | 200; wrong agent/after finish 404 | A |
 | FR5 | E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/`head_sha`/`pr_url`; `artifacts_finalized_at` set; no lease; wrong runtime 403 | A |
-| FR5 | E13 | Idempotent finish | Backend HTTP | 200 existing terminal; finalized artifacts unchanged; no duplicate side effect | A |
+| FR5 | E13 | Idempotent finish | Backend HTTP | 200 existing terminal; artifacts remain finalized (`artifacts_finalized_at` non-null); no duplicate side effect | A |
 | FR4 | E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
 | FR6 | E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
 | FR7 | E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable; reaper reconciles | A/B |
@@ -318,7 +318,7 @@ keep a copy.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | PR #198 (stacked on production fix PR #200) | Phase A: `harnessHttpE2E` 16/16; backend integration 20 suites / 158 tests; backend unit 152 suites / 1788 tests; lint 0 errors (30 warnings); `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` 1/1 | Phase A green. E12/E13 assert `artifacts_finalized_at`; the usage-flush UUID defect they exposed is fixed in the separate production PR #200. Phase B staging is deferred pending the disposable repo/key/App installation. |
+| 2026-11-22 | `664c3f8` + `865565e` (PR #198; #200 merged as `865565e`) | Phase A: `harnessHttpE2E` 16/16; backend integration 20 suites / 158 tests; backend unit 152 suites / 1788 tests; lint 0 errors (30 warnings); `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` 1/1 | Phase A green. E12/E13 assert `artifacts_finalized_at`; the usage-flush UUID defect they exposed is fixed in the separate production PR #200. Phase B staging is deferred pending the disposable repo/key/App installation. |
 
 | Field | Value |
 |---|---|
