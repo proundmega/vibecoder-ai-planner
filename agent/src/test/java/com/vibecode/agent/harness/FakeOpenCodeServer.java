@@ -27,6 +27,8 @@ final class FakeOpenCodeServer implements AutoCloseable {
     private final AtomicInteger createSessionCalls = new AtomicInteger();
     private final AtomicInteger deletedSessions = new AtomicInteger();
     private final AtomicReference<String> lastPrompt = new AtomicReference<>("");
+    private final AtomicReference<String> lastPermissionBody = new AtomicReference<>("");
+    private final AtomicReference<String> lastQuestionReplyBody = new AtomicReference<>("");
     private final AtomicReference<String> lastAuthorization = new AtomicReference<>();
     private final AtomicReference<List<String>> events = new AtomicReference<>(List.of());
     private volatile boolean closed;
@@ -69,6 +71,14 @@ final class FakeOpenCodeServer implements AutoCloseable {
 
     String lastPrompt() {
         return lastPrompt.get();
+    }
+
+    String lastPermissionBody() {
+        return lastPermissionBody.get();
+    }
+
+    String lastQuestionReplyBody() {
+        return lastQuestionReplyBody.get();
     }
 
     String lastAuthorization() {
@@ -115,6 +125,20 @@ final class FakeOpenCodeServer implements AutoCloseable {
                 && "POST".equals(method)) {
                 lastPrompt.set(readBody(exchange));
                 respond(exchange, 200, "{\"info\":{\"id\":\"msg_1\"}}");
+                return;
+            }
+
+            if (path.startsWith("/session/") && path.contains("/permissions/")
+                && "POST".equals(method)) {
+                lastPermissionBody.set(readBody(exchange));
+                respond(exchange, 200, "true");
+                return;
+            }
+
+            if (path.startsWith("/session/") && path.endsWith("/reply")
+                && "POST".equals(method)) {
+                lastQuestionReplyBody.set(readBody(exchange));
+                respond(exchange, 200, "{\"ok\":true}");
                 return;
             }
 

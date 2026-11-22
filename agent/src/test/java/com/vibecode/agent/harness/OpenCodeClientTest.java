@@ -91,6 +91,35 @@ class OpenCodeClientTest {
     }
 
     @Test
+    void permissionAnswersMapToOnceAlwaysOrReject() throws Exception {
+        assertEquals("once", OpenCodeClient.permissionResponse("allow"));
+        assertEquals("once", OpenCodeClient.permissionResponse("yes, proceed"));
+        assertEquals("always", OpenCodeClient.permissionResponse("always"));
+        assertEquals("reject", OpenCodeClient.permissionResponse("reject"));
+        assertEquals("reject", OpenCodeClient.permissionResponse("no"));
+        // An unknown free-text answer must never approve the operation.
+        assertEquals("reject", OpenCodeClient.permissionResponse("use the helper"));
+
+        try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
+            OpenCodeClient client = new OpenCodeClient(server.url(), "password", tempDir);
+            client.start(tempDir);
+
+            client.replyToQuestion("ses_test", "perm_1", "permission", "reject");
+            assertEquals("{\"response\":\"reject\"}", server.lastPermissionBody());
+
+            client.replyToQuestion("ses_test", "perm_1", "permission", "allow");
+            assertEquals("{\"response\":\"once\"}", server.lastPermissionBody());
+
+            client.replyToQuestion("ses_test", "perm_1", "permission", "always");
+            assertEquals("{\"response\":\"always\"}", server.lastPermissionBody());
+
+            client.replyToQuestion("ses_test", "question_1", "question", "Use the helper.");
+            assertTrue(server.lastQuestionReplyBody().contains("Use the helper."));
+            client.close();
+        }
+    }
+
+    @Test
     void healthTimeoutThrows() throws Exception {
         try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
             server.setHealthy(false);

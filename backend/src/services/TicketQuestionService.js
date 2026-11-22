@@ -334,7 +334,11 @@ class TicketQuestionService {
        WHERE (p.owner_id = $1
               OR EXISTS (
                 SELECT 1 FROM project_memberships pm
+                JOIN roles r ON r.name = pm.role
+                JOIN role_permissions rp ON rp.role_id = r.id
+                JOIN permissions perm ON perm.id = rp.permission_id
                 WHERE pm.project_id = p.id AND pm.user_id = $1
+                  AND perm.code = 'AGENT_READ'
               ))
          ${predicate}
        ORDER BY q.created_at DESC, q.id DESC
@@ -370,6 +374,9 @@ class TicketQuestionService {
       }
       if (question.status === 'expired' || question.status === 'cancelled') {
         throw conflict('Question expired', 'QUESTION_EXPIRED');
+      }
+      if (question.run_status !== 'running') {
+        throw conflict('Harness run is no longer active', 'QUESTION_RUN_INACTIVE');
       }
       if (question.expires_at && new Date(question.expires_at).getTime() <= Date.now()) {
         await client.query(

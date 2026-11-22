@@ -249,7 +249,7 @@ public final class OpenCodeClient implements HarnessClient {
         }
         if ("permission".equals(kind)) {
             postJson("/session/" + sessionId + "/permissions/" + requestId,
-                Map.of("response", "once"));
+                Map.of("response", permissionResponse(answer)));
             return;
         }
         postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
@@ -269,6 +269,28 @@ public final class OpenCodeClient implements HarnessClient {
         }
         postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
             Map.of("reject", true));
+    }
+
+    /**
+     * Map a human answer to the OpenCode permission response. A free-text
+     * answer must never default to approval: an unrecognised value rejects.
+     */
+    static String permissionResponse(String answer) {
+        if (answer == null || answer.isBlank()) {
+            return "reject";
+        }
+        String value = answer.trim().toLowerCase(java.util.Locale.ROOT);
+        if (value.equals("always") || value.startsWith("always ")) {
+            return "always";
+        }
+        if (value.equals("allow") || value.equals("once") || value.equals("yes")
+            || value.equals("approve") || value.equals("ok")
+            || value.equals("continue") || value.startsWith("allow")
+            || value.startsWith("yes") || value.startsWith("approve")
+            || value.startsWith("ok")) {
+            return "once";
+        }
+        return "reject";
     }
 
     @Override

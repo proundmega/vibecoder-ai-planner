@@ -239,3 +239,16 @@ requirements in `01` remain the source of truth.
 - **Reply path fail-closed.** If the OpenCode event has no request id, the
   bridge uses a generated external id for dedupe and the reply fails closed
   instead of guessing a session id.
+- **Permission answers.** Permission requests map `allow`/`yes` to `once`,
+  `always` to `always`, and `reject`/`no`/anything unrecognised to `reject`;
+  free text can never approve. The ticket card and inbox render Allow/Always
+  allow/Reject (and Continue/Abort for doom loops) instead of a text box.
+- **Agent read isolation.** An agent may read a question only when
+  `question.runtime_id` equals its `X-Agent-Runtime`; the run-list route checks
+  the run's runtime before listing, so a same-project worker cannot read a
+  sibling's question by UUID.
+- **Repetition counting.** The doom-loop detector ignores OpenCode lifecycle
+  updates by tracking unique `callId`s, so one running/completed pair is one
+  call, not two repeats.
+- **Inbox audience.** The cross-project inbox query requires project ownership
+  or a membership role carrying `AGENT_READ`, matching the answer permission.

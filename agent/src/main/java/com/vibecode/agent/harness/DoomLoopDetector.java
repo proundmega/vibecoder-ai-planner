@@ -7,9 +7,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Supervisor-side repetition policy (fg-55 FR5).
@@ -31,6 +33,7 @@ public final class DoomLoopDetector {
 
     private final int maxRepeats;
     private final int maxContinues;
+    private final Set<String> seenCallIds = new HashSet<>();
     private String lastSignature;
     private int repeats;
     private int continues;
@@ -46,6 +49,16 @@ public final class DoomLoopDetector {
      * resets the run of identical calls.
      */
     public synchronized Decision observe(HarnessEvent event) {
+        OpenCodeUsage.ToolCall call = event == null ? null : OpenCodeUsage.toolCall(event.payload());
+        if (call == null) {
+            return Decision.NONE;
+        }
+        // OpenCode emits running and completed updates for the same call. Count
+        // a physical invocation once, not once per lifecycle event.
+        if (call.callId() != null && !call.callId().isBlank()
+            && !seenCallIds.add(call.callId())) {
+            return Decision.NONE;
+        }
         String signature = signature(event);
         if (signature == null) {
             return Decision.NONE;

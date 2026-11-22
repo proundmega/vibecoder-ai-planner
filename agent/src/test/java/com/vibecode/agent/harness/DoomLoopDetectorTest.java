@@ -16,11 +16,15 @@ class DoomLoopDetectorTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private HarnessEvent tool(String name, String inputJson) {
+        return tool(name, inputJson, "call-1", "running");
+    }
+
+    private HarnessEvent tool(String name, String inputJson, String callId, String status) {
         try {
             return new HarnessEvent("message.part.updated", mapper.readTree(
                 "{\"type\":\"message.part.updated\",\"properties\":{\"part\":{"
-                    + "\"type\":\"tool\",\"tool\":\"" + name + "\",\"callID\":\"call-1\","
-                    + "\"state\":{\"status\":\"running\",\"input\":" + inputJson + "}}}}"),
+                    + "\"type\":\"tool\",\"tool\":\"" + name + "\",\"callID\":\"" + callId + "\","
+                    + "\"state\":{\"status\":\"" + status + "\",\"input\":" + inputJson + "}}}}"),
                 System.currentTimeMillis());
         } catch (IOException e) {
             throw new IllegalStateException(e);
@@ -30,23 +34,31 @@ class DoomLoopDetectorTest {
     @Test
     void escalatesAtTheConfiguredRepeatCount() {
         DoomLoopDetector detector = new DoomLoopDetector(3, 3);
-        HarnessEvent call = tool("bash", "{\"command\":\"npm test\"}");
+        String args = "{\"command\":\"npm test\"}";
 
-        assertEquals(DoomLoopDetector.Decision.NONE, detector.observe(call));
-        assertEquals(DoomLoopDetector.Decision.NONE, detector.observe(call));
-        assertEquals(DoomLoopDetector.Decision.ESCALATE, detector.observe(call));
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", args, "call-1", "running")));
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", args, "call-2", "running")));
+        assertEquals(DoomLoopDetector.Decision.ESCALATE,
+            detector.observe(tool("bash", args, "call-3", "running")));
         // Still the same run of calls, but only one question is asked.
-        assertEquals(DoomLoopDetector.Decision.NONE, detector.observe(call));
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", args, "call-4", "running")));
     }
 
     @Test
     void aDifferentSignatureResetsTheCount() {
         DoomLoopDetector detector = new DoomLoopDetector(2, 3);
 
-        assertEquals(DoomLoopDetector.Decision.NONE, detector.observe(tool("bash", "{\"command\":\"a\"}")));
-        assertEquals(DoomLoopDetector.Decision.ESCALATE, detector.observe(tool("bash", "{\"command\":\"a\"}")));
-        assertEquals(DoomLoopDetector.Decision.NONE, detector.observe(tool("bash", "{\"command\":\"b\"}")));
-        assertEquals(DoomLoopDetector.Decision.ESCALATE, detector.observe(tool("bash", "{\"command\":\"b\"}")));
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", "{\"command\":\"a\"}", "call-1", "running")));
+        assertEquals(DoomLoopDetector.Decision.ESCALATE,
+            detector.observe(tool("bash", "{\"command\":\"a\"}", "call-2", "running")));
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", "{\"command\":\"b\"}", "call-3", "running")));
+        assertEquals(DoomLoopDetector.Decision.ESCALATE,
+            detector.observe(tool("bash", "{\"command\":\"b\"}", "call-4", "running")));
     }
 
     @Test
@@ -65,12 +77,25 @@ class DoomLoopDetectorTest {
         DoomLoopDetector detector = new DoomLoopDetector(1, 2);
 
         assertEquals(DoomLoopDetector.Decision.ESCALATE,
-            detector.observe(tool("bash", "{\"command\":\"loop\"}")));
+            detector.observe(tool("bash", "{\"command\":\"loop\"}", "call-1", "running")));
         assertEquals(DoomLoopDetector.Decision.NONE, detector.continueAfterHuman());
         assertEquals(DoomLoopDetector.Decision.ESCALATE,
-            detector.observe(tool("bash", "{\"command\":\"loop\"}")));
+            detector.observe(tool("bash", "{\"command\":\"loop\"}", "call-2", "running")));
         assertEquals(DoomLoopDetector.Decision.ABORT, detector.continueAfterHuman());
         assertEquals(2, detector.continues());
+    }
+
+    @Test
+    void lifecycleUpdatesForOneCallDoNotCountAsRepeats() {
+        DoomLoopDetector detector = new DoomLoopDetector(2, 3);
+        String args = "{\"command\":\"npm test\"}";
+
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", args, "call-1", "running")));
+        assertEquals(DoomLoopDetector.Decision.NONE,
+            detector.observe(tool("bash", args, "call-1", "completed")));
+        assertEquals(DoomLoopDetector.Decision.ESCALATE,
+            detector.observe(tool("bash", args, "call-2", "running")));
     }
 
     @Test

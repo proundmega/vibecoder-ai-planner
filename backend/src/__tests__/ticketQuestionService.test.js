@@ -155,6 +155,28 @@ describe('TicketQuestionService (fg-55)', () => {
     ).rejects.toMatchObject({ code: 'QUESTION_ALREADY_ANSWERED', statusCode: 409 });
   });
 
+  it('lists the cross-project inbox only for owners or AGENT_READ members', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [] });
+
+    await TicketQuestionService.listForUser(9, { status: 'pending' });
+
+    const [sql] = pool.query.mock.calls[0];
+    expect(sql).toContain('p.owner_id = $1');
+    expect(sql).toContain("perm.code = 'AGENT_READ'");
+  });
+
+  it('rejects an answer for a terminal run', async () => {
+    clientWith([
+      {}, // BEGIN
+      { rows: [{ ...questionRow(), run_status: 'succeeded' }] },
+      {}, // ROLLBACK
+    ]);
+
+    await expect(
+      TicketQuestionService.answer(RUN_ID, QUESTION_ID, { answer: 'late', userId: 9 })
+    ).rejects.toMatchObject({ code: 'QUESTION_RUN_INACTIVE', statusCode: 409 });
+  });
+
   it('expires a pending question', async () => {
     const pending = questionRow();
     const expired = questionRow({ status: 'expired' });

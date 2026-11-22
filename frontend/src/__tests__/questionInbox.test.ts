@@ -72,6 +72,25 @@ describe('QuestionInbox (fg-55)', () => {
     expect(wrapper.text()).not.toContain('Which helper should I use?')
   })
 
+  it('sends an explicit reject for a permission question', async () => {
+    api.listInboxQuestions.mockResolvedValue([
+      pendingQuestion({ kind: 'permission', prompt: 'Allow the command?' }),
+    ])
+    const wrapper = mountInbox()
+    await flushPromises()
+
+    expect(wrapper.find('textarea').exists()).toBe(false)
+    const reject = wrapper.findAll('button').find((button) => button.text() === 'Reject')
+    await reject!.trigger('click')
+    await flushPromises()
+
+    expect(api.answerQuestion).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      '7',
+      'reject',
+    )
+  })
+
   it('submits an answer and reloads the inbox', async () => {
     const wrapper = mountInbox()
     await flushPromises()

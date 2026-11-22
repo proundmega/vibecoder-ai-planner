@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const TicketQuestionService = require('../services/TicketQuestionService');
+const HarnessRunService = require('../services/HarnessRunService');
 const PermissionService = require('../services/PermissionService');
 const { pool } = require('../db');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
@@ -64,12 +65,15 @@ async function assertProjectAccess(projectId, req, permission) {
   }
 }
 
-async function assertQuestionAccess(req, question, { write = false } = {}) {
+async function assertQuestionAccess(req, question, { write: _write = false } = {}) {
   if (req.agent) {
     if (!req.runtime || !req.runtime.id) {
       throw new ForbiddenError('Agent runtime required');
     }
-    if (write && String(question.runtime_id) !== String(req.runtime.id)) {
+    // Node grants are project/role scoped, so two workers in one project would
+    // otherwise be able to read each other's runs by guessing the UUID. Own the
+    // exact runtime for reads and writes alike.
+    if (String(question.runtime_id) !== String(req.runtime.id)) {
       throw new ForbiddenError('Question belongs to another runtime');
     }
     return;
@@ -233,14 +237,15 @@ router.get(
   validate({ query: questionListQuerySchema }),
   async (req, res, next) => {
     try {
-      const question = await TicketQuestionService.listForRun(
-        runIdParam(req.params.runId),
-        req.query
-      );
-      if (req.agent && question.length > 0) {
-        await assertQuestionAccess(req, question[0]);
+      const runId = runIdParam(req.params.runId);
+      if (req.agent) {
+        const run = await HarnessRunService.getRun(runId);
+        if (String(run.runtime_id) !== String(req.runtime.id)) {
+          throw new ForbiddenError('Harness run belongs to another runtime');
+        }
       }
-      res.json({ success: true, data: question });
+      const questions = await TicketQuestionService.listForRun(runId, req.query);
+      res.json({ success: true, data: questions });
     } catch (error) {
       logger.error('GET /harness/runs/:runId/questions failed:', error);
       next(error);

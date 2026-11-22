@@ -46,6 +46,35 @@
         <p v-if="question.status !== 'pending'" class="question-answer">
           <strong>{{ question.status }}:</strong> {{ question.answer || 'No answer recorded.' }}
         </p>
+        <div v-else-if="question.kind === 'permission'" class="quick-answers">
+          <button type="button" :disabled="submitting[question.id]" @click="submit(question, 'allow')">
+            Allow once
+          </button>
+          <button type="button" :disabled="submitting[question.id]" @click="submit(question, 'always')">
+            Always allow
+          </button>
+          <button
+            type="button"
+            class="danger"
+            :disabled="submitting[question.id]"
+            @click="submit(question, 'reject')"
+          >
+            Reject
+          </button>
+        </div>
+        <div v-else-if="question.kind === 'doom_loop'" class="quick-answers">
+          <button type="button" :disabled="submitting[question.id]" @click="submit(question, 'continue')">
+            Continue
+          </button>
+          <button
+            type="button"
+            class="danger"
+            :disabled="submitting[question.id]"
+            @click="submit(question, 'abort')"
+          >
+            Abort run
+          </button>
+        </div>
         <form v-else class="answer-form" @submit.prevent="submit(question)">
           <textarea
             v-model="drafts[question.id]"
@@ -57,9 +86,9 @@
             <button type="submit" :disabled="submitting[question.id] || !drafts[question.id]">
               {{ submitting[question.id] ? 'Sending…' : 'Answer' }}
             </button>
-            <span v-if="errors[question.id]" class="answer-error">{{ errors[question.id] }}</span>
           </div>
         </form>
+        <span v-if="errors[question.id]" class="answer-error">{{ errors[question.id] }}</span>
       </li>
     </ul>
   </div>
@@ -115,9 +144,9 @@ async function load(): Promise<void> {
   }
 }
 
-async function submit(question: TicketQuestion): Promise<void> {
+async function submit(question: TicketQuestion, value?: string): Promise<void> {
   const key = String(question.id)
-  const answer = (drafts[key] || '').trim()
+  const answer = (value ?? drafts[key] ?? '').trim()
   if (!answer) return
   submitting[key] = true
   errors[key] = ''
@@ -260,6 +289,30 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.quick-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-answers button {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border, #cbd5e1);
+  border-radius: 6px;
+  background: var(--color-bg, #fff);
+  cursor: pointer;
+}
+
+.quick-answers button.danger {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.quick-answers button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .answer-actions button {

@@ -5,7 +5,16 @@
       <span class="question-kind">{{ question.kind }}</span>
     </div>
     <p class="question-prompt">{{ question.prompt }}</p>
-    <form class="card-answer" @submit.prevent="submit">
+    <div v-if="isPermission" class="quick-answers">
+      <button type="button" :disabled="submitting" @click="submitWith('allow')">Allow once</button>
+      <button type="button" :disabled="submitting" @click="submitWith('always')">Always allow</button>
+      <button type="button" class="danger" :disabled="submitting" @click="submitWith('reject')">Reject</button>
+    </div>
+    <div v-else-if="isDoomLoop" class="quick-answers">
+      <button type="button" :disabled="submitting" @click="submitWith('continue')">Continue</button>
+      <button type="button" class="danger" :disabled="submitting" @click="submitWith('abort')">Abort run</button>
+    </div>
+    <form v-else class="card-answer" @submit.prevent="submit">
       <textarea
         v-model="answer"
         rows="2"
@@ -19,11 +28,12 @@
         <span v-if="error" class="card-error">{{ error }}</span>
       </div>
     </form>
+    <span v-if="error && (isPermission || isDoomLoop)" class="card-error">{{ error }}</span>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { answerQuestion, listTicketQuestions, type TicketQuestion } from '@/api/questions'
 
 const props = defineProps<{ ticketId: number | string }>()
@@ -34,6 +44,9 @@ const answer = ref('')
 const submitting = ref(false)
 const error = ref('')
 
+const isPermission = computed(() => question.value?.kind === 'permission')
+const isDoomLoop = computed(() => question.value?.kind === 'doom_loop')
+
 async function load(): Promise<void> {
   try {
     const rows = await listTicketQuestions(props.ticketId, { status: 'pending', limit: 1 })
@@ -41,6 +54,11 @@ async function load(): Promise<void> {
   } catch {
     question.value = null
   }
+}
+
+async function submitWith(value: string): Promise<void> {
+  answer.value = value
+  await submit()
 }
 
 async function submit(): Promise<void> {
@@ -104,6 +122,31 @@ watch(() => props.ticketId, load)
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.quick-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-answers button {
+  padding: 6px 14px;
+  border: 1px solid #b45309;
+  border-radius: 6px;
+  background: #fff;
+  color: #92400e;
+  cursor: pointer;
+}
+
+.quick-answers button.danger {
+  border-color: #b91c1c;
+  color: #b91c1c;
+}
+
+.quick-answers button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .card-answer textarea {

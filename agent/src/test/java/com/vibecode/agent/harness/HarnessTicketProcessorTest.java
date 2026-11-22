@@ -255,6 +255,15 @@ class HarnessTicketProcessorTest {
             System.currentTimeMillis());
     }
 
+    private HarnessEvent toolEvent(ObjectMapper mapper, String callId) throws Exception {
+        return new HarnessEvent("message.part.updated",
+            mapper.readTree(
+                "{\"type\":\"message.part.updated\",\"properties\":{\"part\":{"
+                    + "\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"" + callId + "\","
+                    + "\"state\":{\"status\":\"running\",\"input\":{\"command\":\"npm test\"}}}}}"),
+            System.currentTimeMillis());
+    }
+
     private HarnessTicketProcessor processorWithResumeMode() {        HarnessConfig resumeConfig = new HarnessConfig(
             
             "opencode", Duration.ofSeconds(30),
@@ -951,20 +960,18 @@ class HarnessTicketProcessorTest {
     @Test
     void doomLoopEscalatesRepeatedToolCallsToAHuman() throws Exception {
         AtomicReference<Consumer<HarnessEvent>> listener = new AtomicReference<>();
-        HarnessEvent tool = new HarnessEvent("message.part.updated",
-            new ObjectMapper().readTree(
-                "{\"type\":\"message.part.updated\",\"properties\":{\"part\":{"
-                    + "\"type\":\"tool\",\"tool\":\"bash\",\"callID\":\"call-1\","
-                    + "\"state\":{\"status\":\"running\",\"input\":{\"command\":\"npm test\"}}}}}"),
-            System.currentTimeMillis());
+        ObjectMapper mapper = new ObjectMapper();
+        HarnessEvent first = toolEvent(mapper, "call-1");
+        HarnessEvent second = toolEvent(mapper, "call-2");
+        HarnessEvent third = toolEvent(mapper, "call-3");
         doAnswer(invocation -> {
             listener.set(invocation.getArgument(1));
             return null;
         }).when(harness).subscribe(anyString(), any());
         doAnswer(invocation -> {
-            listener.get().accept(tool);
-            listener.get().accept(tool);
-            listener.get().accept(tool);
+            listener.get().accept(first);
+            listener.get().accept(second);
+            listener.get().accept(third);
             return null;
         }).when(harness).sendPrompt(anyString(), anyString());
         when(apiService.createHarnessQuestion(

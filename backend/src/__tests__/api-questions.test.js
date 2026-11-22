@@ -28,7 +28,10 @@ jest.mock('../middleware/auth', () => {
       };
       req.node = { id: 12 };
       req.runtime = {
-        id: 3, role: 'worker', status: 'running', current_project_id: 5,
+        id: Number(req.headers['x-test-runtime'] || 3),
+        role: 'worker',
+        status: 'running',
+        current_project_id: 5,
       };
       req.user = { userId: '7', id: 3, role: 'member' };
       return next();
@@ -71,6 +74,10 @@ jest.mock('../services/TicketQuestionService', () => ({
   expirePendingForRun: jest.fn(),
 }));
 
+jest.mock('../services/HarnessRunService', () => ({
+  getRun: jest.fn(),
+}));
+
 jest.mock('../services/NotificationService', () => ({
   listForUser: jest.fn(),
   unreadCount: jest.fn(),
@@ -82,6 +89,7 @@ jest.mock('../services/NotificationService', () => ({
 }));
 
 const TicketQuestionService = require('../services/TicketQuestionService');
+const HarnessRunService = require('../services/HarnessRunService');
 const NotificationService = require('../services/NotificationService');
 const PermissionService = require('../services/PermissionService');
 const { ConflictError } = require('../errors/HttpError');
@@ -112,6 +120,7 @@ describe('Question and notification API (fg-55)', () => {
     PermissionService.hasPermission.mockResolvedValue(true);
     pool.query.mockResolvedValue({ rows: [] });
     NotificationService.unreadCount.mockResolvedValue(3);
+    HarnessRunService.getRun.mockResolvedValue({ id: RUN_ID, runtime_id: 3 });
   });
 
   it('agent creates, reads and expires a question for its own run', async () => {
@@ -144,6 +153,25 @@ describe('Question and notification API (fg-55)', () => {
       .send({});
     expect(expired.statusCode).toBe(200);
     expect(expired.body.data.status).toBe('expired');
+  });
+
+  it('a second worker in the same project cannot read another runtime’s questions', async () => {
+    TicketQuestionService.getForRun.mockResolvedValue(QUESTION);
+    TicketQuestionService.listForRun.mockResolvedValue([QUESTION]);
+
+    const list = await request(app)
+      .get(`/api/v1/harness/runs/${RUN_ID}/questions`)
+      .set('X-API-Key', 'agent-key')
+      .set('X-Test-Runtime', '4');
+    expect(list.statusCode).toBe(403);
+    expect(TicketQuestionService.listForRun).not.toHaveBeenCalled();
+
+    const read = await request(app)
+      .get(`/api/v1/harness/runs/${RUN_ID}/questions/7`)
+      .set('X-API-Key', 'agent-key')
+      .set('X-Test-Runtime', '4');
+    expect(read.statusCode).toBe(403);
+    expect(read.body.error.code).toBe('FORBIDDEN');
   });
 
   it('a project member answers a pending question', async () => {
