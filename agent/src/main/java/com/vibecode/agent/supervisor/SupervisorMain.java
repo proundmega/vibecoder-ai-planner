@@ -409,11 +409,21 @@ public final class SupervisorMain {
         Path path,
         AtomicReference<RuntimeConfig> desiredRef
     ) {
+        return reload(api, supervisor, path, desiredRef,
+            hostMaxRuntimes(System.getenv("AGENT_HOST_MAX_RUNTIMES")));
+    }
+
+    static RuntimeConfig reload(
+        RuntimeApi api,
+        Supervisor supervisor,
+        Path path,
+        AtomicReference<RuntimeConfig> desiredRef,
+        int maxRuntimes
+    ) {
         try {
             RuntimeConfig reloaded = RuntimeConfig.parse(path);
             validateDeclaration(reloaded);
-            enforceHostCapacity(reloaded,
-                hostMaxRuntimes(System.getenv("AGENT_HOST_MAX_RUNTIMES")));
+            enforceHostCapacity(reloaded, maxRuntimes);
             DeclarationResult declared = declareWithRetry(
                 api, reloaded, 3, supervisor.hardSuspendedSectionsSnapshot());
             if (declared.terminal()) {
@@ -613,7 +623,8 @@ public final class SupervisorMain {
      */
     static void validateDeclaration(RuntimeConfig config) {
         for (RuntimeConfig.DeclaredRuntime runtime : config.runtimes()) {
-            if (runtime.role() == RuntimeConfig.Role.WORKER
+            if ((runtime.role() == RuntimeConfig.Role.WORKER
+                    || runtime.role() == RuntimeConfig.Role.LIGHT)
                     && (runtime.project() == null || runtime.project().isBlank())) {
                 throw new IllegalArgumentException(
                     "worker runtime '" + runtime.name() + "' requires project");
@@ -622,12 +633,12 @@ public final class SupervisorMain {
     }
 
     /**
-     * Parse the host-init cap. Empty/0 disables the guard for a hand-managed
-     * host; a negative or non-numeric value fails closed.
+     * Parse the host-init cap. Empty defaults to the contract's hard cap of 50;
+     * an explicit 0 disables the guard for a hand-managed host.
      */
     static int hostMaxRuntimes(String value) {
         if (value == null || value.isBlank()) {
-            return 0;
+            return 50;
         }
         try {
             int parsed = Integer.parseInt(value.trim());

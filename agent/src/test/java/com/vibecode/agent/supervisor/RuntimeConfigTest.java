@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -92,6 +93,22 @@ class RuntimeConfigTest {
         assertEquals(List.of("workers-1", "workers-2", "workers-3",
             "reviewers-1", "reviewers-2", "planners-1", "planners-2"),
             config.expandedSlots().stream().map(RuntimeConfig.RuntimeSlot::name).toList());
+    }
+
+    @Test
+    void aLightSectionRunsAsAWorkerChild() {
+        RuntimeConfig config = RuntimeConfig.parse("""
+            [runtime "light-poller"]
+            role = light
+            model = acme/model
+            count = 1
+            project = 1
+            """);
+
+        RuntimeConfig.DeclaredRuntime runtime = config.runtimes().get(0);
+        assertEquals(RuntimeConfig.Role.LIGHT, runtime.role());
+        assertEquals("worker", runtime.role().wireName());
+        assertDoesNotThrow(() -> SupervisorMain.validateDeclaration(config));
     }
 
     @Test

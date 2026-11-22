@@ -36,16 +36,17 @@
 | FR1 | Shell | `host-init.test.sh` | Reference host reports 48 threads / 192 GB / 2 TB | `bash agent/scripts/host-init.test.sh` |
 | FR2 | Shell | `host-init.test.sh` | Reserves and formula printed by `--explain` | same |
 | FR3 | Shell | `host-init.test.sh` | Over-capacity declaration fails with the binding dimension | same |
-| FR4 | Shell + Java | `host-init.test.sh`, `RuntimeConfigTest` | 3/2/2 roles sum to 7 runtimes / 10 CPU / 20 GB / 100 GB | same + `mvn test -Dtest=RuntimeConfigTest` |
-| FR5 | Shell | `host-init.test.sh` | Profile totals and env values are reproducible | same |
+| FR4 | Shell + Java | `host-init.test.sh`, `RuntimeConfigTest` | 3/2/2 roles sum to 7 runtimes / 12 CPU / 19 GB / 100 GB | same + `mvn test -Dtest=RuntimeConfigTest` |
+| FR4 | Shell | `host-init.test.sh` | Light role and profile totals | same |
+| FR5 | Shell | `host-init.test.sh` | Heap/profile overrides and env values are reproducible | same |
 | FR6 | Shell | `host-init.test.sh` | Env file mode 0600; no write in dry-run/check; `--force` required | same |
-| FR7 | Compose | `docker-compose.yml` | Base Compose renders with generated limits | `docker compose -f agent/docker-compose.yml config` |
+| FR7 | Compose | `docker-compose.yml` | Base Compose renders; Docker mode adds the sandbox overlay | `docker compose -f agent/docker-compose.yml config`; `... -f agent/docker-compose.sandbox.yml config` |
 | FR8 | Shell | `host-init.test.sh` | Dry-run/check do not require Docker; deploy requires it | same |
 | FR9 | Compose | `docker-compose.yml` | Memory/CPU/log rotation values are env-driven | `docker compose ... config` |
 | FR10 | Java | `SupervisorCapacityTest` | Cap parsing and capacity failure message | `mvn test -Dtest=SupervisorCapacityTest` |
 | FR11 | Shell | `host-init.test.sh` | Over-capacity writes nothing and starts nothing | same |
-| FR12 | Java | `SupervisorCapacityTest`, `SupervisorMainTest` | 7 slots allowed at cap 7, rejected at 6 | `mvn test -Dtest=SupervisorCapacityTest,SupervisorMainTest` |
-| FR13 | Docs | `agent/README.md`, `agent.ini.example` | Sizing and re-run contract documented | review |
+| FR12 | Java | `SupervisorCapacityTest`, `SupervisorMainTest` | Default cap 50; 7 slots rejected at cap 6; SIGHUP over-cap rejects before declaring | `mvn test -Dtest=SupervisorCapacityTest,SupervisorMainTest` |
+| FR13 | Shell | `host-init.test.sh` | `--yes` waits for `/health`; D7 records the supervisor health-gate deferral | same |
 
 ## Review checklist
 
@@ -60,4 +61,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `80571f0` (PR #197) | shell 31/31; Java 39 focused / 927 total; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |
+| 2026-11-22 | `80571f0` (PR #197) + review fixes | shell 62/62; Java 41 focused / full agent suite 929 tests; Compose base+sandbox | Host-init sizes the 7-runtime reference case, fails closed over capacity, writes a 0600 env file and feeds Compose limits/log rotation. Supervisor cap guard and capacity log added. |

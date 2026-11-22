@@ -132,14 +132,19 @@ token and no `MAX_POOL_SIZE`: the fg-54 supervisor owns the runtime children.
 
 | Role | CPU | RAM | Disk |
 |---|---|---|---|
-| `worker` | 2.0 | 4 GB | 20 GB |
-| `reviewer` | 1.0 | 2 GB | 10 GB |
-| `planner` | 1.0 | 2 GB | 10 GB |
+| `worker` | 2.0 | 3 GB | 20 GB |
+| `reviewer` | 1.5 | 2.5 GB | 10 GB |
+| `planner` | 1.5 | 2.5 GB | 10 GB |
+| `light` | 0.5 | 1.5 GB | 5 GB |
 
-Reference case: 3 workers + 2 reviewers + 2 planners = **7 runtimes**, 10 CPU,
-20 GB and 100 GB. On a 48-thread / 192 GB / 2 TB host it fits; the script writes
-`AGENT_HOST_MAX_RUNTIMES=7`, `SUPERVISOR_CPUS=10.00` and
-`SUPERVISOR_MEMORY_LIMIT=21G`.
+`light` is a sizing variant and runs as a worker child; it does not invent a
+server role.
+
+Reference case: 3 workers + 2 reviewers + 2 planners = **7 runtimes**, 12 CPU,
+19 GB and 100 GB. On a 48-thread / 192 GB / 2 TB host it fits (binding `cpu`);
+the script writes `AGENT_HOST_MAX_RUNTIMES=50`,
+`AGENT_HOST_DECLARED_RUNTIMES=7`, `SUPERVISOR_CPUS=7.00`,
+`SUPERVISOR_MEMORY_BUDGET_MB=5376` and `SUPERVISOR_MEMORY_LIMIT=7G`.
 
 ```bash
 # detect, parse, print the formula, write nothing
@@ -151,26 +156,37 @@ AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --check
 # write .env.agent-host (use --force to replace an existing file)
 AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh
 
-# write and start the supervisor stack
+# write and start the supervisor stack, then wait for /health
 AGENT_INI_PATH=agent.ini agent/scripts/host-init.sh --yes
 ```
 
+Exit codes: `2` arguments, `3` host/Docker/sandbox/repo validation, `4`
+`agent.ini`, `5` over capacity, `6` Compose/health.
+
 The script supports `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`,
 `AGENT_DISK_BUDGET_GB`, `AGENT_UTILIZATION_TARGET`,
-`AGENT_SUPERVISOR_OVERHEAD_MB`, `AGENT_LOG_MAX_SIZE` and `AGENT_LOG_MAX_FILE`.
+`AGENT_RUNTIME_HEAP_MB`, `SANDBOX_CPUS`, `SANDBOX_MEMORY_MB`,
+`SANDBOX_DISK_MB`, `AGENT_LOG_MAX_SIZE` and `AGENT_LOG_MAX_FILE`.
 `AGENT_HOST_CPU_THREADS`, `AGENT_HOST_RAM_GB` and `AGENT_HOST_DISK_GB` are
 deterministic overrides for tests/CI.
+
+`SANDBOX_MODE=docker` adds `agent/docker-compose.sandbox.yml` and requires
+`SANDBOX_HOST_WORKSPACE_ROOT` plus a writable `REPO_HOST_PATH`. The generated
+env file is canonicalized and passed explicitly, so a caller's relative
+`AGENT_INI_PATH` cannot become a Compose named volume.
 
 Compose reads `SUPERVISOR_CPUS`, `SUPERVISOR_MEMORY_LIMIT`,
 `AGENT_LOG_MAX_SIZE` and `AGENT_LOG_MAX_FILE` from the env file:
 
 ```bash
-docker compose --env-file .env.agent-host -f agent/docker-compose.yml up -d --build
+docker compose --env-file .env.agent-host \
+  -f agent/docker-compose.yml [-f agent/docker-compose.sandbox.yml] up -d --build
 ```
 
 The supervisor refuses to start if `agent.ini` grows past
-`AGENT_HOST_MAX_RUNTIMES`; re-run `host-init.sh` after changing role counts.
-`AGENT_HOST_MAX_RUNTIMES=0` disables the guard for a hand-managed host.
+`AGENT_HOST_MAX_RUNTIMES` (default `50`); re-run `host-init.sh` after changing
+role counts. `AGENT_HOST_MAX_RUNTIMES=0` disables the guard for a hand-managed
+host.
 
 ## Supervisor lifecycle
 

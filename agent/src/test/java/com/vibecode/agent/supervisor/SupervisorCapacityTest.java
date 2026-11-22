@@ -35,8 +35,8 @@ class SupervisorCapacityTest {
 
     @Test
     void parsesTheHostRuntimesCap() {
-        assertEquals(0, SupervisorMain.hostMaxRuntimes(null));
-        assertEquals(0, SupervisorMain.hostMaxRuntimes(""));
+        assertEquals(50, SupervisorMain.hostMaxRuntimes(null));
+        assertEquals(50, SupervisorMain.hostMaxRuntimes(""));
         assertEquals(0, SupervisorMain.hostMaxRuntimes(" 0 "));
         assertEquals(7, SupervisorMain.hostMaxRuntimes("7"));
         assertThrows(IllegalArgumentException.class,
@@ -51,7 +51,7 @@ class SupervisorCapacityTest {
 
         assertEquals(7, config.expandedSlots().size());
         assertDoesNotThrow(() -> SupervisorMain.enforceHostCapacity(config, 7));
-        assertDoesNotThrow(() -> SupervisorMain.enforceHostCapacity(config, 8));
+        assertDoesNotThrow(() -> SupervisorMain.enforceHostCapacity(config, 50));
         // 0 disables the guard for hand-managed hosts.
         assertDoesNotThrow(() -> SupervisorMain.enforceHostCapacity(config, 0));
     }

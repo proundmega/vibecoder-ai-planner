@@ -19,7 +19,7 @@ depends_on: ["fg-33", "fg-54"]
 | Claim | Evidence | Checked |
 |---|---|---|
 | Implementation in review | PR #197; see `03` Results | ☑ |
-| Verification results | `03` → Results (shell 31/31; Java 39 focused / 927 total; Compose base+sandbox) | ☑ |
+| Verification results | `03` → Results (shell 62/62; Java 41 focused / full agent suite 929 tests; Compose base+sandbox) | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
@@ -50,7 +50,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Queue-based autoscaling | fg-30 | Infrastructure | fg-38-harness-budgets-routing follow-up | open |
+| D1 | Queue-based autoscaling and dynamic per-role counts: compute worker/reviewer/planner/light counts from `AGENT_UTILIZATION_TARGET` and remaining capacity instead of fixed `agent.ini` counts (e.g. 48 threads, 6 workers + 1 planner at 90%, then fill spare capacity). | fg-30/self | Infrastructure | fg-38-harness-budgets-routing follow-up or a dedicated autoscaling ticket | open |
 | D2 | Durable leases across restarts | fg-33 | Reliability | fg-33-durable-harness-execution | open |
 | D3 | Sandboxed agent containers | fg-34 | Security | fg-34-harness-sandbox | open |
 | D4 | Multi-host/multi-agent orchestration | fg-40 | Agent | fg-40-multi-agent-orchestration | open |

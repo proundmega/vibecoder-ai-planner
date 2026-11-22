@@ -50,16 +50,16 @@ triggers OOM/CPU starvation.
 - **FR1 - Detect host capacity:** CPU cores/threads, total RAM, free disk on the repo volume, Docker availability and existing containers.
 - **FR2 - Reservations:** reserve CPU, RAM and disk for the OS, Docker, the supervisor JVM and caches.
 - **FR3 - Capacity check:** sum the declared profiles and compare with available CPU, RAM and disk after reservations. A declaration that exceeds any dimension fails closed with the binding constraint; no value is written and no agent starts.
-- **FR4 - Profiles:** worker = 2 CPU / 4 GB / 20 GB workspace; reviewer = 1 CPU / 2 GB / 10 GB; planner = 1 CPU / 2 GB / 10 GB. Profiles size fg-54 runtime children, not containers.
-- **FR5 - Overrides:** `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_DISK_BUDGET_GB`, `AGENT_UTILIZATION_TARGET`, `AGENT_RESERVED_CPU`, `AGENT_RESERVED_MEMORY_GB`, `AGENT_RESERVED_DISK_GB`, `AGENT_SUPERVISOR_OVERHEAD_MB`, `AGENT_RUNTIME_HEAP_MB`, `AGENT_LOG_MAX_SIZE`, `AGENT_LOG_MAX_FILE`. There is no `AGENT_MAX_POOL_SIZE`, `AGENT_POOL_SIZE` or `MAX_POOL_SIZE`.
-- **FR6 - Output:** write `.env.agent-host` (mode `0600`) with the computed values and print a summary; `--dry-run`/`--check` write nothing; `--force` replaces an existing file.
-- **FR7 - Deploy:** `docker compose --env-file .env.agent-host -f agent/docker-compose.yml up -d` with the computed env (one supervisor stack; fg-54 supersedes the container-per-agent deployment).
-- **FR8 - Validate:** fail if Docker is unavailable for `--yes`, the declaration is missing, or a capacity dimension does not fit; dry-run/check work without a daemon.
-- **FR9 - Limits:** Compose applies `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_CPUS` and Docker log rotation from the generated env. The supervisor applies the child heap (`AGENT_RUNTIME_HEAP_MB`) and shared memory budget; per-child cgroups remain a follow-up.
+- **FR4 - Profiles:** worker = 2 CPU / 3 GB / 20 GB; reviewer = 1.5 CPU / 2.5 GB / 10 GB; planner = 1.5 CPU / 2.5 GB / 10 GB; light = 0.5 CPU / 1.5 GB / 5 GB. Profiles include the child JVM, its sandbox and overhead; `light` runs as a worker child without inventing a server role.
+- **FR5 - Overrides:** `AGENT_RUNTIME_HEAP_MB`, `SANDBOX_CPUS`, `SANDBOX_MEMORY_MB`, `SANDBOX_DISK_MB`, `AGENT_UTILIZATION_TARGET`, `AGENT_HOST_MAX_RUNTIMES` (default `50`), `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_CPUS`, `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_DISK_BUDGET_GB`, `AGENT_LOG_MAX_SIZE`, `AGENT_LOG_MAX_FILE`. There is no `AGENT_MAX_POOL_SIZE`, `AGENT_POOL_SIZE` or `MAX_POOL_SIZE`.
+- **FR6 - Output:** write `.env.agent-host` (mode `0600`) with the computed values and print a summary; `--dry-run`/`--explain`/`--check` write nothing; `--force` replaces an existing file.
+- **FR7 - Deploy:** `docker compose --env-file .env.agent-host -f agent/docker-compose.yml [-f agent/docker-compose.sandbox.yml] up -d` with the computed env.
+- **FR8 - Validate:** fail if Docker is unavailable for `--yes`, the declaration is missing, sandbox mode lacks its host root/repo bind, or a capacity dimension does not fit; dry-run/check work without a daemon.
+- **FR9 - Limits:** Compose applies `SUPERVISOR_MEMORY_LIMIT`, `SUPERVISOR_CPUS` and Docker log rotation from the generated env. The supervisor applies the child heap and shared memory budget; per-child cgroups remain a follow-up.
 - **FR10 - Observability:** log the detected capacity, reserves, required totals, computed container limits and binding dimension; the supervisor logs declared slots vs the host cap.
 - **FR11 - Safety:** never exceed host capacity; memory is not overcommitted; disk uses 80% of free space; a failed check writes nothing and starts nothing.
-- **FR12 - Runtime guard:** `AGENT_HOST_MAX_RUNTIMES` is written from the declared slot count; the supervisor refuses to start when `agent.ini` grows beyond it. `0` disables the guard for a hand-managed host.
-- **FR13 - Restart behavior:** Compose restarts the supervisor and `agent.ini` remains the desired state; a count change requires re-running `host-init.sh`. A backend health gate is not part of this ticket.
+- **FR12 - Runtime guard:** `AGENT_HOST_MAX_RUNTIMES` defaults to `50` and is written to the env; the supervisor refuses a declaration larger than it. `0` disables the guard for a hand-managed host.
+- **FR13 - Health/restart behavior:** `--yes` starts Compose and waits for `${BACKEND_URL}/health` (bounded); on timeout it exits non-zero and leaves the stack gated. The supervisor health gate itself is D7. `agent.ini` remains the desired state across restarts.
 
 ## Sizing formula
 
@@ -81,8 +81,9 @@ The declaration fits only when:
 
 ```
 required_cpu  <= available_cpu
-required_ram + supervisor_overhead <= available_ram
+required_ram  <= available_ram
 required_disk <= available_disk
+declared      <= AGENT_HOST_MAX_RUNTIMES (default 50)
 ```
 
 `utilization` defaults to `0.80`. Memory is never overcommitted. On failure the
@@ -92,23 +93,24 @@ Variable mapping:
 
 - `AGENT_CPU_LIMIT`, `AGENT_MEMORY_LIMIT`, `AGENT_DISK_BUDGET_GB` override the
   role profile globally.
-- `AGENT_HOST_MAX_RUNTIMES` is the declared slot count; the supervisor refuses
-  a larger `agent.ini`.
-- `SUPERVISOR_CPUS` and `SUPERVISOR_MEMORY_LIMIT` are the Compose container
-  limits for the summed declaration plus supervisor overhead.
+- `AGENT_HOST_MAX_RUNTIMES` defaults to `50`; the supervisor refuses a larger
+  `agent.ini`.
+- `SUPERVISOR_MEMORY_BUDGET_MB = declared * AGENT_RUNTIME_HEAP_MB`.
+- `SUPERVISOR_MEMORY_LIMIT = ceil(budget / 1024) + 1` GB.
+- `SUPERVISOR_CPUS = min(available_cpu, max(2, declared * 1.0))`.
 
 ### Example: 24 cores / 48 threads, 192 GB, 2 TB
 
 Reference declaration: 3 workers + 2 reviewers + 2 planners = **7 runtimes**:
 
-- required: CPU 10, RAM 20 GB, disk 100 GB
+- required: CPU 12, RAM 19 GB, disk 100 GB
 - reserve: 7.2 threads, 19.2 GB, 200 GB
 - available: CPU 31.2, RAM 172.8 GB, disk 1400 GB
-- **fits**; writes `AGENT_HOST_MAX_RUNTIMES=7`, `SUPERVISOR_CPUS=10.00`,
-  `SUPERVISOR_MEMORY_LIMIT=21G` (20 GB + 512 MB overhead, rounded up)
+- **fits** (binding `cpu`); writes `AGENT_HOST_MAX_RUNTIMES=50`,
+  `AGENT_HOST_DECLARED_RUNTIMES=7`, `SUPERVISOR_CPUS=7.00`,
+  `SUPERVISOR_MEMORY_BUDGET_MB=5376`, `SUPERVISOR_MEMORY_LIMIT=7G`
 
-A 7-worker declaration (14 CPU / 28 GB / 140 GB) still fits this host; a
-declaration that pushes past one of the three dimensions fails closed instead
+A declaration that pushes past one of the three dimensions fails closed instead
 of starting a partial fleet.
 
 ## Deployment topology
@@ -125,7 +127,7 @@ scheduler in this ticket.
 | `AGENT_INI_PATH` | `<repo>/agent.ini` | Supervisor declaration parsed by host-init |
 | `AGENT_HOST_ENV_FILE` | `<repo>/.env.agent-host` | Generated env file (mode `0600`) |
 | `AGENT_CPU_LIMIT` | role profile | Per-runtime CPU override |
-| `AGENT_MEMORY_LIMIT` | role profile | Per-runtime memory override (e.g. `4g`) |
+| `AGENT_MEMORY_LIMIT` | role profile | Per-runtime memory override (e.g. `2.5g`) |
 | `AGENT_DISK_BUDGET_GB` | role profile | Workspace budget per runtime |
 | `AGENT_UTILIZATION_TARGET` | `0.80` | CPU utilization target |
 | `AGENT_RESERVED_CPU` | computed | CPU reserved for host/backend |
@@ -133,11 +135,15 @@ scheduler in this ticket.
 | `AGENT_RESERVED_DISK_GB` | computed | Disk reserved |
 | `AGENT_SUPERVISOR_OVERHEAD_MB` | `512` | Supervisor/container overhead |
 | `AGENT_RUNTIME_HEAP_MB` | `768` | Child JVM heap |
+| `SANDBOX_CPUS` | `2.0` | Sandbox CPU profile |
+| `SANDBOX_MEMORY_MB` | `2048` | Sandbox RAM profile |
+| `SANDBOX_DISK_MB` | `5120` | Sandbox disk profile |
+| `SANDBOX_MODE` | `host` | Adds the sandbox overlay and validates its host root |
 | `AGENT_LOG_MAX_SIZE` | `10m` | Docker log rotation |
 | `AGENT_LOG_MAX_FILE` | `3` | Docker log files |
-| `AGENT_HOST_MAX_RUNTIMES` | declared slots | Supervisor startup guard; `0` disables |
-| `SUPERVISOR_CPUS` | required CPU | Compose CPU limit |
-| `SUPERVISOR_MEMORY_LIMIT` | required RAM + overhead | Compose memory limit |
+| `AGENT_HOST_MAX_RUNTIMES` | `50` | Hard cap; supervisor startup guard; `0` disables |
+| `SUPERVISOR_CPUS` | `min(available, max(2, declared))` | Compose CPU limit |
+| `SUPERVISOR_MEMORY_LIMIT` | `ceil(declared * heap / 1024) + 1` GB | Compose memory limit |
 | `AGENT_REPO_DIR` | volume mountpoint | Host path used for `df` |
 
 ## Safety requirements
