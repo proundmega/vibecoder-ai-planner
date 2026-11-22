@@ -1,7 +1,7 @@
 ---
 id: "fg-45"
 title: "Ticket Quality Gates and Definition of Ready"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Both"
@@ -17,9 +17,16 @@ depends_on: ["fg-30"]
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`), file operations (`04`).
 
+## Status evidence
+
+| Claim | Evidence | Checked |
+|---|---|---|
+| Implementation merged | PR #199, squash `2839ae2` | ☑ |
+| Verification results | `03` → Results (backend unit/integration, agent, frontend, Cypress; final rows) | ☑ |
+
 **Related code:** `validators/tickets.js`, `TemplateService`, `TicketPlanningService`, `PhaseService`, `TicketService`, `models/ticket.js`, `middleware/permissions.js`, `agent/harness/HarnessTicketProcessor.java`, `agent/service/TicketProcessor.java`, `TicketBoard.vue`, `TicketDetail.vue`, `frontend/src/api/tickets.ts`
 
-## Relationship to fg-54 (planned)
+## Relationship to fg-54 (merged)
 
 The pickup contract documented in `01` changes columns: `assigned_agent_id`
 becomes `assigned_runtime_id`, and readiness checks apply to runtime roles
