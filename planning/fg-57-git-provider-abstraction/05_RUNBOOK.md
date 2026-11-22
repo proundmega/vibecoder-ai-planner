@@ -1,0 +1,120 @@
+# 05 — Runbook (fg-57)
+
+> Operational procedure for connecting a self-hosted Git provider. Test-only
+> setup: use a disposable repository and disposable credentials. Never point a
+> test at a production repository.
+
+## Provider choice
+
+| Provider | Typical footprint | Use when |
+|---|---|---|
+| **Forgejo/Gitea** | ~1–2 vCPU, 1–2 GB RAM, small disk for a team | You want a lightweight self-hosted PR UI |
+| **GitLab self-hosted** | Omnibus is significantly heavier; plan multi-GB RAM and CPU | The organisation already runs GitLab |
+| **Local bare repo over SSH** | Negligible; just a filesystem/SSH account | You only need branch publishing and manual diff review |
+
+For a private application where the main requirement is “code must not live on
+a foreign host,” start with Forgejo/Gitea or a bare repo. GitLab is correct only
+if you already operate it.
+
+## Preconditions
+
+- A disposable self-hosted Git server or bare repository.
+- A dedicated test project/repository.
+- A scoped token or deploy key; never a personal all-repo token.
+- Backend `GIT_*`/provider base URL configured.
+- The model-provider privacy policy is still enforced; self-hosted Git does not
+  make the model local.
+
+## Forgejo/Gitea
+
+1. Run a pinned, disposable instance:
+
+   ```bash
+   docker run -d --name forgejo-test \
+     -p 3000:3000 -p 2222:22 \
+     -v forgejo-test-data:/data \
+     codeberg.org/forgejo/forgejo:<pinned-release>
+   ```
+
+   For Gitea, use the `gitea/gitea:<pinned-release>` image with the same ports.
+
+2. Create a test user and repository. Do not enable public registration on a
+   host reachable from untrusted networks.
+3. Create a repository-scoped access token with repository read/write and
+   pull-request permissions.
+4. In the planner, connect the project with:
+   - provider: `forgejo` or `gitea`
+   - repo URL: `http://<host>:3000/<owner>/<repo>.git`
+   - base URL: `http://<host>:3000`
+   - auth mode: `project_token` or `pat`
+   - token: the scoped token
+5. Create a throwaway ticket and run one worker. Verify:
+   - one branch is pushed;
+   - exactly one PR is created;
+   - a retry does not create a second PR;
+   - the ticket moves to `review` with the PR URL.
+6. Clean up the PR/branch, repository, token and container.
+
+## GitLab self-hosted
+
+1. Use an existing disposable GitLab or a throwaway Omnibus container. Budget
+   more CPU/RAM than Forgejo; do not run it on the same small host as the
+   planner unless the host was sized for it.
+2. Create a test project and a project access token with `api` and
+   `write_repository`.
+3. Connect with provider `gitlab`, the project clone URL, the GitLab base URL,
+   auth mode `project_token`, and the token.
+4. Run one ticket and verify the merge request, branch and cleanup.
+5. Revoke the project token and delete the test project.
+
+If GitLab is too heavy for the environment, implement and test against a
+faithful API fake first; keep the real-instance verification as a later
+follow-up.
+
+## Local bare repository over SSH
+
+1. On a host the agent can reach, create a bare repo:
+
+   ```bash
+   git init --bare /srv/git/private-app.git
+   ```
+
+2. Create a dedicated SSH user/key restricted to that repository. Put the public
+   key in `authorized_keys` with a command restriction if possible.
+3. Give the agent the **private key** through the planner credential store, and
+   a verified `known_hosts` entry. Never use `StrictHostKeyChecking=no`.
+4. Connect with provider `local`, the SSH clone URL, auth mode `ssh`.
+5. Run one ticket. The harness pushes the branch and finishes with a branch/SHA,
+   no PR URL. Review the diff locally or in the Git UI.
+6. Clean up the branch, deploy key and bare repo.
+
+## Verification checklist
+
+- [ ] Provider is `forgejo`, `gitea`, `gitlab` or `local` (not a hardcoded
+      GitHub path)
+- [ ] Repository and default branch validated
+- [ ] Credential encrypted at rest and absent from logs/argv/prompt
+- [ ] One branch, one PR/MR (or branch/SHA for local)
+- [ ] Retry is idempotent
+- [ ] Ticket reaches `review`
+- [ ] No credential or test repository remains after cleanup
+- [ ] Model-provider policy still applies to private code
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| 401/403 on connect | Token scope, base URL or provider mismatch |
+| 404 on repository | Wrong owner/repo or self-hosted base URL |
+| Branch push rejected | Protected branch, read-only token or SSH key not authorized |
+| Duplicate PR | Publish retry did not reuse the existing review |
+| Local run has no review URL | Expected; use branch + SHA, not a dead PR link |
+| Agent cannot clone | Deploy key, known_hosts or network policy |
+
+## Cleanup
+
+- Revoke the provider token/deploy key.
+- Delete the test branch/PR/MR and test repository.
+- Remove the planner project repo row.
+- Stop and remove the disposable container and volume.
+- Do not leave a test repository or token behind.
