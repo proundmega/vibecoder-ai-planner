@@ -50,7 +50,7 @@ long-running agent role.
 | `02_ARCHITECT_DESIGN.md` | ☑ | |
 | `03_ARCHITECT_IMPLEMENTATION.md` | ☑ | |
 | `04_SPECIFICATION.md` | ☐ | optional; add per slice when implementation starts |
-| `05_RUNBOOK.md` | ☐ | optional; operator steps are summarised in `02` → Rollout |
+| `05_RUNBOOK.md` | ☑ | fg-54 pilot: enrollment, sandbox, ticket, failure drills and cleanup |
 
 ## Readiness gate (before implementation)
 

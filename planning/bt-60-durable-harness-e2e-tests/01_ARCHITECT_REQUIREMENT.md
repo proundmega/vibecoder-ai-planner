@@ -17,7 +17,7 @@ coverage is split across layers:
 - `HarnessTicketProcessorTest` tests the Java supervisor with `ApiService`
   mocked.
 
-No test exercises the complete composition **real Java agent/HTTP client →
+No test exercises the complete composition **real node runtime/HTTP client →
 real `/api/v1/harness` routes → real Postgres**, and no disposable staging run
 has validated the real OpenCode/GitHub/PR path. A path, body, auth,
 project-scope or finish-failure bug can therefore pass every mocked/split test.
@@ -27,8 +27,8 @@ expected.
 
 ## Goals
 
-1. Prove the composition from a real agent HTTP client through the real routes
-   to real Postgres.
+1. Prove the composition from a real node runtime HTTP client through the real
+   routes to real Postgres.
 2. Provide a repeatable, disposable staging runbook for the real
    OpenCode/provider/GitHub/PR path.
 3. Detect contract, authorization and finish-failure gaps that split-layer
@@ -51,15 +51,15 @@ expected.
 
 | ID | Requirement | Acceptance (testable) |
 |---|---|---|
-| FR1 | Disposable fixtures create an owner, project, agent, ticket and a second cross-tenant fixture with a unique suffix, then clean up every row. | After the suite, no test users/projects/agents/tickets/runs/leases/checkpoints remain; a failed run still cleans up in `afterAll`. |
-| FR2 | A backend HTTP/Postgres e2e uses the real Express app and real Postgres, with no mocked routes or service. | `harnessHttpE2E.test.js` drives start → claim → checkpoints → heartbeat → finish through `/api/v1/harness` with an agent API key. |
-| FR3 | The e2e asserts persisted state, not only HTTP status. | `harness_runs` status/step/attempt/head_sha/pr_url, `harness_checkpoints` order/context, and `harness_leases` claim/renew/release are asserted. |
-| FR4 | Auth, ownership and project scope are exercised through the routes. | Wrong agent/owner/status → 403; JWT mutation → 403; project owner/member read → 200; outside-project → 403; super_admin → 200. |
+| FR1 | Disposable fixtures create an owner, project, enrolled node, worker runtime, ticket and a second cross-tenant fixture with a unique suffix, then clean up every row. | After the suite, no test users/projects/nodes/runtimes/tickets/runs/leases/checkpoints remain; a failed run still cleans up in `afterAll`. |
+| FR2 | A backend HTTP/Postgres e2e uses the real Express app and real Postgres, with no mocked routes or service. | `harnessHttpE2E.test.js` drives start → claim → checkpoints → heartbeat → finish through `/api/v1/harness` with a node access token and `X-Agent-Runtime`. |
+| FR3 | The e2e asserts persisted state, not only HTTP status. | `harness_runs` status/step/attempt/head_sha/pr_url/runtime_id, `harness_checkpoints` order/context, and `harness_leases` claim/renew/release are asserted. |
+| FR4 | Auth, ownership and project scope are exercised through the routes. | Wrong runtime/owner/status → 403; JWT mutation → 403; project owner/member read → 200; outside-project → 403; super_admin → 200. |
 | FR5 | Lifecycle guards hold over HTTP. | Duplicate start → 409 with one active run; backwards/unknown/after-finish checkpoints rejected; finish is idempotent and releases the lease. |
-| FR6 | A manual staging happy path runs against a disposable project, repo, ticket and agent. | Run/checkpoint/lease/ticket/PR state matches expectations and every artifact is cleaned up. |
-| FR7 | Phase A failure cases are exercised where slice 1 supports them. | Finish failure after publish leaves the ticket in `review` with no release/reset; start 401/expiry classification is covered at the client/processor layer; mid-run expiry is manual-only or covered by a focused processor test (D7); lease loss blocks publish. |
+| FR6 | A manual staging happy path runs against a disposable project, repo, ticket, enrolled node and worker runtime. | Run/checkpoint/lease/ticket/PR state matches expectations and every artifact is cleaned up. |
+| FR7 | Phase A failure cases are exercised where slice 1 supports them. | Finish failure after publish leaves the ticket in `review` with no release/reset; start 401/expiry classification is covered at the client/processor layer; mid-run node revocation is manual-only or covered by a focused processor test (D7); lease loss blocks publish. |
 | FR8 | Phase B cases are explicitly marked, not silently claimed. | Crash/restart, reaper/ticket release and idempotent publish are listed as Phase B with their tests; a skipped case is recorded in `00` D7. |
-| FR9 | No production data is touched. | The runbook requires a dedicated test project/repo/ticket/agent; no production ticket, repo, PR or credentials appear in the suite or docs. |
+| FR9 | No production data is touched. | The runbook requires a dedicated test project/repo/ticket/node/runtime; no production ticket, repo, PR or credentials appear in the suite or docs. |
 | FR10 | The ticket is indexed. | `PENDING.txt` and `planning/HARNESS_ROADMAP.md` point to this suite and show the satisfied fg-33 dependency. |
 
 ## Non-functional / safety requirements
@@ -88,7 +88,8 @@ Summarise only. The authoritative list with reasons, follow-ups and state is
 
 - Production changes and re-implementing fg-33 recovery/reaper — see `00` D1–D5 (done).
 - Containerized CI e2e and automated fault injection — see `00` D7–D8.
-- fg-34 sandbox, fg-41 observability, fg-42 privacy — see `00` D9–D11.
+- fg-34 sandbox, fg-41 observability and fg-42 privacy implementation — all
+  merged and used by the staging run; see `00` D9–D11.
 
 ## Known unknowns
 
@@ -102,9 +103,10 @@ Summarise only. The authoritative list with reasons, follow-ups and state is
    longer budget; it remains a follow-up.
 4. **Test DB isolation** — the integration setup applies migrations to the
    configured database; fixtures must use unique suffixes and cleanup.
-5. **Agent startup prerequisites** — the real agent needs
-   `HARNESS_MODE=opencode`, an OpenCode binary, provider config, a test project
-   ID and a test repo. Document exact values without committing secrets.
+5. **Node startup prerequisites** — the real node needs `BACKEND_URL`,
+   `AGENT_CREDENTIALS_FILE`, a one-time `ENROLLMENT_TOKEN`, a
+   `SUPERVISOR_CONFIG` runtime declaration, an OpenCode binary, and a verified
+   worker model. Document exact values without committing secrets.
 
 ## Important design decisions
 
@@ -122,8 +124,8 @@ Summarise only. The authoritative list with reasons, follow-ups and state is
 ## Dependencies
 
 - Depends on: fg-33 slices 1-3 (merged, #110).
-- Requires for the manual layer: disposable test project/repo/agent, provider
-  key, GitHub token.
+- Requires for the manual layer: disposable test project/repo/node/runtime,
+  provider key and GitHub App installation.
 - Blocks: no other ticket; provides validation evidence for fg-33.
 
 ## Deferred scope

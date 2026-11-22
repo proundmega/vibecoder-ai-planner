@@ -12,7 +12,7 @@
   `047_harness_checkpoint_publish_evidence.sql` (each with rollback).
 - Endpoints: start/checkpoint/heartbeat/finish, leases, `/publish`, `/reconcile`,
   `/dead-letter`, `/adopt` and `/release-ticket`; startup recovery also uses
-  `GET /agents/:agentId/runs` and `/workspaces`.
+  `GET /agents/:runtimeId/runs` and `/workspaces`.
 - Route tests: `backend/src/__tests__/api-harness-runs.test.js` (service mocked).
 - Service/Postgres integration: `backend/src/__tests__/integration/harnessRuns.test.js` (45 tests).
 - Reaper: `backend/src/services/HarnessReaper.js`, `harnessReaper.test.js`,
@@ -55,23 +55,28 @@ The test uses `supertest(app)` against the real Express app and the real Postgre
 
 Fixture responsibilities:
 
-- Create a unique test user (owner), project, agent created through
-  `AgentService.create` (so `api_key_hash`, `api_key_hash_prefix` and expiry
-  are all set), a member user with a `project_memberships` row, and a ticket
-  assigned to the owner; use `Date.now() + random` suffix.
-- Create a second owner/project/agent/ticket for cross-tenant/authorization
-  tests, and an expired-key agent for E5.
+- Create a unique test user (owner), project, enrolled node, worker runtime,
+  node grant and ticket assigned to the runtime; use `Date.now() + random`
+  suffix.
+- Mint a node access token through `AgentNodeService` (or insert the matching
+  `token_prefix`/`token_hash`) and return the plaintext token plus the runtime
+  id for `X-Agent-Runtime`.
+- Create a second owner/project/node/runtime/ticket for cross-tenant and
+  authorization tests, and a revoked-node token for E5.
 - Expose `createHarnessFixture()`, `createOtherHarnessFixture()`, `cleanupHarnessFixtures()`.
-- Clean up in `afterAll`; rely on FK cascade for runs/checkpoints/leases; explicitly delete test users/projects/agents/tickets if needed.
+- Clean up in `afterAll`; rely on FK cascade for runs/checkpoints/leases;
+  explicitly delete test users/projects/nodes/runtimes/tickets if needed.
 - Never use an existing product ticket or production repository.
 
 Test groups:
 
 1. **Start**
-   - Agent API key starts a run for its assigned `in_progress` ticket → 201; DB row `running`, `created`, attempt 1.
-   - Missing/invalid/expired key → 401 (client-side behavior covered by `ApiServiceHarnessTest`; route behavior here).
+   - A node access token plus `X-Agent-Runtime` starts a run for its assigned
+     `in_progress` ticket → 201; DB row `running`, `created`, attempt 1.
+   - Missing/invalid/revoked token → 401 (client-side behavior covered by
+     `ApiServiceHarnessTest`; route behavior here).
    - JWT caller → 403.
-   - Wrong owner/agent → 403; ticket not `in_progress` → 403.
+   - Wrong owner/runtime → 403; ticket not `in_progress` → 403.
    - Duplicate start while a run is active → 409 `CONFLICT`.
 2. **Lease**
    - Claim → 201; row for ticket.
@@ -88,11 +93,11 @@ Test groups:
 5. **Finish**
    - Finish succeeded → 200; DB status/head_sha/pr_url; lease deleted.
    - Idempotent second finish → 200 with existing terminal state.
-   - Wrong agent → 403; JWT mutation → 403.
+   - Wrong runtime → 403; JWT mutation → 403.
 6. **Operator reads**
    - Project owner/member JWT → 200 for run and checkpoints.
    - `user` role → 403; non-member → 403; super_admin → 200.
-   - Agent can read its own run; another agent → 403.
+   - Runtime can read its own run; another runtime → 403.
 7. **Operator actions** — `/publish`, `/reconcile`, `/dead-letter`, `/adopt`
    and `/release-ticket` over HTTP where the route allows it; assert guards,
    authorization and idempotency.
@@ -119,7 +124,6 @@ Use a dedicated test project/repository and throwaway ticket. This is the only l
 Configuration:
 
 ```text
-HARNESS_MODE=opencode
 HARNESS_DURABILITY_REQUIRED=true
 HARNESS_LEASE_SECONDS=60
 HARNESS_HEARTBEAT_SECONDS=10     # clamped to <= lease/2
@@ -130,11 +134,13 @@ HARNESS_VERIFY_COMMANDS=<safe, fast command for the test repo>
 Setup:
 
 1. Create a dedicated test project and test GitHub repository.
-2. Create a test agent (not a production agent) with the project/provider/GitHub configuration.
-3. Create a throwaway ticket with a trivial change and a small scope.
-4. Run the real agent process.
-5. Assert the DB/PR/ticket state (see test matrix).
-6. Clean up the test ticket/PR/branch and any stuck run/lease.
+2. Register a project-scoped provider credential and verified worker model.
+3. Enroll a test node and declare a worker runtime (supervisor config) with
+   the project grant.
+4. Create a throwaway ticket with a trivial change and a small scope.
+5. Run the real supervisor process.
+6. Assert the DB/PR/ticket state (see test matrix).
+7. Clean up the test ticket/PR/branch and any stuck run/lease.
 
 Never use a normal product ticket. fg-33 slices 1-3 and the reaper are merged
 (#110); if a crash outlives the reaper interval, use the runbook to reconcile
@@ -153,16 +159,16 @@ and CI has the budget and secrets.
 Test/manual ticket
    │
    ▼
-Agent HarnessTicketProcessor
-   │  ApiService (real HTTP, X-API-Key)
+Supervisor / HarnessTicketProcessor
+   │  ApiService (real HTTP, X-API-Key node token + X-Agent-Runtime)
    ▼
 Express /api/v1/harness routes
-   │  verifyTokenOrAgent, ownership/project checks
+   │  verifyTokenOrAgent, requireRuntime, ownership/project checks
    ▼
 HarnessRunService
    │  parameterized SQL / CTEs
    ▼
-Postgres: harness_runs / checkpoints / leases
+Postgres: harness_runs / checkpoints / leases (runtime_id)
    │
    ├── OpenCode/provider (manual staging)
    └── Git/GitHub PR (manual staging)
@@ -179,14 +185,17 @@ For the backend HTTP e2e, the test asserts the same DB state at each arrow. For 
 - `supertest`, `bcryptjs`, `jsonwebtoken` already used by tests.
 - Harness routes, service, reaper and migrations 045-047 from fg-33 slices 1-3
   (#110).
-- `AgentService.getAgentByApiKey` looks up by `api_key_hash_prefix` (SHA-256,
-  first 20 hex chars) and then bcrypt-compares `api_key_hash`; the fixture must
-  set both (prefer `AgentService.create`).
+- `AgentNodeService` looks up `at_…` node tokens by `token_prefix` and verifies
+  the hash with `AgentTokenService.matches`; `X-Agent-Runtime` must resolve to a
+  runtime owned by that node. Fixtures must mint a real token (prefer the
+  enrollment/`AgentNodeService` path) instead of hand-writing a hash.
 
 ### Agent
 - Existing `ApiServiceHarnessTest`, `HarnessTicketProcessorTest`.
-- A real agent process/config for the manual staging run.
-- OpenCode binary, provider key, test repo/token for manual staging.
+- A real supervisor process with a node credential and a `SUPERVISOR_CONFIG`
+  worker runtime for the manual staging run.
+- OpenCode binary, verified provider model and test repo/installation for
+  manual staging.
 
 ### Cross-Cutting
 - fg-33 slices 1-3 are merged, so E19-E21 can run against the real
@@ -199,7 +208,10 @@ For the backend HTTP e2e, the test asserts the same DB state at each arrow. For 
 
 - No new env vars.
 - Automated backend test uses `DATABASE_URL` from the integration config.
-- Manual staging uses existing `HARNESS_*` variables; `HARNESS_DURABILITY_REQUIRED=true` is required.
+- Manual staging uses the fg-54 node settings (`BACKEND_URL`,
+  `AGENT_CREDENTIALS_FILE`, `ENROLLMENT_TOKEN`, `SUPERVISOR_CONFIG`,
+  `SANDBOX_MODE`) plus the existing `HARNESS_*` variables;
+  `HARNESS_DURABILITY_REQUIRED=true` is required.
 - Do not commit test credentials.
 
 ---
@@ -208,19 +220,20 @@ For the backend HTTP e2e, the test asserts the same DB state at each arrow. For 
 
 No production migration. Test fixtures use:
 
-- `users`, `projects`, `agents`, `tickets` (unique suffix)
+- `users`, `projects`, `agent_nodes`, `agent_node_grants`, `agent_runtimes`,
+  `provider_credentials`, `provider_models`, `tickets` (unique suffix)
 - `harness_runs`, `harness_checkpoints`, `harness_leases` (created/deleted through the API or cleanup cascade)
 
-Fixture cleanup must remove test users/projects/agents/tickets and rely on
-`ON DELETE CASCADE` for harness rows. If a test fails mid-run, cleanup still
-runs in `afterAll`; a documented manual cleanup SQL is included in
-`05_RUNBOOK.md`.
+Fixture cleanup must remove test users/projects/nodes/runtimes/credentials/tickets
+and rely on `ON DELETE CASCADE` for harness rows. If a test fails mid-run,
+cleanup still runs in `afterAll`; a documented manual cleanup SQL is included
+in `05_RUNBOOK.md`.
 
 ---
 
 ## Failure Handling and Cleanup
 
-- Automated test failure: `afterAll` deletes test owners/projects/agents/tickets; if a connection is broken, document manual SQL.
+- Automated test failure: `afterAll` deletes test owners/projects/nodes/runtimes/tickets; if a connection is broken, document manual SQL.
 - Manual staging failure: record ticket/run/lease IDs; run the cleanup SQL; close any test PR/branch; never leave a stuck test ticket.
 - Finish failure: the expected state is ticket `review` + run recoverable; do not release/reset a reviewed ticket.
 - Lease loss/crash: startup recovery and the reaper now handle it; record the
@@ -230,17 +243,18 @@ runs in `afterAll`; a documented manual cleanup SQL is included in
 
 ## Security Considerations
 
-- Use a dedicated test project/repo/agent; no production data.
-- Run the staging agent on a disposable/isolated host. It executes real repo
-  code with a real provider key and GitHub token while fg-34 (D9) is open.
-- Use a GitHub token scoped to the one test repo and revoke it after the run.
+- Use a dedicated test project/repo/node/runtime; no production data.
+- Run the staging supervisor on a disposable/isolated host. It executes real
+  repo code with a real provider key and GitHub installation; D14 is merged,
+  D16 remains open.
+- Use a GitHub App installation scoped to the one test repo and revoke it after
+  the run.
 - Use a dedicated, spend-capped provider key.
 - Verify `DATABASE_URL` points at a disposable test database **before** any
   cleanup SQL runs.
-- Never commit provider/GitHub keys or real agent keys.
+- Never commit provider/GitHub keys or node credentials.
 - JWT tests generate short-lived test tokens with the test secret; no real users.
-- Agent fixtures use `AgentService.create` (hash + prefix + expiry); clean up
-  the agent.
+- Node fixtures mint a scoped access token; clean up the node and runtime.
 - The manual runbook must state that the test repo/PR is disposable.
 
 ---
@@ -254,9 +268,9 @@ runs in `afterAll`; a documented manual cleanup SQL is included in
 4. **Test DB cleanup** — unique suffix + `afterAll`; verify no residual rows after a failed run.
 5. **Finish-failure reproduction** — no production fault switch; use a proxy/controlled outage or rely on the processor unit test in Phase A; add a test seam only with approval.
 6. **CI cost** — full containerized e2e deferred; backend HTTP e2e is lightweight.
-7. **Agent key hash** — the auth lookup uses `api_key_hash_prefix` then
-   bcrypt-compares `api_key_hash`; a fixture that sets only the hash returns
-   401. Use `AgentService.create` or set both.
+7. **Node token hash** — the auth lookup uses `token_prefix` then verifies the
+   stored hash; a fixture that writes an arbitrary token returns 401. Mint the
+   token through the node service/enrollment path.
 8. **JWT scope** — project membership/role setup must match the route's `OPERATOR_ROLES` and project-scope query.
 
 ---

@@ -81,3 +81,4 @@ observability operations.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-16 | stacked PRs #163/#164/#165 | fg-41 slices 1-2 | Implemented; backend 144/144 suites (1815 tests), agent 728 tests and frontend 571 tests green; pending review/merge |
+| 2026-11-22 | `5dff931` (#163) | fg-41 | Merged; event stream, redaction and audit complete; #165 added the replay timeline and dashboards. |

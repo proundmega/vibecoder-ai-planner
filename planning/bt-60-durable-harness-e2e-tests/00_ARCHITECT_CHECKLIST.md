@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-02"
-updated: "2026-11-03"
+updated: "2026-11-22"
 pr: null
 branch: null
 depends_on: ["fg-33"]
@@ -35,7 +35,11 @@ finish-failure mismatch can pass every current test.
 
 **Readiness:** fg-33 slices 1-3 are merged (#110). The Phase A and Phase B
 dependencies are both satisfied; the remaining blocker is the disposable
-staging project/repo/agent, provider key and GitHub token.
+staging project/repo/node/runtime, provider key and GitHub App installation.
+The fg-54 clean cut replaced project-bound agents with enrolled nodes and
+declared runtimes; the fixtures, failure drills and cleanup SQL in this suite
+now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
+`planning/DONE/fg-54-agent-fleet/05_RUNBOOK.md` for the enrollment path.
 
 ## Status evidence
 
@@ -60,15 +64,15 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | fg-44-agent-storage-lifecycle | open |
 | D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B | open |
 | D8 | Fully containerized real-agent e2e in CI | self | Testing | follow-up | open |
-| D9 | Sandbox isolation for the real staging agent | fg-34 | Security | fg-34-harness-sandbox | open |
-| D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | fg-41-harness-observability | open |
-| D11 | Redaction and retention for captured test artifacts | fg-42 | Privacy | fg-42-harness-privacy | open |
+| D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |
+| D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
+| D11 | Redaction and retention for captured test artifacts | fg-42 | Privacy | DONE/fg-42-harness-privacy | done (#166) |
 
 ## Decisions needed from the user
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Staging project/repo/agent and provider/GitHub credentials | provide now / defer | Use a dedicated disposable set, never production | Pending |
+| 1 | Staging project/repo/node/runtime and provider/GitHub credentials | provide now / defer | Use a dedicated disposable set, never production | Pending |
 | 2 | Phase split | A only / A+B now | Both dependencies are satisfied; run A+B | Pending |
 
 ## Completion gate
