@@ -187,6 +187,9 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 | **fg-43-D6** | Per-child cgroups and PID limits for supervisor runtime children. | Each child is capped by cgroup/PID limits and the limits are observable. | fg-43, fg-34 |
 | **fg-43-D7** | Supervisor-level backend `/health` startup gate. | A down backend prevents child spawn; recovery is automatic after health returns. | fg-43, fg-54 |
 
+These rows are the intake for the fg-43 deferred register. Promote a row to a
+planning suite (`planning/fg-43-dN-...`) when it is scheduled.
+
 ## Human Loop (fg-55)
 
 | ID | Directory | Priority | Depends on | Description |
@@ -235,7 +238,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 - bp-68, bp-69, bp-70 are **completed** (PRs #44, #46, #47).
 - pa-01 is **completed** (this session — permission system was already implemented, only remaining frontend role checks were cleaned up).
 - bt-53, bt-56, bt-57 are **completed** (test backfills for corresponding bp-* suites).
-- **bt-60** is **in review** (PR #198) — full durable-harness e2e. Phase A (backend HTTP/Postgres e2e) is implemented; Phase B (disposable staging happy path and crash/reaper/idempotent-publish failure matrix) is blocked on the disposable staging project/repo/agent, provider key and GitHub token. See `planning/bt-60-durable-harness-e2e-tests/`.
+- **bt-60 Phase A is merged** (#198) — full durable-harness e2e. The backend HTTP/Postgres e2e is merged; Phase B (disposable staging happy path and crash/reaper/idempotent-publish failure matrix) remains blocked on the staging project/repo/agent, provider key and GitHub token. See `planning/bt-60-durable-harness-e2e-tests/`.
 - bt-53/56/57 are test backfills for their bp-* suites; **bt-60** is a forward end-to-end validation for fg-33.
 - fg-01 through fg-07 are **completed** (this session).
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
