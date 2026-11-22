@@ -118,3 +118,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-22 | b39c020 | review fixes 3: super_admin canEditCriteria, template application keeps route policy, best-effort criteria seed, agent-path test, FR15 wording | pass |
 | 2026-11-22 | 36abbc2 | review fixes 4: total seed-error handling, create compensation delete, rebased onto master (19cfc33) | pass |
 | 2026-11-22 | f2aa8bc | Cypress create-wizard description selector updated for the readiness wizard | pass |
+| 2026-11-22 | `2839ae2` | Merged (PR #199) | Merged to master after review; readiness gate defaults to `warn`. |
