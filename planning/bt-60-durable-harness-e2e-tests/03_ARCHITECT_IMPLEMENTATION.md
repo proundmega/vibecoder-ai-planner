@@ -271,19 +271,19 @@ original scenarios; E23-E28 cover the non-scenario requirements so every
 | FR3/FR5 | E9 | Backward/unknown checkpoint | Backend HTTP | 409/400 | A |
 | FR3/FR5 | E10 | Checkpoint after finish | Backend HTTP | 404 | A |
 | FR3 | E11 | Heartbeat updates `agent_step`/`heartbeat_at` | Backend HTTP | 200; wrong agent/after finish 404 | A |
-| FR5 | E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/`head_sha`/`pr_url`; no lease | A |
-| FR5 | E13 | Idempotent finish | Backend HTTP | 200 existing terminal; no duplicate side effect | A |
+| FR5 | E12 | Finish succeeded; lease deleted | Backend HTTP | 200; status/`head_sha`/`pr_url`; `artifacts_finalized_at` set; no lease; wrong runtime 403 | A |
+| FR5 | E13 | Idempotent finish | Backend HTTP | 200 existing terminal; artifacts remain finalized (`artifacts_finalized_at` non-null); no duplicate side effect | A |
 | FR4 | E14 | Operator project scope/roles | Backend HTTP | owner/member 200; user/outside 403; super_admin 200 | A |
 | FR6 | E15 | Manual real happy path | Manual staging | run/checkpoints/lease/ticket/PR as expected | A |
 | FR7 | E16 | Finish endpoint unavailable after PR | Processor/manual | ticket stays `review`; no reset; run recoverable; reaper reconciles | A/B |
 | FR7 | E17 | Node token revoked mid-run | Processor/manual | fatal; no push/PR; add a focused processor test or keep manual-only (D7) | A/manual |
-| FR7 | E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery | A |
+| FR7 | E18 | Lease lost/expired before publish | Processor/manual | no push/PR; ticket left for recovery; covered by `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` | A |
 | FR8 | E19 | Crash/restart mid-prompt/verify/publish | Manual | startup recovery skips fresh runs, fails/releases stale runs without evidence, adopts published runs; reaper reconciles terminal runs; no duplicate PR | B |
 | FR8 | E20 | Reaper fails stale run and ticket release | Manual/backend | release only `in_progress`, no `pr_url`; not review/done | B |
 | FR8 | E21 | Idempotent publish/duplicate PR | Manual | one branch/PR; no duplicate | B |
 | FR8/NFR2 | E22 | Full containerized CI e2e | CI Docker | deterministic happy path + failure cases | B/follow-up |
 | FR9 | E24 | No production data used | Manual/review | dedicated test project/repo/ticket/node/runtime; scoped credentials revoked; cleanup verified | A |
-| FR10 | E25 | Index updated | Docs | `PENDING.txt` and roadmap point to bt-60 and show the satisfied fg-33 dependency | A |
+| FR10 | E25 | Index updated | Docs (review-only) | `PENDING.txt` and roadmap point to bt-60 and show the satisfied fg-33 dependency; not part of the backend e2e suite because the test image ships only `backend/` | A |
 | NFR1 | E26 | Test-only change | Review | no production source, migration or behavior change | A |
 | NFR2 | E27 | Suites and lint | CI | backend unit + integration, agent `mvn test`, lint pass | A/B |
 | NFR3 | E28 | Staging safety preconditions | Manual/review | isolated host; repo-scoped token revoked; spend-capped provider key; disposable `DATABASE_URL` verified before cleanup | A |
@@ -318,9 +318,9 @@ keep a copy.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| — | — | — | Not run |
+| 2026-11-22 | `664c3f8` + `865565e` (PR #198; #200 merged as `865565e`) | Phase A: `harnessHttpE2E` 16/16; backend integration 20 suites / 158 tests; backend unit 152 suites / 1788 tests; lint 0 errors (30 warnings); `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` 1/1 | Phase A green. E12/E13 assert `artifacts_finalized_at`; the usage-flush UUID defect they exposed is fixed in the separate production PR #200. Phase B staging is deferred pending the disposable repo/key/App installation. |
 
 | Field | Value |
 |---|---|
-| Residual rows | none (verify) |
-| Manual staging evidence | — |
+| Residual rows | none (verified `bt60_*` counts are 0 after the suite) |
+| Manual staging evidence | — (Phase B deferred) |
