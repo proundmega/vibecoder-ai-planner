@@ -56,16 +56,18 @@ The layers are independent: a change can pass one and fail another.
 |---|---|---|---|
 | 0. Deterministic | CI / `check-planning.js` | structure, status, matrix coverage, results, tests, lint, paths | blocking |
 | 1. Author self-check | author | `03` review checklist, evidence, results | blocking |
-| 2. Pre-implementation risk review | `fg-45` (planned) | assumptions, failure modes, security considerations, change impact present and actionable | policy target: blocking once `fg-45` lands |
+| 2. Pre-implementation risk review | `fg-45` (merged; `planning/DONE/fg-45-ticket-quality-gates/`) | assumptions, failure modes, security considerations, change impact present and actionable | blocking; readiness gate available (`READINESS_GATE_MODE=off\|warn\|enforce`, default `warn`, `enforce` opt-in) |
 | 3. Independent reviewer | reviewer agent (`fg-31`) | requirements/design/code against evidence | blocking findings |
 | 4. Second reviewer | `fg-47` (planned) | different model/provider/context; adversarial pass | blocking findings |
 | 5. Fixer | separate fixer (`fg-32`) | resolve blocking findings, hand back the new SHA | bounded rounds |
 | 6. Traceability | `fg-51` (planned) | every `FR*`/`NFR*` maps to code, a test and passing verification at the reviewed SHA; gap report | policy target: blocking once `fg-51` lands |
 | 7. Human | human | final approval, security, architecture, product intent | blocking |
 
-Layers 2 and 6 are **policy targets**, not current automated enforcement. Until
-`fg-45` and `fg-51` land, the author/reviewer apply them manually; the
-deterministic checks in `check-planning.js` cover layers 0–1 only.
+Layer 2 is implemented by `fg-45` (merged); the readiness gate is available with
+`READINESS_GATE_MODE=warn` by default and `enforce` opt-in. Layer 6 remains a
+**policy target** until `fg-51` lands, so the author/reviewer apply traceability
+manually; the deterministic checks in `check-planning.js` cover layers 0–1
+only.
 
 Rules:
 
@@ -90,7 +92,8 @@ Rules:
 - **Risk before code.** No ticket starts implementation until its assumptions,
   change impact and (for non-small work) failure modes and security
   considerations are present and approved. This is a readiness check, not a
-  new phase. (Policy target until `fg-45` lands.)
+  new phase. (`fg-45` merged; `READINESS_GATE_MODE=warn` by default, `enforce`
+  opt-in.)
 - **Traceability before merge.** No ticket reaches `human_approval` or merge
   with an unresolved `missing`/`partial` requirement unless a scoped,
   reason-bearing, expiring waiver is recorded. Code coverage is not
