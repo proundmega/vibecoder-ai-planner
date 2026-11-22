@@ -72,6 +72,14 @@ assert_contains "$DRY_OUT" "Supervisor container: 7G / 7.00 cpus (budget 5376 MB
 assert_contains "$DRY_OUT" "Formula:" "explain prints the formula"
 assert_not_contains "$TMP_DIR/.env.agent-host" "AGENT_HOST_MAX_RUNTIMES" "dry-run does not write the env file"
 
+rm -rf "$TMP_DIR/unwritten"
+if env "${REFERENCE_ENV[@]}" AGENT_HOST_ENV_FILE="$TMP_DIR/unwritten/env" bash "$HOST_INIT" --dry-run >/dev/null 2>&1; then
+    pass "dry-run succeeds with a missing output directory"
+else
+    fail "dry-run succeeds with a missing output directory"
+fi
+if [[ -d "$TMP_DIR/unwritten" ]]; then fail "dry-run creates no output directory"; else pass "dry-run creates no output directory"; fi
+
 if env "${REFERENCE_ENV[@]}" bash "$HOST_INIT" --check >"$TMP_DIR/check.out" 2>&1; then
     pass "reference host check passes"
 else
@@ -270,6 +278,7 @@ SANDBOX_ENV=(
     SANDBOX_HOST_WORKSPACE_ROOT="$TMP_DIR"
     REPO_HOST_PATH="$TMP_DIR/repo-bind"
     BACKEND_URL=http://backend.test
+    COMPOSE_PROJECT_NAME=fg43-test
     FAKE_DOCKER_LOG="$TMP_DIR/docker.log"
     PATH="$TMP_DIR/bin:$PATH"
 )
@@ -278,7 +287,8 @@ if env "${SANDBOX_ENV[@]}" bash "$HOST_INIT" --yes >"$TMP_DIR/sandbox.out" 2>&1;
 else
     fail "docker sandbox mode starts with the overlay"
 fi
-assert_contains "$TMP_DIR/docker.log" "compose --env-file" "compose receives the env file"
+assert_contains "$TMP_DIR/docker.log" "compose -p fg43-test" "compose receives the project name"
+assert_contains "$TMP_DIR/docker.log" "--env-file" "compose receives the env file"
 assert_contains "$TMP_DIR/docker.log" "agent/docker-compose.sandbox.yml" "sandbox overlay is included"
 assert_contains "$TMP_DIR/docker.log" "AGENT_INI_PATH=$TMP_DIR/agent.ini" "compose receives the canonical ini path"
 assert_contains "$TMP_DIR/sandbox.out" "Backend healthy" "health wait succeeds"

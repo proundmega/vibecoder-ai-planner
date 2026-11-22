@@ -133,7 +133,6 @@ scheduler in this ticket.
 | `AGENT_RESERVED_CPU` | computed | CPU reserved for host/backend |
 | `AGENT_RESERVED_MEMORY_GB` | computed | RAM reserved |
 | `AGENT_RESERVED_DISK_GB` | computed | Disk reserved |
-| `AGENT_SUPERVISOR_OVERHEAD_MB` | `512` | Supervisor/container overhead |
 | `AGENT_RUNTIME_HEAP_MB` | `768` | Child JVM heap |
 | `SANDBOX_CPUS` | `2.0` | Sandbox CPU profile |
 | `SANDBOX_MEMORY_MB` | `2048` | Sandbox RAM profile |
@@ -163,7 +162,8 @@ scheduler in this ticket.
 2. Running without `--dry-run` writes `.env.agent-host` (mode `0600`) and prints
    the ready-to-run Compose command; `--yes` starts the stack.
 3. On the reference host, 7 runtimes fit and the script writes
-   `AGENT_HOST_MAX_RUNTIMES=7`.
+   `AGENT_HOST_MAX_RUNTIMES=50` (the hard cap; `AGENT_HOST_DECLARED_RUNTIMES=7`
+   records the sized fleet).
 4. Over-capacity declarations fail with the binding dimension and write nothing.
 5. `--check` validates without writing; `--force` is required to replace an
    existing env file; dry-run/check work without Docker.

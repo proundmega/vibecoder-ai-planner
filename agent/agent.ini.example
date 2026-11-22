@@ -7,11 +7,11 @@
 ; channel and are rejected here by the parser (secret-looking keys *and*
 ; secret-looking values fail the boot).
 ;
-;   role   = worker | reviewer | planner   (required)
+;   role   = worker | reviewer | planner | light   (required)
 ;   model  = <credential-name>/<model>     (required)
 ;   count  = 1..64                         (required)
 ;   effort = minimal | low | medium | high | max   (optional; model default)
-;   project= <project id>                  (required for workers; Track A)
+;   project= <project id>                  (required for workers/light; Track A)
 ;
 ; Host sizing (fg-43): agent/scripts/host-init.sh reads this file and sums the
 ; role profiles (worker 2 CPU/3 GB/20 GB, reviewer 1.5/2.5/10, planner

@@ -110,13 +110,14 @@ model = acme/claude-opus
 count = 1
 ```
 
-- `role` is `worker`, `reviewer` or `planner`.
+- `role` is `worker`, `reviewer`, `planner` or `light`.
 - `model` is `<credential-name>/<model>` in the owner/project scope. Ambiguous
   refs are rejected by the server (400/409), never guessed.
 - `count` spawns `<name>-1` … `<name>-N`; names are deterministic.
 - `effort` is `minimal`, `low`, `medium`, `high` or `max`; omitted means the
   model default (`medium`).
-- `project` is **required for worker sections** (Track A’s declare contract).
+- `project` is **required for worker and light sections** (Track A’s declare
+  contract).
   Grants decide authorization; the value is a declaration hint, never trusted.
 - Unknown keys, duplicate sections, invalid enums and any secret-looking key
   or value stop the supervisor at startup. Provider keys are fetched per

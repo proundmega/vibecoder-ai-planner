@@ -118,8 +118,16 @@ canonical_output() {
     local path="$1" dir base
     dir="$(dirname -- "$path")"
     base="$(basename -- "$path")"
-    mkdir -p "$dir"
-    printf '%s/%s' "$(cd -- "$dir" && pwd)" "$base"
+    if [[ -d "$dir" ]]; then
+        printf '%s/%s' "$(cd -- "$dir" && pwd)" "$base"
+    elif command -v realpath >/dev/null 2>&1; then
+        printf '%s/%s' "$(realpath -m -- "$dir")" "$base"
+    else
+        case "$dir" in
+            /*) printf '%s/%s' "$dir" "$base" ;;
+            *) printf '%s/%s/%s' "$PWD" "$dir" "$base" ;;
+        esac
+    fi
 }
 
 detect_threads() {
@@ -403,6 +411,7 @@ if [[ -e "$ENV_FILE" && "$FORCE" -ne 1 ]]; then
     fail "$E_HOST" "$ENV_FILE already exists; re-run with --force to overwrite it"
 fi
 
+mkdir -p "$(dirname -- "$ENV_FILE")"
 TMP_FILE="$(mktemp "$(dirname -- "$ENV_FILE")/.env.agent-host.XXXXXX")"
 trap 'rm -f "$TMP_FILE"' EXIT
 umask 077
@@ -461,7 +470,8 @@ wait_for_health() {
 }
 
 echo "Wrote ${ENV_FILE} (mode 0600)."
-COMPOSE_ARGS=(docker compose --env-file "$ENV_FILE" "${COMPOSE_FILES[@]}" up -d --build)
+COMPOSE_PROJECT="${COMPOSE_PROJECT_NAME:-vibecode-agent}"
+COMPOSE_ARGS=(docker compose -p "$COMPOSE_PROJECT" --env-file "$ENV_FILE" "${COMPOSE_FILES[@]}" up -d --build)
 if [[ "$YES" -eq 1 ]]; then
     echo "Starting supervisor: ${COMPOSE_ARGS[*]}"
     COMPOSE_ENV=(AGENT_INI_PATH="$INI")
