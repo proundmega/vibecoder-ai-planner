@@ -174,6 +174,10 @@ Host sizing (fg-43): `AGENT_HOST_MAX_RUNTIMES` (default 50),
 `SUPERVISOR_CPUS`, `SUPERVISOR_MEMORY_LIMIT`,
 `SUPERVISOR_MEMORY_BUDGET_MB`; `agent/scripts/host-init.sh` writes
 `.env.agent-host` and Compose applies the limits.
+Supervisor health gate (fg-56): `SUPERVISOR_HEALTH_REQUIRED` (default true),
+`SUPERVISOR_HEALTH_TIMEOUT_SECONDS` (120), `SUPERVISOR_HEALTH_INTERVAL_SECONDS`
+(2) — the supervisor waits for `BACKEND_URL/api/health` before enrollment,
+declaration or child spawn.
 Question loop (fg-55): `HARNESS_QUESTION_LOOP` (default off),
 `HARNESS_QUESTION_TIMEOUT_MINUTES`, `HARNESS_QUESTION_POLL_SECONDS`,
 `HARNESS_DOOM_LOOP_MAX`, `HARNESS_DOOM_LOOP_CONTINUES`.

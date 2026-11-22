@@ -206,6 +206,10 @@ The supervisor tracks deterministic PID files under
 `SUPERVISOR_PID_DIR` (default `/tmp/vibecode-runtimes`), so a crash does not
 orphan children. Each child gets `AGENT_RUNTIME_HEAP_MB` (default 768 MB);
 `SUPERVISOR_MEMORY_BUDGET_MB` divides a host budget across the declared count.
+Before enrollment or the first spawn, the supervisor waits for
+`BACKEND_URL/api/health` with a bounded retry
+(`SUPERVISOR_HEALTH_*`); set `SUPERVISOR_HEALTH_REQUIRED=false` only for an
+offline local run.
 
 ## Running without Docker
 
@@ -261,6 +265,9 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_RUNTIME_HEAP_MB` | Heap per child JVM | `768` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
 | `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |
+| `SUPERVISOR_HEALTH_REQUIRED` | Wait for backend `/api/health` before enrollment/declaration/spawn | `true` |
+| `SUPERVISOR_HEALTH_TIMEOUT_SECONDS` | Maximum startup health wait | `120` |
+| `SUPERVISOR_HEALTH_INTERVAL_SECONDS` | Health retry interval | `2` |
 | `PROVIDER_CONFIG_REFRESH_SECONDS` | Re-read a rotated provider config between tickets (min 60) | `300` |
 | `REPO_CLONE_DIR` | Clone workspace | `/tmp/repos` (image: `/repos`) |
 | `REPO_OWNER` / `REPO_NAME` | Optional build fallback; the project's configured repository wins | _(none)_ |

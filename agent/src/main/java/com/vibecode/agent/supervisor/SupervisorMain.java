@@ -48,6 +48,14 @@ public final class SupervisorMain {
         AtomicReference<RuntimeConfig> desiredRef = new AtomicReference<>(desired);
 
         AgentConfig agentConfig = new AgentConfig();
+        if (BackendHealthGate.required(System.getenv("SUPERVISOR_HEALTH_REQUIRED"))) {
+            BackendHealthGate.awaitHealth(
+                agentConfig.getBackendUrl(),
+                BackendHealthGate.timeout(System.getenv("SUPERVISOR_HEALTH_TIMEOUT_SECONDS")),
+                BackendHealthGate.interval(System.getenv("SUPERVISOR_HEALTH_INTERVAL_SECONDS")));
+        } else {
+            log.info("Backend health gate disabled by SUPERVISOR_HEALTH_REQUIRED");
+        }
         AgentCredentialStore store = new AgentCredentialStore(Path.of(agentConfig.getCredentialsFile()));
         AgentAuthManager auth = new AgentAuthManager(agentConfig, store, new AgentEnrollmentClient(agentConfig));
         auth.initialize();
