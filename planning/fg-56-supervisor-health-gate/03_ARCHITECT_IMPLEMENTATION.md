@@ -51,4 +51,4 @@
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `feat/fg-56-supervisor-health-gate` (PR #203) | BackendHealthGate 6 tests; SupervisorMain + SupervisorIntegration 20 | Pass. Healthy/503/timeout/opt-out covered; the gate runs before enrollment/declaration. |
-| 2026-11-22 | slice B | BackendHealthMonitor 4 tests; focused supervisor 30 | Pass. Outage/recovery, bounded backoff, disabled and missing-URL cases covered; the reconcile tick pauses while unhealthy. |
+| 2026-11-22 | `81ad3b6` | BackendHealthMonitor 4 tests; focused supervisor 30; full agent 955 (10 skipped) | Pass. Outage/recovery, bounded backoff, disabled and missing-URL cases covered; the reconcile tick pauses while unhealthy. |
