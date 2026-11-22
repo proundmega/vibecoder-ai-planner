@@ -12,7 +12,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | ID | Directory | Status | Focus | Depends on |
 |---|---|---|---|---|
 | fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phase 2 ticketed as fg-55; Phases 3-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
-| fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
+| fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 + Phase 2, fg-32 |
 | fg-32 | `fg-32-review-feedback-loop` | Plan merged (#104); implementation pending | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
 | bt-60 | `bt-60-durable-harness-e2e-tests` | Plan merged (#111); runbook updated for fg-54; staging credentials pending | Full harness e2e: real backend HTTP + Postgres, node runtime contract, disposable staging run | fg-33 (merged) |

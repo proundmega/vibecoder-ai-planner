@@ -47,9 +47,9 @@ and FR8 (D6), which are optional for the first repo. fg-32 is blocked by
 fg-31.
 
 **Dependency guard:** do not start an optional row until its `Depends on`
-entries are satisfied. fg-36 and fg-37 are listed for completeness but depend
-on fg-32, which is not in this queue and is blocked by fg-31; they are not
-pilot work.
+entries are satisfied. fg-31 depends on fg-32 while fg-32 depends on fg-31,
+and fg-36/fg-37 also depend on fg-32. fg-32 is not in this queue; none of these
+are pilot work.
 
 ## Suggested Implementation Order
 
