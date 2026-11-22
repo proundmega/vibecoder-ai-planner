@@ -7,19 +7,20 @@
 ## Baseline
 
 The canonical queue is `PENDING.txt` → **Current focus**. At this writing,
-fg-43, fg-45 and fg-55 are merged; fg-56 (#203) and the fg-44/fg-45 specs
-(#204/#205) are in review; bt-60 Phase A is merged and Phase B is
+fg-43, fg-45, fg-55 and fg-56 (#203) are merged; the fg-44/fg-45 specs
+(#204/#205) are merged; fg-57's Git provider plan is merged (#206) with
+implementation post-pilot; bt-60 Phase A is merged and Phase B is
 staging-blocked.
 
 ## Milestones
 
 | # | Milestone | Work | Exit criteria |
 |---|---|---|---|
-| 1 | Close the paperwork | Merge #204/#205, then rebase/merge #203 (fg-56); fg-56 closeout; bulk-move done suites to `planning/DONE/` (fg-50); prune merged branches | The queue and roadmap say merged; fg-43 D7 points at fg-56; no stale “in review” rows for merged work |
+| 1 | Close the paperwork ✅ (2026-11-22) | Merge #204/#205, then rebase/merge #203 (fg-56); fg-56 closeout; bulk-move done suites to `planning/DONE/` (fg-50); prune merged branches | The queue and roadmap say merged; fg-43 D7 points at fg-56; no stale “in review” rows for merged work |
 | 2 | fg-44 storage lifecycle | Implement the `04` contract: runtime-scoped workspaces, sandbox-first cleanup, idle/max lifetime, 70/80/85/90/95 watermarks, `host-storage.sh`, orphan/image reaper, storage events | The fg-44 `03` matrix is green; a terminal run leaves no workspace; cleanup and watermark events are observed |
 | 3 | bt-60 Phase B staging | Disposable project/repo/agent, provider key and GitHub App installation; real OpenCode/GitHub happy path; crash/reaper/idempotent-publish drills | Evidence recorded in the bt-60 runbook; failure drills pass; no test rows remain |
 | 4 | First real pilot run | fg-54 runbook: mint → enroll → declare → sandbox → build → question loop → PR → review → merge | One clean end-to-end run with evidence; the question is answered and resumed; readiness warnings are visible |
-| 5 | Post-pilot | fg-46 observability; optional fg-31/fg-36; fg-51/fg-52; deferred follow-ups | Choose the next autonomy tier; no orphaned workspaces |
+| 5 | Post-pilot | fg-46 observability; fg-57 Git provider implementation; optional fg-31/fg-36; fg-51/fg-52; deferred follow-ups | Choose the next autonomy tier; no orphaned workspaces; private/self-hosted Git path available |
 
 Each milestone closes with a defect triage. Blocking findings stop the
 milestone; non-blocking findings follow the intake below.
@@ -51,10 +52,10 @@ and no known storage, health-gate or question-loop regressions.
 
 Review defects already fixed and covered by regression tests are not open work:
 
-- **fg-55:** `planning/fg-55-human-question-loop/03_ARCHITECT_IMPLEMENTATION.md`
+- **fg-55:** `planning/DONE/fg-55-human-question-loop/03_ARCHITECT_IMPLEMENTATION.md`
   → Results; `OpenCodeClientTest`, `api-questions.test.js`,
   `DoomLoopDetectorTest`.
-- **fg-43:** `planning/fg-43-agent-docker-deployment/03_ARCHITECT_IMPLEMENTATION.md`
+- **fg-43:** `planning/DONE/fg-43-agent-docker-deployment/03_ARCHITECT_IMPLEMENTATION.md`
   → Results; `host-init.test.sh`, `SupervisorCapacityTest`, `RuntimeConfigTest`.
 
 The fg-45 `04`/status closeout and the fg-44 spec are tracked in #205/#204.

@@ -65,7 +65,8 @@ outside a PR UI.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan recorded | This suite | ☑ |
-| Implementation | pending | ☐ |
+| Plan merged | PR #206 | ☑ |
+| Implementation | post-pilot | ☐ |
 | Verification results | n/a — planned | ☐ |
 
 ## Deferred register (canonical)

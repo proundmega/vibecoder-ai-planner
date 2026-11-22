@@ -342,7 +342,7 @@ interaction. Questions are disabled in this phase (the model must make assumptio
 
 ## Phase 2 - Human-in-the-loop - 1-2 weeks
 
-> **Implementation is tracked in `planning/fg-55-human-question-loop/`.** This
+> **Implementation is tracked in `planning/DONE/fg-55-human-question-loop/`.** This
 > section is the historical design input; do not implement Phase 2 here.
 
 **Goal**: questions, permissions, notifications and resume.

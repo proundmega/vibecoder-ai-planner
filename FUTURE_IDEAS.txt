@@ -8,7 +8,7 @@ Unplanned defects and flow changes found while testing (most recently on a
 remote test host and in PR #168). This is an **intake list**, not a work queue:
 promote an item into a `planning/<id>/` suite (then remove it here) or attach it
 to an existing suite. Quality-gate enforcement is scoped to **fg-45**
-(`planning/fg-45-ticket-quality-gates/`); the rows below link to it instead of
+(`planning/DONE/fg-45-ticket-quality-gates/`); the rows below link to it instead of
 duplicating its scope.
 
 | Ref | Item | Evidence | Proposed direction | Priority | State |
@@ -217,7 +217,7 @@ When creating a new ticket or triaging a defect:
 3. If multiple match, prioritize by impact and effort
 4. If none match, check `planning/DONE/`, `planning/archived/` Out of Scope
    sections and the deferred registers in `00_ARCHITECT_CHECKLIST.md`
-5. For ticket-lifecycle rows, check `planning/fg-45-ticket-quality-gates/` first —
+5. For ticket-lifecycle rows, check `planning/DONE/fg-45-ticket-quality-gates/` first —
    it is scoped to Definition of Ready and execution gating
 
 ## Priority Legend

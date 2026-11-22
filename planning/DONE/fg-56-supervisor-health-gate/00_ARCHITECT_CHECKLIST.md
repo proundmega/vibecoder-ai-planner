@@ -1,7 +1,7 @@
 ---
 id: "fg-56"
 title: "Supervisor Backend Health Gate"
-status: in_review
+status: done
 priority: "P1"
 effort: "Small"
 scope: "Agent"
@@ -31,25 +31,25 @@ endpoint is green.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Plan recorded | This suite; fg-43 D7 | ☑ |
-| Implementation in review | PR #203 | ☑ |
+| Implementation merged | PR #203 (`6c9f6fd`) | ☑ |
 | Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | fg-56 PR #203 (slice B; merge pending) | scheduled |
+| D1 | Continuous post-start health monitoring with exponential backoff | self | Reliability | fg-56 PR #203 (slice B) | done (#203) |
 | D2 | Health-gated restarts without Compose restart policy | self | Operations | follow-up if needed | open |
 
 ## Decisions needed from the user
 
 | # | Decision | Options | Recommendation | Answer |
 |---|---|---|---|---|
-| 1 | Gate scope | startup only / continuous | Startup only; Compose restarts the container and the existing retry loop owns post-start recovery | Assumed; revisit for D1 |
+| 1 | Gate scope | startup only / continuous | Startup + continuous post-start monitor | Implemented in #203 (D1) |
 | 2 | Default | required / opt-in | Required by default; `SUPERVISOR_HEALTH_REQUIRED=false` for local offline runs | Answered 2026-11-22: required by default |
 
 ## Completion gate
 
-- [ ] Every `FR*` acceptance in `01` is met
-- [ ] `03` matrix is green and `03` Results is dated
-- [ ] `status` is `done` after merge
+- [x] Every `FR*` acceptance in `01` is met
+- [x] `03` matrix is green and `03` Results is dated
+- [x] `status` is `done` after merge
