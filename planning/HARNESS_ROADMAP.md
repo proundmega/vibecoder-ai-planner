@@ -1,6 +1,6 @@
 # Harness Roadmap
 
-**Last updated:** 2026-11-10
+**Last updated:** 2026-11-22
 **Status:** planning index - no production code
 
 This index groups the autonomous coding harness work. It links the execution plans, the review loop, and the cross-cutting hardening tickets.
@@ -12,15 +12,15 @@ This index groups the autonomous coding harness work. It links the execution pla
 | ID | Directory | Status | Focus | Depends on |
 |---|---|---|---|---|
 | fg-30 | `fg-30-autonomous-coding-harness` | Phase 1 merged (#102); Phase 2 ticketed as fg-55; Phases 3-4 planned | OpenCode build harness, human loop, autonomy, hardening | bp-120/bp-121 |
-| fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 |
+| fg-31 | `fg-31-automatic-review-harness` | Plan merged (#103); implementation pending | Read-only reviewer harness, structured findings, GitHub reviews | fg-30 Phase 1 + Phase 2, fg-32 |
 | fg-32 | `fg-32-review-feedback-loop` | Plan merged (#104); implementation pending | Reviewer -> fixer loop, same branch, rounds, escalation | fg-31 |
 | fg-33 | `fg-33-durable-harness-execution` | Merged (#110) | Run/checkpoint/lease model, crash recovery, idempotent publish | fg-30 Phase 1 |
 | bt-60 | `bt-60-durable-harness-e2e-tests` | Plan merged (#111); runbook updated for fg-54; staging credentials pending | Full harness e2e: real backend HTTP + Postgres, node runtime contract, disposable staging run | fg-33 (merged) |
 | fg-34 | `fg-34-harness-sandbox` | Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138) | Sandbox isolation, limits, egress, secretless execution, read/grep and guarded edit/write isolation; D13 (real-Docker CI) merged (#140); D14 (freeze-and-verify sweep) merged (#139); D21-D23 merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 deployment wiring merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) with fg-39 profile plumbing merged (#161); D12, D24, D25, D26 remain; D29 merged (#162) | fg-30 Phase 1 |
-| fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33 (fg-34 recommended) |
+| fg-43 | `fg-43-agent-docker-deployment` | Planned | One-command Docker agent host sizing, role pools, per-container limits | fg-33, fg-54 (fg-34 recommended) |
 | fg-44 | `fg-44-agent-storage-lifecycle` | Planned | Per-agent workspaces, cleanup, idle refresh, disk/inode watermarks | fg-43, fg-33 |
-| fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30, fg-31/32 |
-| fg-46 | `fg-46-flow-observability` | Planned - deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
+| fg-45 | `fg-45-ticket-quality-gates` | Planned | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30, fg-31 |
+| fg-46 | `fg-46-flow-observability` | Deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
 | fg-47 | `fg-47-independent-review-pass` | Planned | Independent second reviewer: different model/provider/context, read-only, dedupe/triage, blocking policy | fg-31, fg-32, fg-37, fg-41 |
 | fg-48 | `fg-48-planning-claim-checks` | Planned | Deterministic `check-claims` script: structured evidence, index labels, matrix coverage, deferred counts | fg-47, fg-31 |
 | fg-49 | `fg-49-planning-placeholder-check` | Planned | Migrated started suites (`in_progress`/`in_review`/`done`) fail on unresolved `{{...}}`; report suite/file/line/token; planned/deferred/cancelled, fenced/inline examples, Results, `DONE/`, `archived/`, `lightweight/` and legacy suites exempt/reported | fg-48 |
@@ -43,6 +43,10 @@ remain unticketed. The cross-cutting tickets above fill the gaps that were not
 specified there.
 
 ## Recommended order
+
+> **Pilot focus (2026-11-22):** the canonical order, states and exit criteria
+> live in `PENDING.txt` → **Current focus**. The phase list below is the
+> long-term roadmap; where it differs from the pilot order, `PENDING.txt` wins.
 
 ### Phase A - Reliability and security foundations
 1. **fg-33** durable execution and recovery (validation: **bt-60**; fg-33 slices 1-3 merged, Phase A/B unblocked)
