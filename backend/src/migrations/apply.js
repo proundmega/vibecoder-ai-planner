@@ -361,6 +361,21 @@ function isCleanCutBaselineRow(row) {
 }
 
 /**
+ * Files that existed when the clean cut was made. A legacy database without a
+ * ledger is baselined for these only; additive migrations numbered above the
+ * cut (060+, e.g. fg-55) still run, otherwise a baselined database would
+ * silently miss every new table.
+ */
+const CLEAN_CUT_BASELINE_MAX_NUMBER = 59;
+
+function isBaselineMigration(file) {
+  const name = migrationName(file);
+  if (name === CLEAN_CUT_MIGRATION) return true;
+  const match = name.match(/^(\d{3})_/);
+  return Boolean(match) && Number(match[1]) <= CLEAN_CUT_BASELINE_MAX_NUMBER;
+}
+
+/**
  * Pure planning helper: decide which files to execute. A baseline marks every
  * registered file as applied without running it.
  */
@@ -551,14 +566,22 @@ async function migrate(dryRun = false) {
     // re-executing migrations that reference the removed legacy schema.
     const baseline = !applied.has(CLEAN_CUT_MIGRATION)
       && await detectCleanCutSchema(pool);
-    const plan = planMigrationRun({ files: SQL_FILES, applied, baseline });
+    const baselineFiles = baseline
+      ? SQL_FILES.filter(isBaselineMigration).map(migrationName)
+      : null;
+    const plan = planMigrationRun({
+      files: SQL_FILES,
+      applied: baseline ? new Set(baselineFiles) : applied,
+    });
 
     if (baseline) {
       console.log(
         `\nClean-cut schema detected without a migration ledger; `
-        + `marking ${SQL_FILES.length} SQL and ${DATA_MIGRATIONS.length} data migration(s) as applied.`
+        + `marking ${baselineFiles.length} legacy SQL and `
+        + `${DATA_MIGRATIONS.length} data migration(s) as applied; `
+        + `newer additive migrations still run.`
       );
-      await markMigrationsApplied(pool, [...SQL_FILES, ...DATA_MIGRATIONS]);
+      await markMigrationsApplied(pool, [...baselineFiles, ...DATA_MIGRATIONS]);
     }
 
     for (const sqlFile of plan.toRun) {
@@ -618,6 +641,7 @@ module.exports = {
   splitSQLStatements,
   validateStatementStructure,
   isCleanCutBaselineRow,
+  isBaselineMigration,
   planMigrationRun,
   runMigration,
   runDataMigration,
