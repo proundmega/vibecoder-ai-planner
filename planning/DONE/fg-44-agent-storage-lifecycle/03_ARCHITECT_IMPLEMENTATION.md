@@ -74,18 +74,18 @@ One row per requirement from `01`. A requirement with no row is not done.
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
 | FR1 | Agent | `WorkspaceManagerStorageTest.java` | runtime 12 / ticket 34; `repo/`, `tmp/`, `logs/`, `cache/`; traversal and symlink/non-existent targets refused | `cd agent && mvn test` |
-| FR2 | Foundation + `fg-58` | `WorkspaceManagerStorageTest.java`, `fg-58` | keyed cleanup/marker done; processor terminal/lease order in `fg-58` | `mvn test`; `mvn test` (fg-58) |
-| FR3 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | idle 2h stops/restarts child, no active harness | `mvn test` (fg-58) |
-| FR4 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | 24h between tickets only | `mvn test` (fg-58) |
-| FR5 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | 70/80/85/90/95 actions and inode sampling | `mvn test` (fg-58) |
+| FR2 | Foundation | `HarnessTicketProcessorTest.java`, `WorkspaceManagerStorageTest.java` | `happyPathPromptsVerifiesPublishesAndSetsReview` and `harnessStartupFailureReleasesAndCleansUp` verify keyed cleanup; unclean-exit retention is the fg-33 reaper | `mvn test` |
+| FR3 | `fg-58` | `SupervisorStorageTest.java` | `idleRuntimeIsStoppedAndItsRootRemoved`; refresh due decision ignores active | `mvn test` |
+| FR4 | `fg-58` | `SupervisorStorageTest.java` | `refreshDue` max-lifetime/idle cases; active runtime untouched | `mvn test` |
+| FR5 | `fg-58` | `SupervisorStorageTest.java` | `samplesDiskAndInodePercentages`, `cleanIdleStopsTheIdleChild`, `recycleOldestStopsTheIdleChildAndReconcileRespawns`, `manualRecoveryBlocksNewSpawns` | `mvn test` |
 | FR6 | Foundation + `fg-58` | `HarnessTicketProcessorStorageTest.java`, `host-init.test.sh`, `fg-58` | role/override budget and env done; periodic meter/quarantine in `fg-58` | `mvn test -Dtest=HarnessTicketProcessorStorageTest && bash agent/scripts/host-init.test.sh` |
 | FR7 | Compose + Agent | `DockerSandboxRunnerTest.java` | supervisor 10m/3; existing sandbox/proxy 1m/1 | `docker compose -f agent/docker-compose.yml config && mvn test -Dtest=DockerSandboxRunnerTest` |
-| FR8 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | dangling prune keeps active tag | `mvn test` (fg-58) |
+| FR8 | Script | `host-storage.test.sh` | fake-Docker `--dry-run --images` counts dangling images only, never prunes active tags | `bash agent/scripts/host-storage.test.sh` |
 | FR9 | Script + `fg-58` | `host-storage.test.sh`, `fg-58` | host script legacy/retention done; supervisor runtime-root sweep in `fg-58` | `bash agent/scripts/host-storage.test.sh`; `mvn test` (fg-58) |
-| FR10 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | `.active` marker/supervisor slot skipped | `mvn test` (fg-58) |
-| FR11 | Partial + `fg-58` | `HarnessEventStorageTest.java`, `fg-58` | workspace identity/path, cleanup bytes, log bytes, watermark percentages and per-event refresh/cleanup/orphan/image records; host free bytes/inodes and aggregate counters are fg-44 D12, workspace size/age inventory is fg-33 D8 | `mvn test`; `mvn test` (fg-58) |
+| FR10 | `fg-58` | `SupervisorStorageTest.java` | `recycleOldestKeepsAFreshActiveRuntime`; fresh `.active`/slot skipped | `mvn test` |
+| FR11 | Foundation + `fg-58` | `HarnessEventStorageTest.java`, `HarnessTicketProcessorStorageTest.java`, `SupervisorStorageTest.java` | workspace identity/path, cleanup bytes, log bytes, watermark percentages and per-event refresh/cleanup/orphan/image records; budget event; host free bytes/inodes and aggregate counters are fg-44 D12; workspace size/age inventory is fg-33 D8 | `mvn test` |
 | FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy` over `/repos` and `AGENT_TMPDIR`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
-| FR13 | Foundation + `fg-58` | `WorkspaceManagerStorageTest.java`, `fg-58` | runtime guard done; processor destroy-before-delete in `fg-58` | `mvn test`; `mvn test` (fg-58) |
+| FR13 | Foundation | `HarnessTicketProcessorTest.java`, `WorkspaceManagerStorageTest.java` | `dockerModeDestroysTheSandboxBeforeStaging`, `dockerSandboxDestroyFailureStopsPublishing`, `dockerSandboxDestroyIsRetriedInTheFinally`; base-root guard | `mvn test` |
 
 ## Rollout
 
@@ -98,9 +98,9 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review checklist
 
-- [x] Every `FR*` acceptance statement has a passing row (FR3/4/5/8/10/11 and periodic parts are `fg-58`)
+- [x] Every `FR*` acceptance statement has a passing row (`03` + `DONE/fg-58-supervisor-storage-lifecycle/03`)
 - [x] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
-- [x] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
+- [x] No live `.active` marker or active supervisor slot is deleted or stopped
 - [x] Sandbox destroy precedes workspace deletion
 - [x] Legacy/temp cleanup is preserved or migrated with tests (`pruneStaleTempDirectories` not dropped)
 - [x] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
