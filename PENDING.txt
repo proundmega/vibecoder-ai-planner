@@ -157,7 +157,7 @@ are pilot work.
 
 ## Harness Roadmap (fg-33..fg-42)
 
-Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROADMAP.md` for dependencies and implementation order. This table is the canonical index for the roadmap suites fg-33..fg-42; fg-43..fg-46 have their own sections below, and the main fg-* table above tracks scheduled/active tickets.
+Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROADMAP.md` for dependencies and implementation order. This table is the canonical index for the roadmap suites fg-33..fg-42; fg-43..fg-58 have their own sections below, and the main fg-* table above tracks scheduled/active tickets.
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|

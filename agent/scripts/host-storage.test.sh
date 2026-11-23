@@ -77,6 +77,40 @@ if run --apply --legacy >/dev/null 2>&1; then pass "legacy apply succeeds"; else
 [[ ! -e "$TMP_ROOT/opencode-harness-x" ]] && pass "legacy removes opencode temp dirs" || fail "legacy removes opencode temp dirs"
 [[ ! -e "$TMP_ROOT/vibecode-askpass-y" ]] && pass "legacy removes askpass temp dirs" || fail "legacy removes askpass temp dirs"
 
+# Fake Docker: --images dry-run lists dangling images and never prunes.
+FAKE_BIN="$TMP_DIR/bin"
+FAKE_DOCKER_LOG="$TMP_DIR/docker.log"
+mkdir -p "$FAKE_BIN"
+cat >"$FAKE_BIN/docker" <<'EOS'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_DOCKER_LOG"
+case "$1" in
+  info) exit 0 ;;
+  images) printf 'dangling-1\ndangling-2\n'; exit 0 ;;
+  image) exit 0 ;;
+esac
+exit 0
+EOS
+chmod +x "$FAKE_BIN/docker"
+if env AGENT_REPO_DIR="$REPO" SUPERVISOR_PID_DIR="$PID_DIR" AGENT_TMPDIR="$TMP_ROOT" \
+    PATH="$FAKE_BIN:$PATH" FAKE_DOCKER_LOG="$FAKE_DOCKER_LOG" \
+    bash "$STORAGE" --dry-run --images >"$TMP_DIR/images.out" 2>&1; then
+    pass "--images dry-run succeeds"
+else
+    fail "--images dry-run succeeds"
+fi
+grep -q 'would prune 2 dangling image(s)' "$TMP_DIR/images.out" \
+    && pass "images dry-run counts only dangling images" \
+    || fail "images dry-run counts only dangling images"
+grep -q 'images -f dangling=true -q' "$FAKE_DOCKER_LOG" \
+    && pass "images dry-run asks for dangling images" \
+    || fail "images dry-run asks for dangling images"
+if grep -q 'image prune' "$FAKE_DOCKER_LOG"; then
+    fail "images dry-run never prunes"
+else
+    pass "images dry-run never prunes active tags"
+fi
+
 JSON="$(run --dry-run --json 2>/dev/null || true)"
 if [[ "$JSON" == \{*'"removed"'* ]]; then pass "--json prints a machine summary"; else fail "--json prints a machine summary"; fi
 
