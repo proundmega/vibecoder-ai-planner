@@ -66,7 +66,7 @@ project = 2
 
 ## Preconditions
 
-1. Merge `#222` (custom templates).
+1. ~~Merge `#222`~~ (custom templates; merged as `3868562`).
 2. Triage `gtd#19` (review decision): do not start overlapping feature work
    while an unreviewed branch is open.
 3. Run the bt-60 formal staging rerun on merged `master` (`#220` is merged) and
