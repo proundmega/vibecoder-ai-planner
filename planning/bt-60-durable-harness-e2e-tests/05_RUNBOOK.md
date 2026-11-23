@@ -69,8 +69,8 @@ against the real app and Postgres. These drills are merged as `c0ff5c0`
 OpenCode/GitHub/PR path; they are not replaced by the automated drills.
 
 fg-44 (foundation #209, supervisor lifecycle #212) is merged, so the storage
-prerequisite is satisfied. The pilot waits only on the disposable staging
-credentials below.
+prerequisite is satisfied. The staging run was executed on 2026-11-23; the
+post-#220 rerun on merged `master` is the remaining formality.
 
 ## Happy path
 
