@@ -1,12 +1,12 @@
 ---
 id: "bt-60"
 title: "Durable Harness End-to-End Tests"
-status: in_review
+status: in_progress
 priority: "P1"
 effort: "Medium"
 scope: "Both"
 created: "2026-11-02"
-updated: "2026-11-22"
+updated: "2026-11-23"
 pr: 207
 branch: "test/bt-60-phase-b"
 depends_on: ["fg-33"]
@@ -33,9 +33,12 @@ test proves that the layers compose, and no disposable staging run has
 validated the real OpenCode/GitHub/PR path. A path, body, auth or
 finish-failure mismatch can pass every current test.
 
-**Readiness:** fg-33 slices 1-3 are merged (#110). The Phase A and Phase B
-dependencies are both satisfied; the remaining blocker is the disposable
-staging project/repo/node/runtime, provider key and GitHub App installation.
+**Readiness:** fg-33 slices 1-3 are merged (#110). Phase A (#198) and the
+Phase B automated drills (#207) are merged; the remaining blocker is the
+disposable staging project/repo/node/runtime, provider key and GitHub App
+installation. fg-44's workspace foundation is merged (#209), but the supervisor
+lifecycle is still fg-58; the real pilot waits for that plus the staging
+credentials.
 The fg-54 clean cut replaced project-bound agents with enrolled nodes and
 declared runtimes; the fixtures, failure drills and cleanup SQL in this suite
 now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
@@ -47,9 +50,9 @@ now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
 |---|---|---|
 | Plan merged | PR #111 | ☑ |
 | Phase A implemented | PR #198, merged as `19cfc33`; exposed the usage-flush defect fixed in #200 | ☑ |
-| Phase B automated drills | `harnessHttpE2E` E19-E21/E29; backend integration 21 suites / 167 tests; PR #207 | ☑ |
+| Phase B automated drills | PR #207, merged as `c0ff5c0`; `harnessHttpE2E` E19-E21/E29; backend integration 21 suites / 167 tests | ☑ |
 | Phase B staged | pending — disposable repo, provider key and GitHub App installation required | ☐ |
-| Verification results | `03` Results, 2026-11-22 (Phase A + Phase B automated drills) | ☑ |
+| Verification results | `03` Results, 2026-11-23 (Phase A + Phase B automated drills) | ☑ |
 
 ## Deferred register (canonical)
 
