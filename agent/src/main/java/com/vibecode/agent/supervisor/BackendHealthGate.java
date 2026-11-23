@@ -31,6 +31,12 @@ final class BackendHealthGate {
     // remaining startup budget; only the connect phase can overshoot by up to
     // this fixed bound.
     private static final HttpClient CLIENT = HttpClient.newBuilder()
+        // A cleartext Node/Express backend does not answer the h2c upgrade
+        // request Java sends by default: it destroys the socket, so the probe
+        // sees "header parser received no bytes". Health checks are simple
+        // GETs; pin HTTP/1.1 so they work against the same server the agent
+        // uses for the rest of the API.
+        .version(HttpClient.Version.HTTP_1_1)
         .connectTimeout(Duration.ofSeconds(5))
         .build();
 

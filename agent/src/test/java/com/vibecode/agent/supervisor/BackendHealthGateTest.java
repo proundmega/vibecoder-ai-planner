@@ -3,11 +3,17 @@ package com.vibecode.agent.supervisor;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -69,6 +75,42 @@ class BackendHealthGateTest {
 
         assertTrue(attempts.get() >= 2);
         assertTrue(error.getMessage().contains("timed out"));
+    }
+
+    @Test
+    void doesNotUseAnH2cUpgradeAgainstACleartextServer() throws Exception {
+        AtomicBoolean sawUpgrade = new AtomicBoolean(false);
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            Thread responder = new Thread(() -> {
+                try (Socket socket = server.accept()) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(
+                        socket.getInputStream(), StandardCharsets.US_ASCII));
+                    String line;
+                    while ((line = reader.readLine()) != null && !line.isEmpty()) {
+                        if (line.toLowerCase(java.util.Locale.ROOT).startsWith("upgrade:")) {
+                            sawUpgrade.set(true);
+                        }
+                    }
+                    if (!sawUpgrade.get()) {
+                        OutputStream out = socket.getOutputStream();
+                        out.write(("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n"
+                            + "Connection: close\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                        out.flush();
+                    }
+                } catch (IOException ignored) {
+                    // The client closed first; the assertion below reports it.
+                }
+            }, "health-gate-raw-server");
+            responder.setDaemon(true);
+            responder.start();
+
+            BackendHealthGate.awaitHealth(
+                "http://127.0.0.1:" + server.getLocalPort(),
+                Duration.ofSeconds(2), Duration.ofMillis(10));
+            responder.join(2000);
+            assertFalse(sawUpgrade.get(),
+                "the health probe must not depend on an h2c upgrade Node cannot complete");
+        }
     }
 
     @Test
