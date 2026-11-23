@@ -172,6 +172,12 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 | ~~**fg-41**~~ | `DONE/fg-41-harness-observability` | P1 | fg-33 | ✅ **Merged (#163, `5dff931`)** — append-only `harness_events`, versioned schema, trace/run correlation, emission/ingest redaction, replay timeline, dashboards/alerts, immutable publish/review audit and retention. Dashboards/audit follow-up merged in #165; merge/rollback audit waits for fg-36. |
 | ~~**fg-42**~~ | `DONE/fg-42-harness-privacy` | P1 | fg-34, fg-41 | ✅ **Merged (#166, `f6e9464`)** — data classification, secret/PII redaction, provider allowlist/no-training/residency, tenant-scoped privacy API, retention/deletion and local-model option. |
 
+### fg-42 follow-ups (open)
+
+| ID | Ticket | Description | Depends on |
+|----|--------|-------------|------------|
+| **fg-42-D8** | Per-project artifact retention | Configurable per-project retention for run artifacts; on-disk workspace deletion is delivered by fg-44/fg-58. | fg-42 |
+
 ## Agent Deployment (fg-43..fg-44)
 
 Docker-native agent host deployment and storage lifecycle. These are also indexed in `planning/HARNESS_ROADMAP.md` (after fg-34); see the suites for formulas, limits and cleanup policies.
