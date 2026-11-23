@@ -190,15 +190,18 @@ merged and proven on a no-op change.
 
 | Slice | Work | FRs | Files | Depends on |
 |---|---|---|---|---|
-| `fg-31a` | Review migration + attempt/finding stores + tests | design components | 5–7 | `FLOW-0` |
-| `fg-31b` | Review prompt builder + structured-findings parser + tests | design components | 4–6 | `fg-31a` |
-| `fg-31c` | Review harness client + review-ticket processor/OpenCode session + tests | design components | 6–8 | `fg-31b` |
-| `fg-31d` | GitHub review service + phase reconciler + legacy mode + tests | design components | 6–8 | `fg-31c` |
+| `fg-31a` | Review migration + attempt/finding stores + tests | FR7, FR8 | 5–7 | `FLOW-0` |
+| `fg-31b` | Review prompt builder + structured-findings parser + tests | FR2, FR4 | 4–6 | `fg-31a` |
+| `fg-31c` | Review harness client + review-ticket processor/OpenCode session + tests | FR1, FR3, FR9 | 6–8 | `fg-31b` |
+| `fg-31d` | GitHub review service + phase reconciler + legacy mode + tests | FR5, FR6, FR7, FR8, FR10 | 6–8 | `fg-31c` |
 | `fg-32a` | Fix-request schema/migration + `review -> in_progress` state + idempotent request | FR1, FR2 | 6–8 | `fg-31d` |
-| `fg-32b` | Fix queue, atomic claim/lease/renew, branch resolution pinned to `reviewed_sha` | FR3, FR4, FR5 | 7–9 | `fg-32a` |
-| `fg-32c` | Fix prompt context, fast-forward publish, `FIX_LOOP_MODE`/manual dispatch, fixer run + fg-33 fixer-only `startRun` allow path | FR6, FR7, FR11, FR13 | 8–10 | `fg-32b` |
-| `fg-32d` | Hand-back to review, round cap/escalation, no-progress, failure/backoff | FR8, FR9, FR10, FR12 | 7–9 | `fg-32c` |
-| `fg-36a` | Base-branch resolver + mergeability check | FR1, FR2 | 5–7 | `fg-32d` |
+| `fg-32b1` | Fix queue + atomic claim/lease/renew | FR3, FR4 | 6–8 | `fg-32a` |
+| `fg-32b2` | Branch resolution pinned to `reviewed_sha` | FR5 | 4–6 | `fg-32b1` |
+| `fg-32c1` | Fix prompt context + fast-forward publish | FR6, FR7 | 6–8 | `fg-32b2` |
+| `fg-32c2` | `FIX_LOOP_MODE`/manual dispatch + fixer run + fg-33 fixer-only `startRun` allow path | FR11, FR13 | 6–8 | `fg-32c1` |
+| `fg-32d1` | Hand-back to review + round cap/escalation | FR8, FR9 | 5–7 | `fg-32c2` |
+| `fg-32d2` | No-progress rule + failure/backoff | FR10, FR12 | 5–7 | `fg-32d1` |
+| `fg-36a` | Base-branch resolver + mergeability check | FR1, FR2 | 5–7 | `fg-32d2` |
 | `fg-36b` | Update-branch/rebase + conflict classification/hand-off | FR3, FR4 | 6–8 | `fg-36a` |
 | `fg-36c` | CI gate + merge queue ordering + configurable merge method | FR5, FR6, FR7 | 6–8 | `fg-36b` |
 | `fg-36d` | Post-merge verification + rollback/incident + merge audit | FR8, FR9, FR10 | 6–8 | `fg-36c` |
@@ -212,7 +215,7 @@ slice still exceeds the file cap.
 
 | Slice | Work | FRs | Files | Depends on |
 |---|---|---|---|---|
-| `fg-57a` | Backend `GitProvider` contract + `GitHubService` facade + tests (backend-only) | FR1 | 4–6 | — |
+| `fg-57a` | Backend `GitProvider` contract + `GitHubService` facade + tests (backend-only) | FR1 | 4–6 | `FLOW-0` |
 | `fg-57b` | `project_repos` provider migration/rollback + `GitProjectService` + `HarnessRunService` branch/SHA adoption | FR1, FR6 | 6–8 | `fg-57a` |
 | `fg-57c` | Agent `GitService` contract/facade + provider-neutral `HarnessTicketProcessor` publish path | FR1, FR6 | 6–8 | `fg-57b`, `fg-31a` |
 | `fg-57d` | Local/bare-SSH provider + credential store/host key + tests | FR5, FR8, FR9 | 6–8 | `fg-57c` |
@@ -227,7 +230,7 @@ These are an operational split of `fg-57` Phase 1/2/4; see
 
 | Slice | Work | FRs | Files | Depends on |
 |---|---|---|---|---|
-| `fg-39a` | FR8/slice 3 flaky-test retry policy + test-data hooks + tests | FR8 | 4–6 | — |
+| `fg-39a` | FR8/slice 3 flaky-test retry policy + test-data hooks + tests | FR8 | 4–6 | `FLOW-0` |
 | `fg-39b` | FR3/slice 4a prebuilt per-stack images + pinned toolchains + tests | FR3 | 6–8 | `fg-39a` |
 | `fg-39c` | FR4/slice 4b persistent cache quota/watchdog/GC + tests | FR4 | 6–8 | `fg-39b` |
 | `fg-39d` | D11 real-Docker/real-repo profile e2e (optional) | D11 | 4–6 | `fg-39c` |
@@ -245,13 +248,16 @@ and are not part of this flow test.
 | 3 | `fg-31c` | `fg-57c` (after `fg-31a` merges) | `fg-39c` |
 | 4 | `fg-31d` | `fg-57d` | optional `fg-39d` |
 | 5 | `fg-32a` | `fg-57e` | optional `fg-39e` |
-| 6 | `fg-32b` | `fg-57f` | — |
-| 7 | `fg-32c` | optional `fg-57g` | — |
-| 8 | `fg-32d` | — | — |
-| 9 | `fg-36a` | — | — |
-| 10 | `fg-36b` | — | — |
-| 11 | `fg-36c` | — | — |
-| 12 | `fg-36d` | — | — |
+| 6 | `fg-32b1` | `fg-57f` | — |
+| 7 | `fg-32b2` | optional `fg-57g` | — |
+| 8 | `fg-32c1` | — | — |
+| 9 | `fg-32c2` | — | — |
+| 10 | `fg-32d1` | — | — |
+| 11 | `fg-32d2` | — | — |
+| 12 | `fg-36a` | — | — |
+| 13 | `fg-36b` | — | — |
+| 14 | `fg-36c` | — | — |
+| 15 | `fg-36d` | — | — |
 
 Wave 1 is the flow test: three ticket-sized PRs. Wave 2 proceeds only after the
 Wave 1 slice merges in that lane. Set the `depends_on` edges in the Planner Flow
@@ -273,8 +279,9 @@ dispatch, while `fg-32` depends on `fg-31`. Resolve it by scope:
 - **Wave 1 ships `fg-31a` only:** review migration, attempt/finding stores and
   tests. Then `fg-31b` (prompt/parser), `fg-31c` (client/processor) and
   `fg-31d` (GitHub review/phase reconciler) follow.
-- **`fg-32a` starts after `fg-31d` merges:** request-changes handoff, fixer
-  queue, same-branch update, round cap.
+- **`fg-32a` (FR1–2) starts after `fg-31d` merges:** the structured
+  request-changes handoff and the `review -> in_progress` state. The queue,
+  branch pinning, fixer run, rounds and failure handling are `fg-32b1`–`d2`.
 - Update the guard wording when `fg-31d` lands.
 
 ## Merge and review protocol
