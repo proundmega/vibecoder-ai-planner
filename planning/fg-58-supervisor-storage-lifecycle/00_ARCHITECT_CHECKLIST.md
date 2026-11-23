@@ -1,7 +1,7 @@
 ---
 id: "fg-58"
 title: "Supervisor Storage Lifecycle and Events"
-status: in_progress
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Agent"
