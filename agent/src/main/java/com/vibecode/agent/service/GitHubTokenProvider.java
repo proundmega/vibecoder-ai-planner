@@ -91,19 +91,6 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         if (token != null && !forceRefresh && !needsRefresh()) {
             return token;
         }
-        // Explicit local PAT mode must not call the App-only token endpoint:
-        // the backend rejects it with GITHUB_APP_NOT_CONFIGURED before the
-        // provider can use its fallback.
-        if (isExplicitPatMode() && fallback != null) {
-            String legacy = fallback.get();
-            if (legacy != null && !legacy.isBlank()) {
-                token = legacy;
-                expiresAt = null;
-                mode = "pat";
-                knownTokens.add(legacy);
-                return legacy;
-            }
-        }
         Map<String, Object> data;
         try {
             data = fetcher.fetch(forceRefresh);
@@ -150,14 +137,21 @@ public class GitHubTokenProvider implements GitHubTokenSource {
             && allowPat;
     }
 
-    private String useFallback(IOException failure) throws IOException {        if (fallback == null) {
+    private String useFallback(IOException failure) throws IOException {
+        if (fallback == null) {
             throw failure;
         }
         // A definitive backend rejection means the backend has not opted into
-        // the PAT fallback (for example app mode without App credentials).
-        // Only a transport/unknown failure may use the explicit local PAT.
-        if (failure instanceof GitHubTokenRequestException) {
-            throw failure;
+        // the PAT fallback. The only exception is GITHUB_APP_NOT_CONFIGURED in
+        // explicit local PAT mode: the App endpoint cannot mint a token there,
+        // while PAT_FALLBACK_DISABLED, 401/403/404, project-disabled and
+        // repo-binding errors must still propagate.
+        if (failure instanceof GitHubTokenRequestException rejection) {
+            boolean appNotConfigured = isExplicitPatMode()
+                && "GITHUB_APP_NOT_CONFIGURED".equalsIgnoreCase(rejection.getCode());
+            if (!appNotConfigured) {
+                throw failure;
+            }
         }
         if (expectedMode != null
             && !"pat".equalsIgnoreCase(expectedMode)) {
