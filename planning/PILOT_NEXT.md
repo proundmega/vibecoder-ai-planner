@@ -10,7 +10,8 @@ The canonical queue is `PENDING.txt` → **Current focus**. At this writing,
 fg-43, fg-44 (foundation #209 plus fg-58 #212), fg-45, fg-55 and fg-56 (#203)
 are merged; fg-57's Git provider plan is merged (#206) with implementation
 post-pilot; bt-60 Phase A and the Phase B backend drills (#207) are merged, and
-only the disposable staging path is blocked.
+the Phase B staging run was executed on 2026-11-23 pre-#220. The post-#220
+rerun is the only remaining formality; there is no external credential blocker.
 
 ## Milestones
 
@@ -18,7 +19,7 @@ only the disposable staging path is blocked.
 |---|---|---|---|
 | 1 | Close the paperwork ✅ (2026-11-22) | Merge #204/#205, then rebase/merge #203 (fg-56); fg-56 closeout; bulk-move done suites to `planning/DONE/` (fg-50); prune merged branches | The queue and roadmap say merged; fg-43 D7 is done via fg-56; no stale “in review” rows for merged work |
 | 2 | fg-44 storage lifecycle ✅ (2026-11-23) | Implement the `04` contract: runtime-scoped workspaces, sandbox-first cleanup, idle/max lifetime, 70/80/85/90/95 watermarks, `host-storage.sh`, orphan/image reaper, storage events | The fg-44/fg-58 matrices are green (#209/#212); a terminal run leaves no workspace; cleanup and watermark events are observed |
-| 3 | bt-60 Phase B staging | Disposable project/repo/agent, provider key and GitHub App installation; real OpenCode/GitHub happy path; crash/reaper/idempotent-publish drills | Evidence recorded in the bt-60 runbook; failure drills pass; no test rows remain |
+| 3 | bt-60 Phase B staging — executed 2026-11-23, rerun pending | Disposable local project/repo/node/runtime and provider key; real OpenCode/GitHub happy path; crash/restart, lease-loss and health-gate drills | Evidence recorded in the bt-60 runbook (PRs #20-#23); no residual rows; rerun on merged `master` after #220 |
 | 4 | First real pilot run | fg-54 runbook: mint → enroll → declare → sandbox → build → question loop → PR → review → merge | One clean end-to-end run with evidence; the question is answered and resumed; readiness warnings are visible |
 | 5 | Post-pilot | fg-46 observability; fg-57 Git provider implementation; optional fg-31/fg-36; fg-51/fg-52; deferred follow-ups | Choose the next autonomy tier; no orphaned workspaces; private/self-hosted Git path available |
 
@@ -27,9 +28,10 @@ milestone; non-blocking findings follow the intake below.
 
 ## Dependencies and blockers
 
-- **Staging credentials:** a disposable repository, provider key and GitHub
-  App installation are required for bt-60 Phase B. This is the main external
-  blocker.
+- **Staging credentials:** resolved for the 2026-11-23 run with a disposable
+  local stack, `planner-test`, a disposable provider key and PAT local mode.
+  The remaining formality is the rerun on merged `master` after #220; a
+  repo-scoped GitHub App installation is still recommended before production.
 - **Storage lifecycle:** fg-44 is merged (foundation #209, supervisor lifecycle
   #212), so unattended runs rely on the workspace sweep and watermarks. The
   role budgets are already defined by fg-43.

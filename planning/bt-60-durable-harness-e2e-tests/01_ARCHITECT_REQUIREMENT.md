@@ -33,9 +33,9 @@ expected.
    OpenCode/provider/GitHub/PR path.
 3. Detect contract, authorization and finish-failure gaps that split-layer
    tests miss.
-4. Run the automated Phase A immediately; the manual staging layer waits on
-   the credentials below. Phase B is unblocked now that fg-33 slices 1-3 are
-   merged (#110).
+4. Run the automated Phase A immediately; the manual staging layer was executed
+   on 2026-11-23 against a disposable local stack. The post-#220 rerun remains;
+   fg-33 slices 1-3 are merged (#110).
 
 ## Non-goals
 
@@ -93,9 +93,9 @@ Summarise only. The authoritative list with reasons, follow-ups and state is
 
 ## Known unknowns
 
-1. **Test repository and credentials** — which dedicated test repo, provider
-   key and GitHub token the staging run will use. Resolve before the manual
-   layer; never use production.
+1. **Test repository and credentials** — resolved for the 2026-11-23 run with
+   `proundmega/planner-test`, a disposable provider key and PAT local mode.
+   The post-#220 rerun reuses that disposable set; never use production.
 2. **Fault injection for `/finish`** — there is no test-only finish-failure
    switch. Use a proxy or controlled outage, or rely on the processor test;
    do not add a production switch.

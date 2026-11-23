@@ -36,6 +36,15 @@ duplicating its scope.
 | AUTH-2 | User API access is a 30-minute JWT only: no refresh endpoint and no scoped personal/CI API tokens. Docs say `TOKEN_EXPIRY_HOURS=24`, but `auth.js` reads `TOKEN_EXPIRY_MINUTES` (default 30), so the documented setting has no effect. | `auth.js:4`; `README.md` / `backend/.env.example`; no refresh route | Fix the expiry config mismatch; add optional scoped, expiring, hashed user PATs (or token refresh) for scripts/CI | P2 | open (fg-53 D1, deferred) |
 | AUTH-3 | Agent key expiry is inconsistent: middleware rejects expired keys, but the heartbeat route uses `AgentService.getAgentByApiKey` without checking `api_key_expires_at`; pool agents get 1-day keys with no renewal path. | `middleware/auth.js:223`; `backend/src/api/v1/agentHeartbeat.js`; `PoolManager.js:418` | Check expiry on every agent path; renew/rotate long-running pool agents; alert before expiry | P1 | fixed in PR #174 (open); pool renewal remains fg-53 D8 |
 
+### Harness staging findings (bt-60, 2026-11-23)
+
+Canonical owner: `planning/bt-60-durable-harness-e2e-tests/00_ARCHITECT_CHECKLIST.md` D13/D14.
+
+| Ref | Item | Evidence | Proposed direction | Priority | State |
+|---|---|---|---|---|---|
+| HARNESS-1 | OpenCode Go requires a stable `x-opencode-session` header. OpenCode 1.19.5 (the version compatible with the harness session API) does not send it, so direct gateway calls and the backend `provider-models/:id/test` verification fail with HTTP 400 `MissingSessionID`. The bt-60 staging run used a local proxy that injected the header. | bt-60 `05_RUNBOOK.md` executed-run section; gateway 400; model marked verified only after a direct authenticated call | Inject a stable session id in the harness/provider request path, or upgrade OpenCode and adapt the session API; make model verification send the header for `opencode-go` | P1 | promoted to bt-60 D13 |
+| HARNESS-2 | The harness emits `sandbox_ready` and `sandbox_bridge_ready` checkpoints, but the validator only accepts `created, cloned, session_ready, prompting, verifying, publishing, done`. Every run logs `VALIDATION_ERROR` and loses those rows. | bt-60 staging logs; `harness_checkpoints` rows | Add the steps to the checkpoint schema or stop emitting them; keep the runbook sequence aligned | P2 | promoted to bt-60 D14 |
+
 ### Fixes merged (do not re-track)
 
 - PR #168 (merged): missing `fetchPhaseHistory` import in `PhaseFlow.vue`; planning Edit button uses `VButton` and `.success` is styled; creating a ticket opens `TicketDetail?edit=1` (and a failed create keeps the modal open with an error); in-progress deletion is blocked in the service and disabled in the UI with a visible hint; delete failures show a banner, a 409 refetches the ticket so the status/Delete state stay honest, and the 409 is documented in OpenAPI; the create→edit flow is covered by the Cypress e2e spec.
