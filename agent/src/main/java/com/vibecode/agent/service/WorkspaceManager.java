@@ -223,9 +223,34 @@ public class WorkspaceManager {
         cleanupPath(cloneRoot);
     }
 
+    /** Delete only the shared runtime cache. */
+    public void cleanupCache() throws IOException {
+        cleanupPath(getCacheDir());
+    }
+
     /** Bytes under the current ticket workspace. */
     public long workspaceBytes() throws IOException {
         return measureWorkspace(true);
+    }
+
+    /** True when the clone root is the runtime-scoped /repos/runtimes/<id>. */
+    public boolean isRuntimeScoped() {
+        Path parent = cloneRoot.getParent();
+        return parent != null && "runtimes".equals(String.valueOf(parent.getFileName()));
+    }
+
+    /**
+     * Bytes under the whole runtime root, including the shared cache. A legacy
+     * /repos clone root is not a runtime, so this falls back to the ticket root
+     * and never counts every workspace on the host.
+     */
+    public long runtimeBytes() throws IOException {
+        return isRuntimeScoped() ? measureTree(cloneRoot, true) : measureWorkspace(true);
+    }
+
+    /** Inodes under the runtime root (ticket root for the legacy layout). */
+    public long runtimeInodes() throws IOException {
+        return isRuntimeScoped() ? measureTree(cloneRoot, false) : measureWorkspace(false);
     }
 
     /** Inode count under the current ticket workspace (bounded to regular files/dirs). */
@@ -234,7 +259,10 @@ public class WorkspaceManager {
     }
 
     private long measureWorkspace(boolean bytes) throws IOException {
-        Path root = getWorkspaceRoot();
+        return measureTree(getWorkspaceRoot(), bytes);
+    }
+
+    private long measureTree(Path root, boolean bytes) throws IOException {
         if (root == null || !Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
             return 0;
         }

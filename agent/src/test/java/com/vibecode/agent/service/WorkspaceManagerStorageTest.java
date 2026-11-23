@@ -72,6 +72,52 @@ class WorkspaceManagerStorageTest {
     }
 
     @Test
+    void runtimeBytesIncludeTheSharedCache() throws Exception {
+        Path runtimeRoot = tempDir.resolve("repos/runtimes/12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("ticket.txt"), "1234");
+        Files.createDirectories(manager.getCacheDir());
+        Files.writeString(manager.getCacheDir().resolve("cache.bin"), "1234567");
+
+        assertEquals(4, manager.workspaceBytes());
+        assertEquals(11, manager.runtimeBytes());
+        assertEquals(6, manager.runtimeInodes());
+    }
+
+    @Test
+    void legacyCloneRootBudgetStaysTicketScoped() throws Exception {
+        Path repoBase = tempDir.resolve("repos");
+        WorkspaceManager manager = new WorkspaceManager(
+            repoBase.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("ticket.txt"), "1234");
+        Files.createDirectories(repoBase.resolve("sibling/repo"));
+        Files.writeString(repoBase.resolve("sibling/repo/big.bin"), "1234567890");
+
+        assertEquals(4, manager.runtimeBytes(),
+            "legacy clone roots must not count every workspace");
+        assertEquals(3, manager.runtimeInodes());
+    }
+
+    @Test
+    void cleanupCacheRemovesOnlyTheRuntimeCache() throws Exception {
+        Path runtimeRoot = tempDir.resolve("12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("ticket.txt"), "x");
+        Files.createDirectories(manager.getCacheDir());
+        Files.writeString(manager.getCacheDir().resolve("cache.bin"), "x");
+
+        manager.cleanupCache();
+
+        assertFalse(Files.exists(manager.getCacheDir()));
+        assertTrue(Files.exists(manager.getWorkspaceRoot()), "ticket root survives cache cleanup");
+    }
+
+    @Test
     void refusalToDeleteTheRepositoryBaseRoot() throws Exception {
         Path base = tempDir.resolve("repos");
         Files.createDirectories(base);

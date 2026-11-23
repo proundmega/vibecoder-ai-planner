@@ -190,11 +190,12 @@ Storage lifecycle (fg-44/fg-58): `AGENT_IDLE_REFRESH_MS` (2h),
 `AGENT_STORAGE_METER_SECONDS` (300), `AGENT_STORAGE_MAX_INODES` (0 = off),
 `AGENT_STORAGE_WARN_PCT`/`STOP_PCT`/`CLEAN_PCT`/`RECYCLE_PCT`/`MANUAL_PCT`
 (70/80/85/90/95), `AGENT_ORPHAN_TTL_HOURS` (24),
-`AGENT_IMAGE_PRUNE_ENABLED` (true), `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` (30).
-The supervisor refreshes idle runtimes, samples disk plus inodes, sweeps
-runtime/legacy/temp roots into `/repos/orphans/` on every tick, treats stale
-`.active` markers as recoverable, prunes dangling images weekly off the
-reconcile lock and emits `storage.*` events; `agent/scripts/host-storage.sh` is
+`AGENT_IMAGE_PRUNE_ENABLED` (Docker mode only), `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` (30).
+The supervisor refreshes idle runtimes, samples disk plus inodes, measures the
+runtime root (including cache) for budgets, sweeps runtime/legacy/temp roots
+into `/repos/orphans/` on every tick, treats stale `.active` markers as
+recoverable, prunes dangling images weekly off the reconcile lock only in Docker
+mode and emits `storage.*` events; `agent/scripts/host-storage.sh` is
 the stopped-supervisor recovery path (including `--orphans`).
 Budgets/routing (fg-38): `HARNESS_DEFAULT_MAX_DURATION_MINUTES`,
 `HARNESS_DEFAULT_MAX_INPUT_TOKENS`, `HARNESS_DEFAULT_MAX_OUTPUT_TOKENS`,
