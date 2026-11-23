@@ -23,8 +23,8 @@ PR-ready notification or a question. Work this order; it is the canonical queue.
 | 1 | **fg-55** — human question loop and notifications | Merged (#195) | Question tool → ticket question → bell/inbox → answer → resume; doom-loop escalation/cap. Exit: a run asks, you answer, it resumes; PR/failure alerts appear. |
 | 2 | **fg-45** — ticket quality gates | Merged (#199) | Definition of Ready, acceptance criteria, assumptions/risk. Exit: tickets are specific enough for an unattended run. |
 | 3 | **fg-43** — Docker agent deployment | Merged (#197) | One supervisor per host, supervisor container limits; per-child cgroups are D6. Exit: a node sized and deployed in one command. |
-| 4 | **fg-44** — agent storage lifecycle | Foundation merged (#209); supervisor lifecycle in review (fg-58 #212) | Runtime-scoped workspaces, cleanup, watermarks. Exit: unattended runs do not fill the host. |
-| 5 | **bt-60** — durable-harness e2e | In progress — Phase A merged (#198); Phase B backend drills merged (#207); real staging pending | Run the disposable staging path and failure drills. Exit: one clean end-to-end run with evidence. |
+| 4 | **fg-44** — agent storage lifecycle | Merged (#209 foundation, #212 supervisor lifecycle) | Runtime-scoped workspaces, cleanup, watermarks. Exit: unattended runs do not fill the host. |
+| 5 | **bt-60** — durable-harness e2e | In progress — Phase A merged (#198); Phase B backend drills merged (#207); storage prerequisite merged (#209/#212); real staging pending | Run the disposable staging path and failure drills. Exit: one clean end-to-end run with evidence. |
 | 6 | **fg-31** — automatic review harness | Plan merged (#103) | Optional. Only if you stop reviewing PRs yourself. |
 | 7 | **fg-36** — merge lifecycle | Planned | Optional. Only if the agent should update/merge branches. |
 | 8 | **fg-37** — agent evaluation harness | Planned | Later: evaluation. |
@@ -161,7 +161,7 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-33** | `DONE/fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Merged (#110)** — runs/checkpoints/leases, scheduled guarded reaping, startup recovery, `HARNESS_RESUME_MODE`, durable publish evidence, operator dead-letter/adoption, workspace retention, metrics and a runbook. Remaining: automatic dead-letter (FR8), full workspace inventory/scheduled cleanup (fg-44), force-clean-restart action (FR10), CI process-kill matrix and live-session resume; structured events landed in #163. |
+| **fg-33** | `DONE/fg-33-durable-harness-execution` | P0 | fg-30 Phase 1 | **Merged (#110)** — runs/checkpoints/leases, scheduled guarded reaping, startup recovery, `HARNESS_RESUME_MODE`, durable publish evidence, operator dead-letter/adoption, workspace retention, metrics and a runbook. Remaining: automatic dead-letter (FR8), full workspace inventory/scheduled cleanup (fg-44, #209/#212), force-clean-restart action (FR10), CI process-kill matrix and live-session resume; structured events landed in #163. |
 | **fg-34** | `fg-34-harness-sandbox` | P0 | fg-30 Phase 1 | **Slices 1-2 merged (#126, #127); slices 3a-3d merged (#128, #129, #130, #132); D20 merged (#138)** — sandbox runtime, limits, read-only rootfs, secretless env, egress allowlist, bash bridge, read/grep isolation, guarded edit/write, prompt-injection defenses, digest-pinned supply chain and artifact redaction. D13 merged (#140); D14 merged (#139); D21–D23 merged (#144); D19 merged (#153); D9/D10 merged (#154, #155); D8 merged (#156); D16 opt-in implementation merged (#151); D28 merged (#157); D30 merged (#158); D27 runtime merged (#160) and its fg-39 profile plumbing merged (#161); D12, D24, D25, D26 remain; D29 merged (#162). |
 | ~~**fg-35**~~ | `DONE/fg-35-github-app-credentials` | P0 | fg-30 Phase 1 | ✅ **Merged (#143, `871271f`)** — replaced long-lived PATs with repo-scoped GitHub App installation tokens, short TTL, rotation and audit. |
 | **fg-36** | `fg-36-merge-lifecycle` | P1 | fg-31, fg-32 | Default/base branch detection, mergeability, update/rebase, conflict worker, CI gate, merge queue, post-merge rollback. |
@@ -179,8 +179,8 @@ Docker-native agent host deployment and storage lifecycle. These are also indexe
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
 | **fg-43** | `DONE/fg-43-agent-docker-deployment` | P1 | fg-33, fg-54 (fg-34 recommended) | One-command Docker host deployment with a CPU/RAM/disk sizing heuristic, one supervisor per host, supervisor container limits and validation. Per-child cgroups are follow-up `fg-43-D6`. **Merged (PR #197).** |
-| **fg-44** | `fg-44-agent-storage-lifecycle` | P1 | fg-43, fg-33 | Runtime-scoped workspaces, ticket cleanup, 2h idle refresh, 70/80/85/90/95 disk/inode watermarks, log rotation, orphan/image reaping and `host-storage.sh` recovery. **Foundation merged (PR #209); supervisor lifecycle/sweep/events in `fg-58`.** |
-| **fg-58** | `fg-58-supervisor-storage-lifecycle` | P1 | fg-44, fg-43, fg-54 | Supervisor storage lifecycle: idle/max refresh, inode watermarks, periodic runtime-root/legacy/temp sweep and quarantine, periodic budget, complete `storage.*` events, stale-safe host recovery. **In review (PR #212).** |
+| **fg-44** | `DONE/fg-44-agent-storage-lifecycle` | P1 | fg-43, fg-33 | Runtime-scoped workspaces, ticket cleanup, 2h idle refresh, 70/80/85/90/95 disk/inode watermarks, log rotation, orphan/image reaping and `host-storage.sh` recovery. **Merged (PR #209 foundation; PR #212 supervisor lifecycle via `fg-58`).** |
+| ~~**fg-58**~~ | `DONE/fg-58-supervisor-storage-lifecycle` | P1 | fg-44, fg-43, fg-54 | Supervisor storage lifecycle: idle/max refresh, inode watermarks, periodic runtime-root/legacy/temp sweep and quarantine, periodic budget, complete `storage.*` events, stale-safe host recovery. **Merged (PR #212, `04081bf`).** |
 
 ### fg-43 follow-ups (open)
 

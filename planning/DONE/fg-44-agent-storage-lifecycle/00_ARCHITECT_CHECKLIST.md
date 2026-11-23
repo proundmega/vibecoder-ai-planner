@@ -1,12 +1,12 @@
 ---
 id: "fg-44"
 title: "Agent Storage Lifecycle and Idle Refresh"
-status: in_progress
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Backend"
 created: "2026-10-31"
-updated: "2026-11-22"
+updated: "2026-11-23"
 pr: 209
 branch: "feat/fg-44-storage-lifecycle"
 depends_on: ["fg-43", "fg-33", "fg-54"]
@@ -18,8 +18,9 @@ depends_on: ["fg-43", "fg-33", "fg-54"]
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Implementation in review | `feat/fg-44-storage-lifecycle`; see `03` Results | ☑ |
-| Verification results | `03` → Results (agent 960 tests; storage 15; host-storage 14; host-init 78; Compose) | ☑ |
+| Foundation merged | PR #209 (`85944c9`) | ☑ |
+| Supervisor lifecycle merged | fg-58, PR #212 (`04081bf`) | ☑ |
+| Verification results | `03` → Results; fg-58 `03` matrix | ☑ |
 
 > **Owns:** status, ticket map, deferred scope, user decisions.
 > **Not here:** requirements (`01`), design (`02`), verification matrix (`03`),
@@ -92,4 +93,4 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D8 | Compression of quarantined workspaces | self | Storage | future | open |
 | D9 | Configurable sandbox/proxy log rotation (10m/3) | self | Operations | follow-up | open |
 | D10 | Retire the supervisor `/repos` legacy pass and migrate `pruneStaleTempDirectories` after the legacy dirs are gone | self | Storage | follow-up | open |
-| D11 | Supervisor storage lifecycle: idle/max refresh, inode watermarks, periodic sweep/quarantine, periodic budget, complete storage events | self | Reliability | `fg-58` | open |
+| D11 | Supervisor storage lifecycle: idle/max refresh, inode watermarks, periodic sweep/quarantine, periodic budget, complete storage events | self | Reliability | DONE/fg-58-supervisor-storage-lifecycle | done (#212) |
