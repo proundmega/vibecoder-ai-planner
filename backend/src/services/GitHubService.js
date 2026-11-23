@@ -3,7 +3,7 @@ const Ticket = require('../models/ticket');
 const User = require('../models/user');
 const { pool } = require('../db');
 const PermissionService = require('../services/PermissionService');
-const { GitHubProvider } = require('../providers/github');
+const gitProviders = require('../providers/git');
 const GitHubAppAuthService = require('./GitHubAppAuthService');
 const { encrypt, decrypt } = require('../utils/crypto');
 const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
@@ -20,8 +20,8 @@ class GitHubService {
       throw new ForbiddenError('Only project owner or admin can connect a repository');
     }
 
-    const parsed = GitHubProvider.parseRepoUrl(repoUrl);
-    const validation = await GitHubProvider.validateRepoAccess(accessToken, parsed.owner, parsed.repo);
+    const provider = gitProviders.registry.get('github', accessToken);
+    const validation = await provider.validateRepoAccess(repoUrl);
 
     if (!validation.accessible) {
       throw new ValidationError(`Cannot access repository: ${validation.error}`);
@@ -135,7 +135,7 @@ class GitHubService {
       const token = await GitHubAppAuthService.mintToken(projectId, {
         operation: 'backend',
       });
-      return new GitHubProvider(token.token);
+      return gitProviders.registry.get('github', token.token);
     }
     if (!GitHubAppAuthService.isPatAllowed()) {
       throw new ForbiddenError(
@@ -145,7 +145,7 @@ class GitHubService {
     await GitHubAppAuthService.assertProjectEnabled(projectId);
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
-    return new GitHubProvider(decrypt(repo.accessTokenEncrypted));
+    return gitProviders.registry.get('github', decrypt(repo.accessTokenEncrypted));
   }
 
   /**
@@ -211,7 +211,7 @@ class GitHubService {
 
     const pr = await this._withProvider(
       projectId,
-      (provider) => provider.createPR(
+      (provider) => provider.createReviewRequest(
         repo, ticket.id, ticket.title, ticket.branchName,
         description || ticket.description
       )
@@ -263,7 +263,7 @@ class GitHubService {
     const repo = await this.getProjectRepo(projectId);
     if (!repo) throw new ValidationError('No repository connected to this project');
 
-    return this._withProvider(projectId, (provider) => provider.listPRs(repo));
+    return this._withProvider(projectId, (provider) => provider.listReviewRequests(repo));
   }
 
   async getPRDiff(projectId, ticketId) {
@@ -277,7 +277,7 @@ class GitHubService {
     const prNumber = this._extractPRNumber(ticket.prUrl);
     return this._withProvider(
       projectId,
-      (provider) => provider.getPRDiff(repo, prNumber)
+      (provider) => provider.getReviewDiff(repo, prNumber)
     );
   }
 
