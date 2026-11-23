@@ -74,8 +74,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D10 | Run correlation, events and dashboards for e2e evidence | fg-41 | Observability | DONE/fg-41-harness-observability | done (#163/#165) |
 | D11 | Redaction and retention for captured test artifacts | fg-42 | Privacy | DONE/fg-42-harness-privacy | done (#166) |
 | D12 | Harness usage flush failed with `could not determine data type of parameter $1`, leaving `artifacts_finalized_at` NULL and the reaper retrying forever (found by Phase A E12) | self | Reliability | PR #200 (separate production fix) | done (#200, `865565e`) |
-| D13 | OpenCode Go requires `x-opencode-session`; OpenCode 1.19.5 (the harness-compatible version) does not send it, so direct calls and the backend model test fail with 400 | self | Provider | fg-30 follow-up / `FUTURE_IDEAS.txt` HARNESS-1 | open |
-| D14 | `sandbox_ready` / `sandbox_bridge_ready` checkpoints are emitted but rejected by the validator, leaving warnings and no row | self | Observability | fg-30/fg-33 follow-up / `FUTURE_IDEAS.txt` HARNESS-2 | open |
+| D13 | OpenCode Go requires `x-opencode-session`; OpenCode 1.19.5 (the harness-compatible version) does not send it, so direct calls and the backend model test fail with 400 | self | Provider | fg-30 follow-up | open |
+| D14 | `sandbox_ready` / `sandbox_bridge_ready` checkpoints are emitted but rejected by the validator, leaving warnings and no row | self | Observability | fg-30/fg-33 follow-up | open |
 
 ## Decisions needed from the user
 
