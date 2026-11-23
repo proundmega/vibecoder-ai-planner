@@ -115,6 +115,62 @@ class GitHubTokenProviderTest {
     }
 
     @Test
+    void usesTheLocalPatOnlyForAppNotConfiguredInExplicitPatMode() throws Exception {
+        AtomicInteger backendCalls = new AtomicInteger();
+        GitHubTokenProvider provider = new GitHubTokenProvider(
+            force -> {
+                backendCalls.incrementAndGet();
+                throw new GitHubTokenRequestException(
+                    "GITHUB_APP_NOT_CONFIGURED", "GitHub App credentials are not configured");
+            },
+            () -> "stored-pat",
+            "pat",
+            true);
+
+        assertEquals("stored-pat", provider.get());
+        assertEquals(1, backendCalls.get(),
+            "the token endpoint must be called before the local PAT fallback");
+        assertEquals("pat", provider.getMode());
+    }
+
+    @Test
+    void doesNotFallBackWhenPatFallbackIsDisabled() {
+        AtomicInteger backendCalls = new AtomicInteger();
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        GitHubTokenProvider provider = new GitHubTokenProvider(
+            force -> {
+                backendCalls.incrementAndGet();
+                throw new GitHubTokenRequestException(
+                    "PAT_FALLBACK_DISABLED", "PAT fallback is disabled");
+            },
+            () -> {
+                fallbackCalls.incrementAndGet();
+                return "stored-pat";
+            },
+            "pat",
+            true);
+
+        assertThrows(GitHubTokenRequestException.class, provider::get);
+        assertEquals(1, backendCalls.get());
+        assertEquals(0, fallbackCalls.get(),
+            "a definitive PAT refusal must never use the local PAT");
+    }
+
+    @Test
+    void doesNotUseTheAppNotConfiguredFallbackOutsideExplicitPatMode() {
+        GitHubTokenProvider appAgent = new GitHubTokenProvider(
+            force -> {
+                throw new GitHubTokenRequestException(
+                    "GITHUB_APP_NOT_CONFIGURED", "GitHub App credentials are not configured");
+            },
+            () -> "stored-pat",
+            "app",
+            false);
+
+        assertThrows(GitHubTokenRequestException.class, appAgent::get);
+    }
+
+    @Test
     void refreshForcesAForcedBackendFetch() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         AtomicInteger forcedCalls = new AtomicInteger();

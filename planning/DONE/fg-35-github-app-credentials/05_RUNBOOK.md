@@ -117,11 +117,16 @@ ALLOW_PAT=true
 Set both on the backend and the agent. The backend returns the stored PAT from
 `project_repos` and the agent logs a warning. `ALLOW_PAT=true` with `app` mode
 has no effect. Do not enable this in production. The agent's `GITHUB_TOKEN`
-env fallback is a local override and is used only for transport failures after
-the agent has explicitly opted into `pat`; a definitive backend rejection never
-falls back. In `pat` mode the local env token is not subject to the project's
-`disabled_at` flag, so do not rely on disabling a project to stop a developer's
-local env token.
+env fallback is a local override and is used only after the agent has explicitly
+opted into `pat`. By default a definitive backend rejection never falls back.
+The one exception is `GITHUB_APP_NOT_CONFIGURED` in explicit `pat` +
+`ALLOW_PAT=true` mode: the App-only endpoint cannot mint, so the agent may use
+the local `GITHUB_TOKEN`. Normal `pat` mode still calls `/token`, which mints and
+audits via `mintPat`; `PAT_FALLBACK_DISABLED`, 401/403/404, project-disabled and
+repo-binding errors still block. The local env token itself is not subject to
+the project's `disabled_at` flag (the fallback source reads `/repo/agent` and
+uses `GITHUB_TOKEN` when that read fails or returns no token), so do not rely on disabling a project
+to stop a developer's local env token.
 
 ## 8. Migration from PATs
 
