@@ -98,13 +98,13 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review checklist
 
-- [ ] Every `FR*` acceptance statement has a passing row (FR3/4/5/8/10/11 and periodic parts are `fg-58`)
-- [ ] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
-- [ ] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
-- [ ] Sandbox destroy precedes workspace deletion
-- [ ] Legacy/temp cleanup is preserved or migrated with tests (`pruneStaleTempDirectories` not dropped)
-- [ ] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
-- [ ] `04` is the implementation contract; `Results` records as-built deviations
+- [x] Every `FR*` acceptance statement has a passing row (`03` + `DONE/fg-58-supervisor-storage-lifecycle/03`)
+- [x] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
+- [x] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
+- [x] Sandbox destroy precedes workspace deletion
+- [x] Legacy/temp cleanup is preserved or migrated with tests (`pruneStaleTempDirectories` not dropped)
+- [x] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
+- [x] `04` is the implementation contract; `Results` records as-built deviations
 
 ## Results
 

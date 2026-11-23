@@ -44,6 +44,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D5 | Legal hold and consent workflow | fg-42 | Compliance | separate privacy/legal workflow ticket | open |
 | D6 | Prompt/result cache isolation | fg-42 | Security | extend when a cross-run model cache exists | open |
 | D7 | Entropy-threshold and bare-10-digit phone tuning per provider | fg-42 | Security | revisit if false positives/negatives appear in real repos | open |
-| D8 | On-disk workspace/artifact deletion and per-project artifact retention | fg-42 | Retention | fg-44/workspace lifecycle | open |
+| D8 | On-disk workspace/artifact deletion and per-project artifact retention | fg-42 | Retention | DONE/fg-44-agent-storage-lifecycle | workspace deletion done (#212); per-project artifact retention remains |
 | D9 | Repo-visibility classification, production changed-path enumeration for path rules, and exhaustive PII classifier (addresses, configurable customer identifiers) | fg-42 | Security | follow-up privacy classifier ticket | open |
 | D10 | Keyset/single-snapshot project export for very large projects | fg-42 | Retention | follow-up export job ticket | open |

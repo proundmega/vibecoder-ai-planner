@@ -139,8 +139,9 @@ Deployment assumptions:
 - Run **one agent identity per clone root and temp namespace**. Protected paths
   are agent-scoped, while temp cleanup is global; do not share `REPO_CLONE_DIR`
   or `java.io.tmpdir` between different agents.
-- Cleanup currently runs at startup after successful recovery. A long-lived
-  agent will not prune again until restart; scheduled pruning is a follow-up.
+- Startup cleanup still runs after successful recovery for legacy/temp paths.
+  The supervisor also prunes runtime roots and orphans on its storage tick
+  (fg-44, #212), so a long-lived agent no longer waits for a restart.
 
 ## Crash scenarios
 
