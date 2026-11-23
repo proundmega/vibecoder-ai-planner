@@ -42,7 +42,7 @@ If the JVM, container or host dies:
 - **FR4 - Recovery:** on agent startup, find runs owned by that agent; resume or fail them according to policy.
 - **FR5 - Stale reaper:** expire leases, release tickets and mark runs failed in the scheduled backend reaper. Workspace cleanup runs at agent startup; scheduled workspace cleanup is deferred to fg-44.
 - **FR6 - Idempotent publish:** detect an existing branch/PR for the ticket; push only the expected commit; never open a duplicate PR.
-- **FR7 - Workspace registry:** track `workspace_path` and age-based startup cleanup. Full size/age inventory and disk-usage/leftover metrics are deferred to fg-44.
+- **FR7 - Workspace registry:** track `workspace_path` and age-based startup cleanup. Full size/age inventory and disk-usage/leftover metrics are deferred to fg-33 D8 (fg-59 D1 / fg-46).
 - **FR8 - Dead letter:** operators can dead-letter a failed run. After `HARNESS_RETRY_PIN_ATTEMPTS` the agent automatically finishes the run as `dead_letter` and leaves the ticket in_progress for operator recovery; durable attempt counts across restarts remain Phase 2 (fg-30 #108 item 7).
 - **FR9 - Observability:** expose current run/step via heartbeat, checkpoints and Prometheus counters. Structured event streaming is deferred to fg-41.
 - **FR10 - Manual recovery:** an operator can dead-letter a run or adopt published work. An explicit force-clean-restart action is deferred; the runbook documents manual reset.
