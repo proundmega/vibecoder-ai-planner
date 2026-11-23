@@ -34,7 +34,7 @@
 | FR2 | Java | `SupervisorStorageTest` | `refreshDue` lifetime/idle cases; active runtime untouched | same |
 | FR3 | Java | `SupervisorStorageTest` | `samplesDiskAndInodePercentages`; `cleanIdleStopsTheIdleChild`; `recycleOldestStopsTheIdleChildAndReconcileRespawns`; `manualRecoveryBlocksNewSpawns` | same |
 | FR4 | Java + Shell | `StorageSweeperTest`, `SupervisorStorageTest`, `host-storage.test.sh` | `staleMarkerDoesNotPinARuntimeRoot`; `sweepRunsPeriodicallyWithoutWatermarkPressure`; runtime/legacy/temp/orphan tests | both |
-| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `recognisesEveryStorageEventType`; `periodicMeter...`; assertions on workspace (`runtimeId/runtimeName/path`), refresh (`reason/runtime`) and orphan (`removed/action`) payloads | `mvn test` |
+| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `recognisesEveryStorageEventType`; `periodicMeterEmitsBudgetEventAndMarksTheRun`; assertions on workspace (`runtimeId/runtimeName/path`), refresh (`reason/runtime`) and orphan (`removed/action`) payloads | `mvn test` |
 | FR6 | Java | `HarnessTicketProcessorStorageTest`, `WorkspaceManagerStorageTest` | periodic meter event+flag; `budgetBreachQuarantinesThroughTheProcessor` (moves instead of deleting); quarantine path test | `mvn test` |
 | FR7 | Shell | `host-storage.test.sh` | live PID/marker exit 4; stale PID; stale/aged marker is reaped; old orphan reaped | bash |
 | FR8 | Java | `WorkspaceManagerStorageTest` | `refusalToDeleteTheRepositoryBaseRoot` | `mvn test` |

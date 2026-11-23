@@ -23,7 +23,7 @@ PR-ready notification or a question. Work this order; it is the canonical queue.
 | 1 | **fg-55** — human question loop and notifications | Merged (#195) | Question tool → ticket question → bell/inbox → answer → resume; doom-loop escalation/cap. Exit: a run asks, you answer, it resumes; PR/failure alerts appear. |
 | 2 | **fg-45** — ticket quality gates | Merged (#199) | Definition of Ready, acceptance criteria, assumptions/risk. Exit: tickets are specific enough for an unattended run. |
 | 3 | **fg-43** — Docker agent deployment | Merged (#197) | One supervisor per host, supervisor container limits; per-child cgroups are D6. Exit: a node sized and deployed in one command. |
-| 4 | **fg-44** — agent storage lifecycle | In progress — foundation PR #209; supervisor lifecycle in fg-58 | Runtime-scoped workspaces, cleanup, watermarks. Exit: unattended runs do not fill the host. |
+| 4 | **fg-44** — agent storage lifecycle | Foundation merged (#209); supervisor lifecycle in review (fg-58 #212) | Runtime-scoped workspaces, cleanup, watermarks. Exit: unattended runs do not fill the host. |
 | 5 | **bt-60** — durable-harness e2e | In progress — Phase A merged (#198); Phase B backend drills merged (#207); real staging pending | Run the disposable staging path and failure drills. Exit: one clean end-to-end run with evidence. |
 | 6 | **fg-31** — automatic review harness | Plan merged (#103) | Optional. Only if you stop reviewing PRs yourself. |
 | 7 | **fg-36** — merge lifecycle | Planned | Optional. Only if the agent should update/merge branches. |
