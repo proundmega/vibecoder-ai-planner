@@ -83,7 +83,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR8 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | dangling prune keeps active tag | `mvn test` (fg-58) |
 | FR9 | Script + `fg-58` | `host-storage.test.sh`, `fg-58` | host script legacy/retention done; supervisor runtime-root sweep in `fg-58` | `bash agent/scripts/host-storage.test.sh`; `mvn test` (fg-58) |
 | FR10 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | `.active` marker/supervisor slot skipped | `mvn test` (fg-58) |
-| FR11 | Partial + `fg-58` | `HarnessEventStorageTest.java`, `fg-58` | cleanup/budget events done; workspace/refresh/watermark/orphan/image/log events in `fg-58` | `mvn test`; `mvn test` (fg-58) |
+| FR11 | Partial + `fg-58` | `HarnessEventStorageTest.java`, `fg-58` | workspace identity/path, cleanup bytes, log bytes, watermark percentages and per-event refresh/cleanup/orphan/image records; byte/inode inventory is fg-44 D12 | `mvn test`; `mvn test` (fg-58) |
 | FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy` over `/repos` and `AGENT_TMPDIR`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
 | FR13 | Foundation + `fg-58` | `WorkspaceManagerStorageTest.java`, `fg-58` | runtime guard done; processor destroy-before-delete in `fg-58` | `mvn test`; `mvn test` (fg-58) |
 
@@ -111,4 +111,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `feat/fg-44-storage-lifecycle` | Agent 960 tests (storage 15); host-storage 14/14; host-init 78/78; Compose base+sandbox | **Foundation split:** runtime/ticket keyed workspaces, keyed cleanup + active marker, budget helper/policy, host-init/Compose env, host-storage recovery and tests. Supervisor idle refresh, inode watermarks, periodic sweep/quarantine, periodic budget and the full event set are follow-up `fg-58`. |
-| 2026-11-23 | `85944c9` (PR #209 foundation); `04081bf` (fg-58 PR #212 lifecycle) | fg-58 `03` matrix; local agent 978 run / 10 skipped; host-storage 20/20; host-init 78/78 | **Closed.** The foundation merged as `85944c9`; fg-58 completed idle/max refresh, inode watermarks, the periodic runtime/legacy/temp sweep into `/repos/orphans/`, the periodic budget and the complete `storage.*` events. Suite moved to `planning/DONE/`. |
+| 2026-11-23 | `85944c9` (PR #209 foundation); `04081bf` (fg-58 PR #212 lifecycle) | fg-58 `03` matrix; local agent 978 run / 10 skipped; host-storage 20/20; host-init 78/78 | **Closed.** The foundation merged as `85944c9`; fg-58 completed idle/max refresh, inode watermarks, the periodic runtime/legacy/temp sweep into `/repos/orphans/`, the periodic budget and all `storage.*` event types (byte/inode inventory deferred to D12). Suite moved to `planning/DONE/`. |

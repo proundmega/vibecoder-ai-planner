@@ -43,5 +43,5 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 982 (981 at `afc1a20` + the processor quarantine test; 978 locally without image-gated tests); host-storage 20/20; host-init 78/78; Compose base+sandbox | Periodic sweep, stale-marker TTL, real 85/90/95 actions, `/repos/orphans` quarantine, lifecycle env forwarding, async/timeout-bounded image prune, periodic budget+inode meter, processor quarantine on breach and payload assertions for workspace/refresh/orphan events. |
+| 2026-11-22 | `76b9839` (branch `feat/fg-58-supervisor-storage-lifecycle`) | Agent 982 (981 at `afc1a20` + the processor quarantine test; 978 locally without image-gated tests); host-storage 20/20; host-init 78/78; Compose base+sandbox | Periodic sweep, stale-marker TTL, real 85/90/95 actions, `/repos/orphans` quarantine, lifecycle env forwarding, async/timeout-bounded image prune, periodic budget+inode meter, processor quarantine on breach and payload assertions for workspace/refresh/orphan events. |
 | 2026-11-23 | `04081bf` (PR #212) | Agent 978 run / 10 skipped on `master` (Docker-gated tests skipped locally); host-storage 20/20; host-init 78/78 | Merged to `master`. Suite moved to `planning/DONE/`; no implementation changes in this closeout. |

@@ -94,6 +94,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D9 | Configurable sandbox/proxy log rotation (10m/3) | self | Operations | follow-up | open |
 | D10 | Retire the supervisor `/repos` legacy pass and migrate `pruneStaleTempDirectories` after the legacy dirs are gone | self | Storage | follow-up | open |
 | D11 | Supervisor storage lifecycle: idle/max refresh, inode watermarks, periodic sweep/quarantine, periodic budget, complete storage events | self | Reliability | DONE/fg-58-supervisor-storage-lifecycle | done (#212) |
+| D12 | Host free bytes/inodes, workspace size/age inventory and aggregate refresh/cleanup/orphan counters in storage events | self | Observability | fg-59 (PR #217) / fg-46 | open |
 
 ## Completion gate
 
