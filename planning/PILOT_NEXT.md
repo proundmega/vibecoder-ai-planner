@@ -70,6 +70,13 @@ PR, is reviewed and merged. The run, question, review and merge evidence are
 recorded; storage stays within the watermarks; the health gate and readiness
 warnings are visible. No open blocker defects remain.
 
+## Three-worker flow tests
+
+See `THREE_WORKER_PLANS.md` for the 3-worker allocation for this repository's
+backlog and the GTD backlog, the dependency edges that keep only one wave
+ready, and the review/merge protocol. It references the canonical status here;
+it does not replace this queue.
+
 ## Deferred (not blocking the pilot)
 
 fg-33 D8; fg-43 D1/D6; fg-44 D3/D5–D10/D12; fg-58 D1/D2; fg-45 D2/D5/D7/D9; fg-55 D1–D10; fg-31/fg-32/
