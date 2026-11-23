@@ -23,10 +23,15 @@ conflicts make it a poor first flow test. Recommended order: Plan B first
 - **Plan A** is this repository (`proundmega/vibecoder-ai-planner`). The harness
   code, planning checks and Git-provider work live here.
 - **Plan B** is the GTD planner (`proundmega/gtd`).
-- `GTD-T5` … `GTD-T12` below are **planner ticket IDs in the disposable GTD
-  project**, not GitHub PR numbers. The GTD repository's PRs `#5`–`#12` are from
-  the earlier 18-PR build and are unrelated to these ticket IDs.
-- The only GTD GitHub PR from this pilot is **#19** (`GTD-T5`, archive/restore).
+- The canonical GTD backlog is **proundmega/gtd issues #20–#27** (created
+  2026-11-23 from the feature scout).
+- `GTD-T5` … `GTD-T12` below are **disposable planner test tickets** in the GTD
+  project, created from those issues to exercise the flow. They are not the GTD
+  repository's backlog. Recreate them from the issues when resetting the test
+  environment.
+- The GTD repository's PRs `#5`–`#12` are from the earlier 18-PR build and are
+  unrelated to these issue/ticket numbers.
+- The only GTD GitHub PR from this pilot is **#19** (archive/restore, issue #20).
 
 ---
 
@@ -185,13 +190,24 @@ without a rebase surprise.
 
 # Plan B — GTD feature backlog
 
-## Current state
+## Current state and canonical mapping
 
+- Canonical backlog: **[gtd#20](https://github.com/proundmega/gtd/issues/20) …
+  [gtd#27](https://github.com/proundmega/gtd/issues/27)**.
 - `GTD-T5` archive/restore: **PR #19 open**, no new tests; triage before Wave 1.
-- `GTD-T6` … `GTD-T12`: planner backlog tickets in the GTD project, not started.
-  They are not GTD GitHub PR numbers; the repo's PRs `#5`–`#12` are from the
-  earlier build.
+- `GTD-T6` … `GTD-T12`: disposable planner test tickets, not started.
 - The GTD repo is dependency-free; the Docker/no-network gate above is valid.
+
+| Canonical issue | Planner test ticket | Feature |
+|---|---|---|
+| [gtd#20](https://github.com/proundmega/gtd/issues/20) | `GTD-T5` | Archive completed actions and restore them (PR #19 open) |
+| [gtd#21](https://github.com/proundmega/gtd/issues/21) | `GTD-T6` | Optional due dates on next actions |
+| [gtd#22](https://github.com/proundmega/gtd/issues/22) | `GTD-T7` | Recurring next actions |
+| [gtd#23](https://github.com/proundmega/gtd/issues/23) | `GTD-T8` | Subtasks and checklists for actions |
+| [gtd#24](https://github.com/proundmega/gtd/issues/24) | `GTD-T9` | Tags for actions and search |
+| [gtd#25](https://github.com/proundmega/gtd/issues/25) | `GTD-T10` | Bulk complete, archive and delete actions |
+| [gtd#26](https://github.com/proundmega/gtd/issues/26) | `GTD-T11` | Undo for the last destructive planner change |
+| [gtd#27](https://github.com/proundmega/gtd/issues/27) | `GTD-T12` | Dark mode toggle |
 
 ## Wave 1 — three independent starts
 
