@@ -5,6 +5,7 @@ const TemplateService = require('./TemplateService');
 const ProjectAccessService = require('./ProjectAccessService');
 const ReadinessEvaluator = require('./ReadinessEvaluator');
 const ReadinessMetrics = require('./ReadinessMetrics');
+const { parseJsonValue } = require('../utils/jsonValue');
 const {
   ReadinessError,
   ValidationError,
@@ -77,16 +78,6 @@ function actorShape(actor = {}) {
   };
 }
 
-function parseJson(value, fallback) {
-  if (value === null || value === undefined) return fallback;
-  if (typeof value === 'object') return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallback;
-  }
-}
-
 class TicketReadinessService {
   constructor() {
     this.evaluator = ReadinessEvaluator;
@@ -146,7 +137,7 @@ class TicketReadinessService {
     );
     if (result.rows.length === 0) return null;
 
-    const definitions = parseJson(result.rows[0].file_definitions, []);
+    const definitions = parseJsonValue(result.rows[0].file_definitions, []);
     const files = (Array.isArray(definitions) ? definitions : []).map(file => ({
       key: file.key,
       title: file.title || file.key,

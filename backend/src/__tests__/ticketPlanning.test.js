@@ -182,7 +182,7 @@ describe('TicketPlanningService', () => {
       expect(calls.find(call => call[0] === 'COMMIT')).toBeUndefined();
     });
 
-    it('should use custom template fallback when template name is not built-in', async () => {
+    it('should apply a custom template whose JSONB file_definitions is already parsed (regression)', async () => {
       const Ticket = require('../models/ticket');
       const client = createMockClient(
         jest.fn()
@@ -192,17 +192,84 @@ describe('TicketPlanningService', () => {
 
       Ticket.findById = jest.fn().mockResolvedValue({ id: 't1', project_id: 1, title: 'Test' });
       pool.query = jest.fn().mockResolvedValue({
-        rows: [{ id: 1, project_id: 1, name: 'custom', file_definitions: JSON.stringify([{ key: 'custom.md', content: 'custom content' }]) }]
+        rows: [{
+          id: 1,
+          project_id: 1,
+          name: 'custom',
+          // pg returns JSONB columns as parsed arrays, not JSON strings.
+          file_definitions: [{ key: 'custom.md', content: 'custom content' }],
+        }],
       });
 
       await TicketPlanningService.applyTemplate('ticket-1', 'my-custom-template', 'user-1');
 
       expect(Ticket.findById).toHaveBeenCalledWith('ticket-1');
+      const insertCalls = client.query.mock.calls.filter(
+        call => call[0].includes('INSERT INTO ticket_planning')
+      );
+      expect(insertCalls).toHaveLength(1);
+      expect(insertCalls[0][1]).toEqual(['ticket-1', 'custom.md', 'custom content', 'user-1']);
       const updateCalls = client.query.mock.calls.filter(
         call => call[0].includes('UPDATE tickets')
       );
       expect(updateCalls.length).toBe(1);
       expect(updateCalls[0][1]).toEqual(['my-custom-template', 'ticket-1']);
+    });
+
+    it('should still apply a custom template stored as a JSON string', async () => {
+      const Ticket = require('../models/ticket');
+      const client = createMockClient(
+        jest.fn()
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+      );
+
+      Ticket.findById = jest.fn().mockResolvedValue({ id: 't1', project_id: 1, title: 'Test' });
+      pool.query = jest.fn().mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          name: 'custom',
+          file_definitions: JSON.stringify([{ key: 'custom.md', content: 'custom content' }]),
+        }],
+      });
+
+      await TicketPlanningService.applyTemplate('ticket-1', 'my-custom-template', 'user-1');
+
+      const insertCalls = client.query.mock.calls.filter(
+        call => call[0].includes('INSERT INTO ticket_planning')
+      );
+      expect(insertCalls).toHaveLength(1);
+      expect(insertCalls[0][1]).toEqual(['ticket-1', 'custom.md', 'custom content', 'user-1']);
+    });
+
+    it.each([
+      ['an object', { key: 'custom.md', content: 'custom content' }],
+      ['a number', 42],
+      ['malformed JSON', '{not json'],
+    ])('rejects a custom template whose file_definitions is %s', async (_label, fileDefinitions) => {
+      const Ticket = require('../models/ticket');
+      const client = createMockClient(
+        jest.fn()
+          .mockResolvedValueOnce({ rows: [] })
+          .mockResolvedValueOnce({ rows: [] })
+      );
+
+      Ticket.findById = jest.fn().mockResolvedValue({ id: 't1', project_id: 1, title: 'Test' });
+      pool.query = jest.fn().mockResolvedValue({
+        rows: [{ id: 1, project_id: 1, name: 'custom', file_definitions: fileDefinitions }],
+      });
+
+      const error = await TicketPlanningService.applyTemplate('ticket-1', 'my-custom-template', 'user-1')
+        .catch(err => err);
+
+      expect(error).toMatchObject({ code: 'DATA_INTEGRITY_ERROR', statusCode: 500 });
+      expect(error.message).toContain('has invalid file_definitions; expected an array');
+
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(
+        client.query.mock.calls.some(call => call[0].includes('INSERT INTO ticket_planning'))
+      ).toBe(false);
     });
 
     it('does not fail a committed template when the criteria seed throws', async () => {

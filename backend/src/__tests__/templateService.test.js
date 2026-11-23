@@ -238,6 +238,44 @@ describe('TemplateService', () => {
       expect(result).toEqual([{ key: 'a.md', content: 'ca' }, { key: 'b.md', content: 'cb' }]);
     });
 
+    it('applies a template when pg returns file_definitions as parsed JSONB', async () => {
+      const mockTemplate = {
+        id: 't1',
+        file_definitions: [{ key: 'a.md', content: 'ca' }],
+        name: 'Test',
+      };
+      const mockClient = {
+        query: jest.fn().mockResolvedValue(null),
+        release: jest.fn(),
+      };
+      pool.query.mockResolvedValueOnce({ rows: [mockTemplate] });
+      pool.connect.mockResolvedValueOnce(mockClient);
+
+      const result = await TemplateService.apply('ticket-1', 't1', 'user-1');
+
+      expect(result).toEqual([{ key: 'a.md', content: 'ca' }]);
+      expect(mockClient.query).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO ticket_planning'),
+        ['ticket-1', 'a.md', 'ca', 'user-1']
+      );
+    });
+
+    it.each([
+      ['an object', { key: 'a.md' }],
+      ['a number', 42],
+      ['malformed JSON', '{not json'],
+    ])('rejects corrupt file_definitions stored as %s', async (_label, fileDefinitions) => {
+      pool.query.mockResolvedValueOnce({
+        rows: [{ id: 't1', file_definitions: fileDefinitions, name: 'Test' }],
+      });
+
+      const error = await TemplateService.apply('ticket-1', 't1', 'user-1').catch(err => err);
+
+      expect(error).toMatchObject({ code: 'DATA_INTEGRITY_ERROR', statusCode: 500 });
+      expect(error.message).toContain('has invalid file_definitions; expected an array');
+      expect(pool.connect).not.toHaveBeenCalled();
+    });
+
     it('rolls back on error', async () => {
       const mockTemplate = { id: 't1', file_definitions: JSON.stringify([{ key: 'a.md', content: 'ca' }]), name: 'Test' };
       const mockClient = {
