@@ -43,6 +43,9 @@ deferred (fg-45 `00` D2). The pilot uses human review.
 **Forward plan:** `planning/PILOT_NEXT.md` — remaining pilot milestones,
 dependencies, blockers and definition of done.
 
+**Three-worker flow tests:** `planning/THREE_WORKER_PLANS.md` — allocation and
+merge protocol for the planner and GTD backlogs.
+
 **Background, not on the pilot critical path:** fg-34 remains in progress for
 D12/D24/D25/D26 hardening; fg-39 remains in progress for FR3 (D7), FR4 (D9)
 and FR8 (D6), which are optional for the first repo. fg-32 is blocked by
