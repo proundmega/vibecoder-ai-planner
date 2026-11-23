@@ -65,7 +65,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Scheduled reaper wiring and guarded ticket release | fg-33 | Reliability | fg-33 (#110) | done |
 | D4 | Idempotent publish: branch/PR detection and duplicate-PR prevention | fg-33 | Reliability | fg-33 (#110) | done |
 | D5 | Dead-letter/adoption flow for operators | fg-33 | Operations | fg-33 (#110) | done |
-| D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | DONE/fg-44-agent-storage-lifecycle | done (#209, #212) |
+| D6 | Full workspace inventory and retention metrics (scheduled pruning delivered by fg-58) | fg-33 | Storage | fg-59 (PR #217) / fg-46 | open |
 | D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B; lease-expiry/reaper adoption and idempotent publish are automated, while a real supervisor restart, finish failure and key-expiry remain staging | open |
 | D8 | Fully containerized real-agent e2e in CI | self | Testing | follow-up | open |
 | D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |

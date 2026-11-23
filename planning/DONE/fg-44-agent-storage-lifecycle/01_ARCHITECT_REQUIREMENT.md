@@ -69,9 +69,17 @@ code failure.
 | FR8 | Images: prune dangling images only; never prune the current `vibecode-agent`/sandbox tags. | Dry-run lists only dangling images; the active tag remains. |
 | FR9 | Orphans: a periodic sweep removes `/repos/runtimes/*` directories not owned by an active runtime/run after `HARNESS_WORKSPACE_RETENTION_HOURS` (default 24h, the existing retention TTL); a one-time legacy pass covers `/repos/<8hex>-*` (`WORKSPACE_DIR_PATTERN`) and `java.io.tmpdir`/`AGENT_TMPDIR` `opencode-harness-*`/`vibecode-askpass-*` temp dirs (`TEMP_DIR_PREFIXES`); suspicious dirs move to `orphans/` for a short TTL. The child/startup temp/own-root prune stays until D10; the supervisor `/repos`-rooted legacy pass (or `host-storage.sh --legacy`) covers `/repos/<8hex>-*`; `host-storage.sh --legacy` reimplements the find/prefix rules in bash. | Orphan fixture is reaped after TTL; active/lease-owned and temp/credential dirs are handled with the same prefixes/retention on both roots; the existing tests remain. |
 | FR10 | Active safety: never delete a workspace or stop a runtime with an unexpired lease or an active harness/OpenCode process. | Active lease/harness tests skip cleanup and log why. |
-| FR11 | Metrics/events: emit workspace bytes, host free bytes/inodes, log size, refresh/cleanup counts and orphan count as fg-41 events or structured logs. | Event/log assertions for each field. |
+| FR11 | Metrics/events: emit workspace identity/path, workspace bytes at cleanup, log size, host disk/inode percentages and per-event refresh/cleanup/orphan records as fg-41 events or structured logs. Host free bytes/inodes, size/age inventory and aggregate counters are deferred to D12. | Event/log assertions for each emitted field; inventory fields are D12. |
 | FR12 | Recovery: `agent/scripts/host-storage.sh --dry-run|--apply` is a stopped-supervisor recovery path; it refuses live supervisor/marker state, cleans idle workspaces, includes a `--legacy` pass for `/repos/<8hex>-*` and `${AGENT_TMPDIR:-${TMPDIR:-/tmp}}` temp dirs, verifies free space/inodes and never exposes a control token to agents. The script reimplements the find/prefix rules; it does not call Java. | Dry-run lists actions; apply frees space only with the supervisor stopped; the legacy/temp fixtures use the existing prefixes on both roots; a full-disk fixture recovers. |
 | FR13 | Sandbox cleanup: destroy the fg-34 sandbox before deleting its workspace; a failed destroy keeps the runtime tracked and fails closed. | Failed-destroy test keeps the dir; successful test removes it. |
+
+> **As-built scope correction (2026-11-23, fg-44 D12):** production emits
+> workspace identity/path, `storage.cleanup` bytes, `storage.log_bytes`, disk
+> and inode **percentages** on `storage.watermark`, and per-event
+> refresh/cleanup/orphan/image records. Host **free bytes/inodes**, workspace
+> size/age inventory and aggregate counters were not implemented; they remain
+> open as fg-44 D12 → fg-59 (PR #217) / fg-46. Acceptance 8 is read with this
+> scope.
 
 ## Storage budget
 
@@ -138,7 +146,9 @@ is a host incident.
    idle runtime; 95% requires manual recovery.
 6. Supervisor logs rotate; sandbox logs remain bounded at 1m/1, and dangling images are pruned safely.
 7. Orphan workspaces are reaped after TTL; active/lease-owned dirs are kept.
-8. Storage events show workspace bytes, free bytes/inodes and refresh counts.
+8. Storage events show workspace identity/path, cleanup and log bytes, disk/inode
+   percentages and refresh/cleanup/orphan records (byte/inode inventory is
+   fg-44 D12; see the FR11 as-built note).
 9. A full-disk simulation recovers with `host-storage.sh` in stopped-supervisor mode.
 10. A workspace over its profile budget fails the run with
     `storage_budget_exceeded` before the host fills.
