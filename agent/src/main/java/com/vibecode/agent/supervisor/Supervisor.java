@@ -932,10 +932,31 @@ public final class Supervisor implements AutoCloseable {
     public static ChildLauncher defaultLauncher() {
         return spec -> {
             ProcessBuilder builder = new ProcessBuilder(buildCommand(spec.heapMb()));
-            builder.environment().putAll(spec.environment());
+            builder.environment().clear();
+            builder.environment().putAll(childEnvironment(System.getenv(), spec.environment()));
             builder.inheritIO();
             return builder.start();
         };
+    }
+
+    /**
+     * Build the child environment from the supervisor's environment plus the
+     * runtime overrides. The supervisor control-plane variables must not be
+     * inherited: a child that sees {@code SUPERVISOR_CONFIG} would run
+     * {@code SupervisorMain} again instead of the ticket worker, and the
+     * one-time enrollment token must not reach a child process.
+     */
+    static Map<String, String> childEnvironment(
+        Map<String, String> inherited,
+        Map<String, String> overrides
+    ) {
+        Map<String, String> env = new LinkedHashMap<>(inherited);
+        if (overrides != null) {
+            env.putAll(overrides);
+        }
+        env.remove("SUPERVISOR_CONFIG");
+        env.remove("ENROLLMENT_TOKEN");
+        return env;
     }
 
     /** Build the child argv. Package-private so tests can assert no secrets leak. */

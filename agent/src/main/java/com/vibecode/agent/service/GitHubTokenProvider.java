@@ -91,6 +91,19 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         if (token != null && !forceRefresh && !needsRefresh()) {
             return token;
         }
+        // Explicit local PAT mode must not call the App-only token endpoint:
+        // the backend rejects it with GITHUB_APP_NOT_CONFIGURED before the
+        // provider can use its fallback.
+        if (isExplicitPatMode() && fallback != null) {
+            String legacy = fallback.get();
+            if (legacy != null && !legacy.isBlank()) {
+                token = legacy;
+                expiresAt = null;
+                mode = "pat";
+                knownTokens.add(legacy);
+                return legacy;
+            }
+        }
         Map<String, Object> data;
         try {
             data = fetcher.fetch(forceRefresh);
@@ -131,8 +144,13 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         }
     }
 
-    private String useFallback(IOException failure) throws IOException {
-        if (fallback == null) {
+    private boolean isExplicitPatMode() {
+        return expectedMode != null
+            && "pat".equalsIgnoreCase(expectedMode)
+            && allowPat;
+    }
+
+    private String useFallback(IOException failure) throws IOException {        if (fallback == null) {
             throw failure;
         }
         // A definitive backend rejection means the backend has not opted into

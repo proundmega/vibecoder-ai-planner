@@ -310,6 +310,29 @@ class SupervisorReconcileTest {
     }
 
     @Test
+    void childEnvironmentDropsSupervisorControlPlaneVariables() {
+        Map<String, String> inherited = new LinkedHashMap<>();
+        inherited.put("SUPERVISOR_CONFIG", "/config/agent.ini");
+        inherited.put("ENROLLMENT_TOKEN", "enr_secret");
+        inherited.put("PATH", "/usr/bin");
+        inherited.put("SANDBOX_MODE", "docker");
+        Map<String, String> overrides = new LinkedHashMap<>();
+        overrides.put("AGENT_RUNTIME_ID", "1");
+        overrides.put("AGENT_ROLE", "worker");
+
+        Map<String, String> env = Supervisor.childEnvironment(inherited, overrides);
+
+        assertFalse(env.containsKey("SUPERVISOR_CONFIG"),
+            "a child that inherits SUPERVISOR_CONFIG runs SupervisorMain again");
+        assertFalse(env.containsKey("ENROLLMENT_TOKEN"),
+            "the one-time enrollment token must not reach a child process");
+        assertEquals("1", env.get("AGENT_RUNTIME_ID"));
+        assertEquals("worker", env.get("AGENT_ROLE"));
+        assertEquals("/usr/bin", env.get("PATH"));
+        assertEquals("docker", env.get("SANDBOX_MODE"));
+    }
+
+    @Test
     void healthGatePausesChildRespawnWhileTheBackendIsUnhealthy() throws Exception {
         FakeLauncher launcher = new FakeLauncher();
         AtomicBoolean healthy = new AtomicBoolean(false);

@@ -50,8 +50,11 @@
         <version>3.2.5</version>
         <configuration>
           <environmentVariables>
-            <AGENT_API_KEY>test-key</AGENT_API_KEY>
-            <AGENT_ID>test-id</AGENT_ID>
+            <ENROLLMENT_TOKEN>test-key</ENROLLMENT_TOKEN>
+            <AGENT_CREDENTIALS_FILE>/tmp/vibecode-test-node-credentials.json</AGENT_CREDENTIALS_FILE>
+            <AGENT_RUNTIME_ID>1</AGENT_RUNTIME_ID>
+            <AGENT_ROLE>worker</AGENT_ROLE>
+            <AGENT_LLM_MODEL>test/worker-model</AGENT_LLM_MODEL>
             <BACKEND_URL>http://localhost:3001</BACKEND_URL>
             <PROJECT_ID>1</PROJECT_ID>
             <REPO_OWNER>test-owner</REPO_OWNER>

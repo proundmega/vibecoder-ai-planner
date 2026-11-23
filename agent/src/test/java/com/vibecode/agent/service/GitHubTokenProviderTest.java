@@ -115,6 +115,25 @@ class GitHubTokenProviderTest {
     }
 
     @Test
+    void usesTheLocalPatDirectlyWhenPatModeIsExplicit() throws Exception {
+        AtomicInteger backendCalls = new AtomicInteger();
+        GitHubTokenProvider provider = new GitHubTokenProvider(
+            force -> {
+                backendCalls.incrementAndGet();
+                throw new GitHubTokenRequestException(
+                    "GITHUB_APP_NOT_CONFIGURED", "GitHub App credentials are not configured");
+            },
+            () -> "stored-pat",
+            "pat",
+            true);
+
+        assertEquals("stored-pat", provider.get());
+        assertEquals(0, backendCalls.get(),
+            "explicit PAT mode must not call the App-only token endpoint");
+        assertEquals("pat", provider.getMode());
+    }
+
+    @Test
     void refreshForcesAForcedBackendFetch() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         AtomicInteger forcedCalls = new AtomicInteger();
