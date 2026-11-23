@@ -59,6 +59,14 @@ FROM agent_runtimes rt JOIN agent_nodes n ON n.id = rt.node_id
 WHERE rt.id = :runtime_id;
 ```
 
+## Automated Phase B drills
+
+`harnessHttpE2E` E19-E21/E29 cover crash-after-publish adoption, stale-run
+release, idempotent publish/reconcile, and the dead-letter/release-ticket
+authorization against the real app and Postgres. The staging steps below are
+still required for the real OpenCode/GitHub/PR path; they are not replaced by
+the automated drills.
+
 ## Happy path
 
 1. Create the test project/repo/ticket; record `project_id`, `ticket_id` and

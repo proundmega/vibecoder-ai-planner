@@ -8,6 +8,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 
 const app = require('../../index');
+const HarnessReaper = require('../../services/HarnessReaper');
 const { getSecret } = require('../../utils/jwt');
 const {
   pool,
@@ -18,17 +19,16 @@ const {
 } = require('./harnessE2EFixtures');
 
 /**
- * bt-60 Phase A — real Express app + real Postgres round trip for the durable
+ * bt-60 Phase A+B — real Express app + real Postgres round trip for the durable
  * harness. No route or service is mocked.
  *
- * Covered: E1-E14 and E23-E24. E25 is review-only (the index lives outside the
- * backend test image and is updated in the planning docs). E26-E28 are
- * review/verification rows: this change adds test files only (E26), the
- * commands below plus lint are the evidence for E27, and E28 (staging safety)
- * belongs to the deferred Phase B staging run.
- *
- * E15-E21 (real OpenCode/GitHub/PR, crash/reaper/idempotent publish) remain
- * Phase B/manual and are recorded in the bt-60 runbook and deferred register.
+ * Covered automatically: E1-E14, E19-E21, E23-E24 and E29. E29 covers the
+ * dead-letter/release guard; E21 covers publish/reconcile. E15-E18 and E22 are
+ * the real OpenCode/GitHub/PR and containerized staging rows, which still need
+ * the disposable staging project/repo/provider key/GitHub App installation.
+ * E25-E28 are review/verification rows: this change adds test files only
+ * (E26), the commands below plus lint are E27, and E28 is the staging safety
+ * checklist in the runbook.
  */
 
 const BRANCH_PREFIX = 'bt60-e2e';
@@ -104,6 +104,37 @@ function finishRun({ token, runtimeId, runId, status, headSha, prUrl, error }) {
 function getRun({ token, runtimeId, runId }) {
   return request(app)
     .get(`/api/v1/harness/runs/${runId}`)
+    .set('X-API-Key', token)
+    .set('X-Agent-Runtime', String(runtimeId));
+}
+
+function publishRun({ token, runtimeId, runId, headSha, prUrl }) {
+  return request(app)
+    .post(`/api/v1/harness/runs/${runId}/publish`)
+    .set('X-API-Key', token)
+    .set('X-Agent-Runtime', String(runtimeId))
+    .send({ headSha, prUrl });
+}
+
+function reconcileRun({ token, runtimeId, runId }) {
+  return request(app)
+    .post(`/api/v1/harness/runs/${runId}/reconcile`)
+    .set('X-API-Key', token)
+    .set('X-Agent-Runtime', String(runtimeId));
+}
+
+function deadLetterRun({ jwt, runId, error }) {
+  return request(app)
+    .post(`/api/v1/harness/runs/${runId}/dead-letter`)
+    .set('Authorization', `Bearer ${jwt}`)
+    .send({ error });
+}
+
+function releaseRunTicket({ token, runtimeId, runId, jwt }) {
+  const req = request(app)
+    .post(`/api/v1/harness/runs/${runId}/release-ticket`);
+  if (jwt) return req.set('Authorization', `Bearer ${jwt}`);
+  return req
     .set('X-API-Key', token)
     .set('X-Agent-Runtime', String(runtimeId));
 }
@@ -693,6 +724,235 @@ describe('harness HTTP e2e (real app + real Postgres)', () => {
     });
     expect(siblingWrite.statusCode).toBe(403);
     expect(siblingWrite.body.error.code).toBe('FORBIDDEN');
+  });
+
+  test('E19 crash-equivalent lease expiry adopts publish evidence and keeps one PR', async () => {
+    const runId = await createActiveRun();
+    expect((await claimLease({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      ticketId: fixture.ticketId,
+      runId,
+    })).statusCode).toBe(201);
+
+    const headSha = 'bt60-phaseb-crash-head';
+    const prUrl = 'https://example.test/bt60/pull/phaseb-crash';
+    const published = await publishRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId,
+      headSha,
+      prUrl,
+    });
+    expect(published.statusCode).toBe(200);
+    expect(published.body.data.head_sha).toBe(headSha);
+
+    // Simulate a crash after the push/PR but before finish: the lease expires
+    // and the next reaper sweep must adopt the evidence, not release the ticket.
+    await pool.query(
+      `UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 minute' WHERE run_id = $1`,
+      [runId]
+    );
+    const summary = await HarnessReaper.runOnce({ limit: 10 });
+    expect(summary.adopted).toBeGreaterThanOrEqual(1);
+
+    const run = await dbRun(runId);
+    expect(run.status).toBe('succeeded');
+    expect(run.pr_url).toBe(prUrl);
+    expect(run.reconciled_at).not.toBeNull();
+    expect(await count(
+      'SELECT count(*)::int AS count FROM harness_runs WHERE ticket_id = $1',
+      [fixture.ticketId]
+    )).toBe(1);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe(prUrl);
+  });
+
+  test('E20 reaper fails a stale unpublished run and releases only in_progress', async () => {
+    const runId = await createActiveRun();
+    expect((await claimLease({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      ticketId: fixture.ticketId,
+      runId,
+    })).statusCode).toBe(201);
+
+    await pool.query(
+      `UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 minute' WHERE run_id = $1`,
+      [runId]
+    );
+    const summary = await HarnessReaper.runOnce({ limit: 10 });
+    expect(summary.released).toBeGreaterThanOrEqual(1);
+
+    const run = await dbRun(runId);
+    expect(run.status).toBe('failed');
+    expect(run.pr_url).toBeNull();
+    expect(run.reconciled_at).not.toBeNull();
+
+    const ticket = await pool.query(
+      'SELECT status, assigned_runtime_id, pr_url FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('backlog');
+    expect(ticket.rows[0].assigned_runtime_id).toBeNull();
+    expect(ticket.rows[0].pr_url).toBeNull();
+
+    // Negative case: a failed run attached to a review ticket must not release
+    // it. The reaper only returns in_progress tickets to backlog.
+    await pool.query(
+      `UPDATE tickets
+       SET status = 'in_progress', assigned_runtime_id = $2, locked_at = NULL, pr_url = NULL
+       WHERE id = $1`,
+      [fixture.ticketId, fixture.runtimeId]
+    );
+    const reviewRunId = await createActiveRun();
+    const failed = await finishRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId: reviewRunId,
+      status: 'failed',
+      error: 'review ticket must not be released',
+    });
+    expect(failed.statusCode).toBe(200);
+    await pool.query(
+      `UPDATE tickets SET status = 'review' WHERE id = $1`,
+      [fixture.ticketId]
+    );
+
+    // The reaper's reconcileRun has its own released CTE and in_progress
+    // guard. Exercise that path, not only the release-ticket route.
+    const reviewSummary = await HarnessReaper.runOnce({ limit: 10 });
+    expect(reviewSummary.reconciled).toBeGreaterThanOrEqual(1);
+    const reconciledRun = await dbRun(reviewRunId);
+    expect(reconciledRun.reconciled_at).not.toBeNull();
+
+    const stillReview = await pool.query(
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(stillReview.rows[0].status).toBe('review');
+    expect(stillReview.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
+
+    // The route guard independently refuses the same review ticket.
+    const refused = await releaseRunTicket({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId: reviewRunId,
+    });
+    expect(refused.statusCode).toBe(200);
+    expect(refused.body.data.released).toBe(false);
+    const afterRoute = await pool.query(
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(afterRoute.rows[0].status).toBe('review');
+    expect(afterRoute.rows[0].assigned_runtime_id).toBe(fixture.runtimeId);
+  });
+
+  test('E21 publish is idempotent and reconcile cannot duplicate identical publish evidence', async () => {
+    const runId = await createActiveRun();
+    expect((await claimLease({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      ticketId: fixture.ticketId,
+      runId,
+    })).statusCode).toBe(201);
+
+    const headSha = 'bt60-phaseb-idempotent-head';
+    const prUrl = 'https://example.test/bt60/pull/phaseb-idempotent';
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const published = await publishRun({
+        token: fixture.nodeToken,
+        runtimeId: fixture.runtimeId,
+        runId,
+        headSha,
+        prUrl,
+      });
+      expect(published.statusCode).toBe(200);
+      expect(published.body.data.head_sha).toBe(headSha);
+      expect(published.body.data.pr_url).toBe(prUrl);
+    }
+
+    // A running run is not reconcilable.
+    const active = await reconcileRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId,
+    });
+    expect(active.statusCode).toBe(409);
+
+    await pool.query(
+      `UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 minute' WHERE run_id = $1`,
+      [runId]
+    );
+    await HarnessReaper.runOnce({ limit: 10 });
+
+    const first = await reconcileRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId,
+    });
+    expect(first.statusCode).toBe(200);
+    const second = await reconcileRun({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId,
+    });
+    expect(second.statusCode).toBe(200);
+
+    expect(await count(
+      'SELECT count(*)::int AS count FROM harness_runs WHERE ticket_id = $1',
+      [fixture.ticketId]
+    )).toBe(1);
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBe(prUrl);
+  });
+
+  test('E29 dead-letter is an operator hold; release-ticket requires the operator', async () => {
+    const runId = await createActiveRun();
+    expect((await claimLease({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      ticketId: fixture.ticketId,
+      runId,
+    })).statusCode).toBe(201);
+
+    const operator = tokenFor(fixture.ownerId, 'project_admin');
+    const dead = await deadLetterRun({
+      jwt: operator,
+      runId,
+      error: 'stuck in publish',
+    });
+    expect(dead.statusCode).toBe(200);
+    expect(dead.body.data.status).toBe('dead_letter');
+
+    const agentRelease = await releaseRunTicket({
+      token: fixture.nodeToken,
+      runtimeId: fixture.runtimeId,
+      runId,
+    });
+    expect(agentRelease.statusCode).toBe(200);
+    expect(agentRelease.body.data.released).toBe(false);
+
+    const operatorRelease = await releaseRunTicket({ jwt: operator, runId });
+    expect(operatorRelease.statusCode).toBe(200);
+    expect(operatorRelease.body.data.released).toBe(true);
+
+    const ticket = await pool.query(
+      'SELECT status, assigned_runtime_id FROM tickets WHERE id = $1',
+      [fixture.ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('backlog');
+    expect(ticket.rows[0].assigned_runtime_id).toBeNull();
   });
 
   test('E23 fixture creation and cleanup remove every test row', async () => {
