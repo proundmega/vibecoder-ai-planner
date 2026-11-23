@@ -1,13 +1,13 @@
 ---
 id: "fg-59"
 title: "Storage Lifecycle Hardening"
-status: in_progress
+status: in_review
 priority: "P2"
 effort: "Small"
 scope: "Agent"
 created: "2026-11-23"
 updated: "2026-11-23"
-pr: null
+pr: 217
 branch: "feat/fg-59-storage-hardening"
 depends_on: ["fg-44", "fg-58"]
 ---
@@ -25,7 +25,7 @@ ticket closes the remaining non-blocking review residuals.
 
 | Claim | Evidence | Checked |
 |---|---|---|
-| Implementation in progress | `feat/fg-59-storage-hardening` | ☑ |
+| Implementation in review | PR #217 | ☑ |
 | Verification results | `03` → Results | ☐ |
 
 ## Deferred register (canonical)
