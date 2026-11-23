@@ -50,7 +50,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Ship run/lease events to log aggregation | bp-106 | Observability | bp-106 follow-up | open |
 | D5 | Budget-aware retry policy | fg-38 | Billing | DONE/fg-38-harness-budgets-routing | done (#164) |
 | D6 | CI process-kill matrix and live-session resume | self | Testing | none | open |
-| D7 | Scheduled workspace pruning during long-lived runs | self | Storage | DONE/fg-44-agent-storage-lifecycle | done (#209, #212) |
+| D7 | Scheduled workspace pruning during long-lived runs | self | Storage | DONE/fg-58-supervisor-storage-lifecycle | done (#212) |
 | D8 | Full workspace inventory (sizes/ages/disk metrics) | self | Storage | fg-59 D1 / fg-46 | open |
 | D9 | Automatic dead-letter after N failed attempts (FR8) | self | Reliability | fg-30 #108 item 7 | done (fg-30 #108 item 7; durable attempt counts remain Phase 2) |
 | D10 | Explicit force-clean-restart operator action (FR10) | self | Operability | none | open |

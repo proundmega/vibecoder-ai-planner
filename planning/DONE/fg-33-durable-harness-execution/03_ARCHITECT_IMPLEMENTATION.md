@@ -150,8 +150,10 @@ Operator recovery, cleanup and observability:
   workspace are skipped. Crash-left `opencode-harness-*` and
   `vibecode-askpass-*` temp dirs are pruned with the same retention.
   Deployment assumption: one agent identity per clone root and temp namespace;
-  protected paths are agent-scoped while temp cleanup is global. Cleanup is
-  startup-only today; scheduled pruning remains a fg-44/fg-33 follow-up.
+  protected paths are agent-scoped while temp cleanup is global. Startup
+  cleanup remains for legacy/temp paths; the supervisor storage tick prunes
+  runtime roots and orphans (fg-58 #212). Full size/age inventory remains
+  fg-33 D8 (fg-59 D1 / fg-46).
 - **Metrics.** `HarnessMetrics` exports reaped/reconciled/released/adopted/
   needs-operator counters, `harness_reaper_sweep_failures_total`, and
   `harness_reaper_last_success_timestamp_seconds`. The success timestamp only

@@ -99,8 +99,10 @@ startup after recovery succeeds:
   old mtime;
 - never delete a workspace with an active run or unexpired lease;
 - clean crash-left OpenCode/askpass temp dirs with the same retention;
-- a full size/age inventory, scheduled cleanup and disk-usage/leftover metrics
-  are deferred to fg-44.
+- startup cleanup remains for legacy/temp paths; the supervisor storage tick
+  prunes runtime roots and orphans (fg-58 #212);
+- a full size/age inventory and disk-usage/leftover metrics are deferred to
+  fg-33 D8 (fg-59 D1 / fg-46).
 
 ## Configuration
 
