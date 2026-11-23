@@ -97,6 +97,46 @@ credentials below.
 until the next pickup or stale cleanup. `finishRun` updates
 `harness_runs.heartbeat_at` and does not clear it.
 
+## Executed staging run (2026-11-23)
+
+Disposable local stack: Postgres 17 (`bt60-staging-pg`), Redis 7, the API on
+`:3001`, one enrolled node/`worker` runtime and project/ticket 1. Repository
+`proundmega/planner-test` in PAT local mode (`GITHUB_AUTH_MODE=pat` on both
+sides, `ALLOW_PAT=true`). Sandbox mode `docker` with `vibecode-agent-sandbox:bt60`
+and `vibecode-sandbox-proxy:bt60`; OpenCode 1.19.5; model
+`opencode-go/beam-free`.
+
+The build was the pre-merge #220 branch at `d8c9132` (child-env isolation,
+explicit PAT mode and the HTTP/1.1 health gate). Re-run this procedure on
+merged `master` after #220 to replace the pre-merge evidence.
+
+| Ticket | Run | Result | PR |
+|---|---|---|---|
+| 1 - append marker to `script.js` | `1af4a751-0bef-4428-a888-7579bbf7d7fd` | `succeeded`, `done`, `head_sha=bd64fb9`; checkpoints `cloned -> session_ready -> prompting -> verifying -> publishing -> done`; no lease left | #20 |
+| 2 - lease-loss drill | `b9b2682b` then `74216219` | lease deleted during the first run; no PR/branch, ticket recovered; retry succeeded | #21 |
+| 3 - health-gate validation | `d23b7862` | gate passed after the HTTP/1.1 fix; `succeeded`, `done` | #22 |
+| 4 - crash/restart drill | `b889e1fb` then `5a80e787` | child killed mid-run; startup recovery failed the stale run with `Agent restarted before the run finished; restarting cleanly`, no publish; clean retry succeeded | #23 |
+
+Deviations from the procedure above:
+
+- **Provider session header:** the OpenCode Go gateway rejects requests without
+  `x-opencode-session`; OpenCode 1.19.5 does not send it. A local HTTP proxy
+  injected the header for staging (D13/HARNESS-1). The backend model test also
+  cannot verify this provider for the same reason; the model was marked verified
+  after a direct authenticated call.
+- **Health gate:** disabled for the first run; enabled for the ticket-3 run
+  after the #220 fix.
+- **Supervisor placement:** run natively with the direct Docker socket instead
+  of the restricted proxy container, so the supervisor/daemon boundary is the
+  staging host, not the production isolation.
+- **Git credential:** long-lived PAT in explicit local mode instead of a
+  repo-scoped GitHub App installation.
+- The repository has no `main`; the agent detected `vibecode/ticket-1-testnew`
+  as the default branch, which is expected for this fixture.
+
+Not yet reproduced here: `/finish` unavailable after PR and mid-run key expiry
+(D7).
+
 ## Failure cases
 
 - **Finish unavailable after PR**: use a proxy/controlled outage; assert the

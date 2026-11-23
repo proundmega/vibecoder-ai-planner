@@ -227,3 +227,10 @@ When creating a new ticket or triaging a defect:
 - **P2**: Medium — do when capacity allows
 - **P3**: Low — nice to have
 - **P4**: Minimal — future consideration
+
+## Harness staging findings (bt-60, 2026-11-23)
+
+| Ref | Item | Evidence | Proposed direction | Priority | State |
+|---|---|---|---|---|---|
+| HARNESS-1 | OpenCode Go requires a stable `x-opencode-session` header. OpenCode 1.19.5 (the version compatible with the harness session API) does not send it, so direct gateway calls and the backend `provider-models/:id/test` verification fail with HTTP 400 `MissingSessionID`. The bt-60 staging run used a local proxy that injected the header. | bt-60 `05_RUNBOOK.md` executed-run section; gateway 400; model marked verified only after a direct authenticated call | Inject a stable session id in the harness/provider request path, or upgrade OpenCode and adapt the session API; make model verification send the header for `opencode-go` | P1 | open (bt-60 staging workaround; own before the first pilot run) |
+| HARNESS-2 | The harness emits `sandbox_ready` and `sandbox_bridge_ready` checkpoints, but the validator only accepts `created, cloned, session_ready, prompting, verifying, publishing, done`. Every run logs `VALIDATION_ERROR` and loses those rows. | bt-60 staging logs; `harness_checkpoints` rows | Add the steps to the checkpoint schema or stop emitting them; keep the runbook sequence aligned | P2 | open |
