@@ -15,7 +15,9 @@ const { row, activeRow, oldDraft, authState } = vi.hoisted(() => {
     timeouts: { setup_minutes: 15, verify_minutes: 20 },
     max_round_minutes: 45,
     services: [],
-    flaky_tests: [],
+    flaky_tests: ['test/known-flake.test.js'],
+    flaky_retries: 1,
+    test_data: { setup: ['npm run seed'], cleanup: ['npm run seed:reset'] },
   }
   const row = {
     id: 'p1',
@@ -173,6 +175,9 @@ describe('RepoProfileEditor', () => {
     const textareas = wrapper.findAll('textarea')
     expect(textareas[0].element.value).toContain('npm ci')
     expect(textareas[1].element.value).toContain('npm test')
+    expect(textareas[2].element.value).toContain('test/known-flake.test.js')
+    expect(textareas[3].element.value).toContain('npm run seed')
+    expect(textareas[4].element.value).toContain('npm run seed:reset')
 
     const save = button(wrapper, 'Save draft')
     expect(save).toBeTruthy()
@@ -186,6 +191,9 @@ describe('RepoProfileEditor', () => {
         verify: ['npm test'],
         setup: ['npm ci'],
         env: { NODE_ENV: 'test' },
+        flaky_tests: ['test/known-flake.test.js'],
+        flaky_retries: 1,
+        test_data: { setup: ['npm run seed'], cleanup: ['npm run seed:reset'] },
       }),
     )
   })

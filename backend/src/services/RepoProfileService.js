@@ -289,6 +289,8 @@ async function detectStack(projectId) {
     max_round_minutes: 45,
     services: [],
     flaky_tests: [],
+    flaky_retries: 2,
+    test_data: { setup: [], cleanup: [] },
   };
 
   if (profile.verify.length === 0) {

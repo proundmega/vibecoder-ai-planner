@@ -39,6 +39,8 @@ export interface RepoProfile {
   max_round_minutes: number
   services: RepoService[]
   flaky_tests: string[]
+  flaky_retries?: number
+  test_data?: { setup: string[]; cleanup: string[] }
   egress?: RepoEgress
 }
 

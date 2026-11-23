@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
-updated: "2026-11-22"
+updated: "2026-11-23"
 pr: null
 branch: null
 depends_on: ["fg-30", "fg-34"]
@@ -34,13 +34,14 @@ environment failures, not coding failures.
 |---|---|---|
 | 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, dry-run validation queue + agent worker, activation only after an exact-content successful dry run, fg-34/D27 profile origin-CA plumbing | done (#161) |
 | 2 | Service containers (Postgres/Redis) with health checks, ephemeral data and connection env | done (#167) |
-| 3 | Flaky-test retry policy, test-data hooks and known-failure semantics | planned |
+| 3 | Flaky-test retry policy, test-data hooks and known-failure semantics | done (this PR; see `03` Results) |
 | 4 | Prebuilt per-stack images/devcontainers, lockfile-keyed cache generations and cache-write sanitization | planned |
 | 5 | Project settings profile editor | done (#167) |
 
-Slices 1, 2 and 5 are implemented; non-empty `flaky_tests` and `caches` still
-fail closed until slices 3 and 4 rather than accepting configuration the
-runtime does not execute.
+Slices 1, 2, 3 and 5 are implemented; `caches` still fails closed until slice 4
+rather than accepting configuration the runtime does not execute. Known-flaky
+tests are retried only when the failed output names one, and a consistent
+failure still fails the run.
 
 ## Status evidence
 
@@ -48,8 +49,9 @@ runtime does not execute.
 |---|---|---|
 | Slice 1 implementation | PR #161 | ☑ |
 | Slice 2/5 implementation | PR #167 (`867b9f7`) | ☑ |
+| Slice 3 implementation | This PR; `03` → Results | ☑ |
 | Verification results | `03` → Results | ☑ |
-| Remaining slices | FR3 (D7), FR4 (D9), FR8 (D6) open | ☐ |
+| Remaining slices | FR3 (D7), FR4 (D9) open | ☐ |
 
 ## Deferred register (canonical)
 
@@ -63,7 +65,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Cache-aware budgets | fg-38 | Billing | DONE/fg-38-harness-budgets-routing | open |
 | D4 | Profile/setup telemetry | fg-41 | Observability | DONE/fg-41-harness-observability | open |
 | D5 | Service containers and health checks (slice 2) | fg-39 FR5 | Infrastructure | fg-39 slice 2 | merged (#167) |
-| D6 | Flaky-test retry policy and test-data hooks (slice 3) | fg-39 FR8 | Reliability | fg-39 slice 3 | open |
+| D6 | Flaky-test retry policy and test-data hooks (slice 3) | fg-39 FR8 | Reliability | fg-39 slice 3 | done (this PR) |
 | D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4) | fg-39 FR3 | Infrastructure | fg-39 slice 4 | open |
 | D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | merged (#167) |
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4 | open |

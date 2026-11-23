@@ -689,6 +689,72 @@ class HarnessTicketProcessorTest {
 
 
     @Test
+    void profileRunsTestDataHooksAndPassesTheFlakyPolicyToVerification() throws Exception {
+        String branch = "vibecode/ticket-1-add-filtering";
+        RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""
+            {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "version": 7,
+              "status": "active",
+              "profile": {
+                "schema_version": 1,
+                "repo_url": "https://github.com/owner/repo",
+                "base_branch": "develop",
+                "setup": ["profile-setup"],
+                "verify": ["profile-verify"],
+                "env": {"PROFILE_FLAG": "on"},
+                "test_data": {
+                  "setup": ["seed-data"],
+                  "cleanup": ["clean-data"]
+                },
+                "flaky_tests": ["known-flake.test.js"],
+                "flaky_retries": 1
+              }
+            }
+            """, RepoProfileSnapshot.class);
+        snapshot.validate();
+        when(apiService.startHarnessRun(
+            1L, branch, null, "opencode-go", "beam-free", 1, snapshot.id(), 7))
+            .thenReturn(Map.of("id", "run-1"));
+        when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+        when(verificationRunner.run(
+            any(Path.class), anyList(), any(Duration.class), anyMap(),
+            any(VerificationRunner.FlakyPolicy.class)))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processorWithProfile(() -> snapshot).processTicket(ticket());
+
+        ArgumentCaptor<List<String>> commands = ArgumentCaptor.forClass(List.class);
+        verify(verificationRunner, times(3)).run(
+            any(Path.class), commands.capture(), any(Duration.class), anyMap());
+        assertEquals(List.of("profile-setup"), commands.getAllValues().get(0));
+        assertEquals(List.of("seed-data"), commands.getAllValues().get(1));
+        assertEquals(List.of("clean-data"), commands.getAllValues().get(2));
+
+        ArgumentCaptor<VerificationRunner.FlakyPolicy> policy =
+            ArgumentCaptor.forClass(VerificationRunner.FlakyPolicy.class);
+        verify(verificationRunner).run(
+            any(Path.class), anyList(), any(Duration.class), anyMap(), policy.capture());
+        assertEquals(List.of("known-flake.test.js"), policy.getValue().tests());
+        assertEquals(1, policy.getValue().maxRetries());
+        verify(gitHubService).createPullRequest(
+            anyString(), anyString(), anyString(), eq("develop"));
+    }
+
+    @Test
     void profileMaxRoundMinutesCapsTheVerificationBudget() throws Exception {
         String branch = "vibecode/ticket-1-add-filtering";
         RepoProfileSnapshot snapshot = new ObjectMapper().readValue("""

@@ -97,7 +97,27 @@ public class RepoProfile {
     private List<Service> services = List.of();
     @JsonProperty("flaky_tests")
     private List<String> flakyTests = List.of();
+    @JsonProperty("flaky_retries")
+    private int flakyRetries = 2;
+    @JsonProperty("test_data")
+    private TestData testData = new TestData();
     private Egress egress;
+
+    @JsonIgnoreProperties(ignoreUnknown = false)
+    public static class TestData {
+        @JsonProperty("setup")
+        private List<String> setup = List.of();
+        @JsonProperty("cleanup")
+        private List<String> cleanup = List.of();
+
+        public List<String> setup() {
+            return setup == null ? List.of() : List.copyOf(setup);
+        }
+
+        public List<String> cleanup() {
+            return cleanup == null ? List.of() : List.copyOf(cleanup);
+        }
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
     public static class Timeouts {
@@ -347,6 +367,14 @@ public class RepoProfile {
         return flakyTests == null ? List.of() : List.copyOf(flakyTests);
     }
 
+    public int flakyRetries() {
+        return flakyRetries;
+    }
+
+    public TestData testData() {
+        return testData == null ? new TestData() : testData;
+    }
+
     public Egress egress() {
         return egress;
     }
@@ -392,10 +420,24 @@ public class RepoProfile {
             throw new IllegalArgumentException("profile max_round_minutes must be 1-240");
         }
         validateServices();
-        if (!flakyTests().isEmpty()) {
-            throw new IllegalArgumentException(
-                "profile flaky_tests are not implemented until fg-39 slice 3");
+        if (flakyTests().size() > 20) {
+            throw new IllegalArgumentException("profile flaky_tests has too many entries");
         }
+        for (String test : flakyTests()) {
+            if (test == null || test.isBlank() || test.length() > 500
+                || test.indexOf('\0') >= 0 || test.indexOf('\n') >= 0
+                || test.indexOf('\r') >= 0) {
+                throw new IllegalArgumentException("profile flaky_tests contains an invalid entry");
+            }
+        }
+        if (flakyRetries < 0 || flakyRetries > 2) {
+            throw new IllegalArgumentException("profile flaky_retries must be 0-2");
+        }
+        if (testData().setup().size() > 20 || testData().cleanup().size() > 20) {
+            throw new IllegalArgumentException("profile test_data has too many commands");
+        }
+        validateCommands(testData().setup(), "test_data.setup");
+        validateCommands(testData().cleanup(), "test_data.cleanup");
         validateEgress();
     }
 

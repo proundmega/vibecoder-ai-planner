@@ -1,5 +1,6 @@
 package com.vibecode.agent.harness;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -8,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -56,6 +58,51 @@ class VerificationRunnerTest {
         assertTrue(results.get(0).timedOut());
         assertFalse(results.get(0).passed());
         assertTrue(elapsed < 4_000, "Command should be killed quickly, took " + elapsed + "ms");
+    }
+
+    @Test
+    void retriesOnlyWhenTheFailureNamesAKnownFlakyTestAndRecordsTheFlake() {
+        Assumptions.assumeFalse(windows());
+        String command = "sh -c 'if [ ! -f flake-ran ]; then echo known-flake.test.js failed; touch flake-ran; exit 1; fi; echo ok'";
+
+        List<VerificationResult> results = new VerificationRunner().run(
+            tempDir, List.of(command), Duration.ofSeconds(20), Map.of(),
+            new VerificationRunner.FlakyPolicy(List.of("known-flake.test.js"), 2));
+
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).passed());
+        assertTrue(results.get(0).flaky());
+        assertEquals(2, results.get(0).attempts());
+    }
+
+    @Test
+    void aConsistentFlakyFailureStillFailsAfterTheRetryCap() {
+        Assumptions.assumeFalse(windows());
+        String command = "sh -c 'echo known-flake.test.js failed; exit 1'";
+
+        List<VerificationResult> results = new VerificationRunner().run(
+            tempDir, List.of(command), Duration.ofSeconds(20), Map.of(),
+            new VerificationRunner.FlakyPolicy(List.of("known-flake.test.js"), 2));
+
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).passed());
+        assertTrue(results.get(0).flaky());
+        assertEquals(3, results.get(0).attempts());
+    }
+
+    @Test
+    void doesNotRetryAFailureThatDoesNotNameAKnownFlakyTest() {
+        Assumptions.assumeFalse(windows());
+        String command = "sh -c 'echo build failed; exit 1'";
+
+        List<VerificationResult> results = new VerificationRunner().run(
+            tempDir, List.of(command), Duration.ofSeconds(20), Map.of(),
+            new VerificationRunner.FlakyPolicy(List.of("known-flake.test.js"), 2));
+
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).passed());
+        assertFalse(results.get(0).flaky());
+        assertEquals(1, results.get(0).attempts());
     }
 
     @Test
