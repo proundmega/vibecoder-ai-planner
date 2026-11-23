@@ -106,6 +106,13 @@ sides, `ALLOW_PAT=true`). Sandbox mode `docker` with `vibecode-agent-sandbox:bt6
 and `vibecode-sandbox-proxy:bt60`; OpenCode 1.19.5; model
 `opencode-go/beam-free`.
 
+The backend was initially started without `GITHUB_AUTH_MODE` (the app default),
+so `/token` returned `GITHUB_APP_NOT_CONFIGURED`. Setting
+`GITHUB_AUTH_MODE=pat` with `ALLOW_PAT=true` made `/repo/agent` return the
+decrypted PAT. The final #220 head narrows the agent fallback to
+`GITHUB_APP_NOT_CONFIGURED` in explicit pat mode, so the backend guard remains
+authoritative.
+
 The build was the pre-merge #220 branch at `d8c9132` (child-env isolation,
 explicit PAT mode and the HTTP/1.1 health gate). Re-run this procedure on
 merged `master` after #220 to replace the pre-merge evidence.
