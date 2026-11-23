@@ -40,7 +40,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Budget/cost-aware routing and hard stops | fg-38 | Cost | fg-38-harness-budgets-routing | open |
+| D1 | Budget/cost-aware routing and hard stops | fg-38 | Cost | DONE/fg-38-harness-budgets-routing | open |
 | D2 | Learned calibration model for estimates vs actuals | fg-37 | Evaluation | fg-52 follow-up | open |
 | D3 | Multi-model ensemble estimation | self | Quality | fg-52 follow-up | open |
 | D4 | Auto-merge for security-sensitive scopes (auth, billing, migrations, secrets, infra) | self | Security | not planned; must remain human-only | rejected |

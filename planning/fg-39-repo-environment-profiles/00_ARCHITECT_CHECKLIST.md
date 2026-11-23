@@ -60,8 +60,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 |---|---|---|---|---|---|
 | D1 | Sandbox images and supply chain | fg-34 | Security | fg-34-harness-sandbox | open |
 | D2 | Evaluate profile reliability | fg-37 | Evaluation | fg-37-agent-evaluation-harness | open |
-| D3 | Cache-aware budgets | fg-38 | Billing | fg-38-harness-budgets-routing | open |
-| D4 | Profile/setup telemetry | fg-41 | Observability | fg-41-harness-observability | open |
+| D3 | Cache-aware budgets | fg-38 | Billing | DONE/fg-38-harness-budgets-routing | open |
+| D4 | Profile/setup telemetry | fg-41 | Observability | DONE/fg-41-harness-observability | open |
 | D5 | Service containers and health checks (slice 2) | fg-39 FR5 | Infrastructure | fg-39 slice 2 | merged (#167) |
 | D6 | Flaky-test retry policy and test-data hooks (slice 3) | fg-39 FR8 | Reliability | fg-39 slice 3 | open |
 | D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4) | fg-39 FR3 | Infrastructure | fg-39 slice 4 | open |

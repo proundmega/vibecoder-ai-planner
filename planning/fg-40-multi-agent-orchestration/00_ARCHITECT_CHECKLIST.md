@@ -47,7 +47,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | Durable task/run state | fg-33 | Reliability | fg-33-durable-harness-execution | open |
+| D1 | Durable task/run state | fg-33 | Reliability | DONE/fg-33-durable-harness-execution | open |
 | D2 | Merge queue for integrator | fg-36 | Delivery | fg-36-merge-lifecycle | open |
-| D3 | Per-agent budgets | fg-38 | Billing | fg-38-harness-budgets-routing | open |
-| D4 | Task-graph observability | fg-41 | Observability | fg-41-harness-observability | open |
+| D3 | Per-agent budgets | fg-38 | Billing | DONE/fg-38-harness-budgets-routing | open |
+| D4 | Task-graph observability | fg-41 | Observability | DONE/fg-41-harness-observability | open |
