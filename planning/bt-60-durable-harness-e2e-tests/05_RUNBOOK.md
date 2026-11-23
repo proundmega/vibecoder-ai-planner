@@ -61,11 +61,16 @@ WHERE rt.id = :runtime_id;
 
 ## Automated Phase B drills
 
-`harnessHttpE2E` E19-E21/E29 cover crash-after-publish adoption, stale-run
-release, idempotent publish/reconcile, and the dead-letter/release-ticket
-authorization against the real app and Postgres. The staging steps below are
-still required for the real OpenCode/GitHub/PR path; they are not replaced by
-the automated drills.
+`harnessHttpE2E` E19-E21/E29 cover crash-equivalent lease-expiry adoption,
+stale-run release (including the review-ticket negative case via the reaper),
+idempotent publish/reconcile, and the dead-letter/release-ticket authorization
+against the real app and Postgres. These drills are merged as `c0ff5c0`
+(#207). The staging steps below are still required for the real
+OpenCode/GitHub/PR path; they are not replaced by the automated drills.
+
+fg-44's workspace foundation is merged (#209), but the supervisor lifecycle is
+still in progress as fg-58. The pilot also waits for that and for the
+disposable staging credentials below.
 
 ## Happy path
 
