@@ -32,7 +32,7 @@ event path remain here.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Split recorded | fg-44 03/00; this suite | ☑ |
-| Implementation in progress | PR #212 | ☐ |
+| Implementation in review | PR #212 | ☑ |
 | Verification results | `03` → Results | ☐ |
 
 ## Deferred register (canonical)

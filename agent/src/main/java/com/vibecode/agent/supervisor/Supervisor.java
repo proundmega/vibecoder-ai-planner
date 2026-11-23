@@ -80,8 +80,10 @@ public final class Supervisor implements AutoCloseable {
     private volatile StoragePolicy storagePolicy = StoragePolicy.fromEnv(System.getenv());
     private volatile StoragePolicy.Usage storageUsage = new StoragePolicy.Usage(0, 0);
     private volatile long lastStorageCheckMs;
+    private volatile long lastImagePruneMs;
     private volatile StorageEventSink storageEventSink = (type, payload) ->
         log.info("{} {}", type, payload);
+    private volatile Path repoBaseOverride;
     private Thread loopThread;
 
     /**
@@ -217,6 +219,7 @@ public final class Supervisor implements AutoCloseable {
                 new StoragePolicy.RuntimeState(
                     "worker", 0, false, false, false, false, Instant.now(), Instant.now()));
             if (action == StoragePolicy.StorageAction.OK) {
+                maybePruneImages();
                 return;
             }
             log.warn("storage.watermark action={} diskPct={} inodePct={}",
@@ -235,6 +238,7 @@ public final class Supervisor implements AutoCloseable {
                     || action == StoragePolicy.StorageAction.RECYCLE_OLDEST) {
                 sweepStorage();
             }
+            maybePruneImages();
         } catch (RuntimeException e) {
             log.debug("Storage watermark sample skipped: {}", e.getMessage());
         }
@@ -247,18 +251,28 @@ public final class Supervisor implements AutoCloseable {
         for (TrackedChild child : new ArrayList<>(tracked.values())) {
             Path root = runtimeRoot(child);
             boolean active = StorageSweeper.hasActiveMarker(root);
+            Instant rootMtime = null;
+            if (root != null && Files.isDirectory(root)) {
+                try {
+                    rootMtime = Files.getLastModifiedTime(root).toInstant();
+                } catch (IOException ignored) {
+                    // Treat an unreadable root as not idle-expired.
+                }
+            }
             Instant started = childStart(child);
-            boolean idleExpired = !active && root != null && Files.isDirectory(root)
-                && StorageSweeper.olderThan(root, now.minusMillis(policy.idleRefreshMs()));
-            boolean lifetimeExpired = !active && started != null
-                && started.plus(Duration.ofHours(policy.maxLifetimeHours())).isBefore(now);
-            if (!idleExpired && !lifetimeExpired) continue;
+            if (!StoragePolicy.refreshDue(active, started, rootMtime, now,
+                    policy.idleRefreshMs(), policy.maxLifetimeHours())) {
+                continue;
+            }
+            boolean lifetime = started != null
+                && Duration.between(started, now).toHours() >= policy.maxLifetimeHours();
             log.info("storage.refresh runtime={} reason={}",
-                child.name, lifetimeExpired ? "max_lifetime" : "idle");
+                child.name, lifetime ? "max_lifetime" : "idle");
             emitStorage("storage.refresh", Map.of(
                 "runtime", child.name,
-                "reason", lifetimeExpired ? "max_lifetime" : "idle"));
+                "reason", lifetime ? "max_lifetime" : "idle"));
             stopTracked(child);
+            if (root == null) continue;
             try {
                 StorageSweeper.deleteTree(root);
             } catch (IOException e) {
@@ -277,9 +291,9 @@ public final class Supervisor implements AutoCloseable {
         Duration ttl = Duration.ofHours(Math.max(1, storagePolicy.workspaceTtlHours()));
         Duration orphanTtl = Duration.ofHours(Math.max(1, storagePolicy.orphanTtlHours()));
         Set<String> active = new java.util.HashSet<>();
-        for (String name : tracked.keySet()) {
-            Long id = runtimeIds.get(name);
-            active.add(id == null ? name : String.valueOf(id));
+        for (TrackedChild child : tracked.values()) {
+            Long id = resolveRuntimeId(child.slot);
+            active.add(id == null ? child.name : String.valueOf(id));
         }
         int removed = StorageSweeper.sweepRuntimeRoots(runtimeBase, orphans, ttl, active);
         removed += StorageSweeper.sweepLegacy(base,
@@ -292,12 +306,43 @@ public final class Supervisor implements AutoCloseable {
         }
     }
 
+    private void maybePruneImages() {
+        long now = System.currentTimeMillis();
+        if (now - lastImagePruneMs < Duration.ofDays(7).toMillis()) {
+            return;
+        }
+        lastImagePruneMs = now;
+        pruneDanglingImages();
+    }
+
+    private void pruneDanglingImages() {
+        try {
+            ProcessBuilder builder = new ProcessBuilder("docker", "image", "prune", "-f");
+            builder.redirectErrorStream(true);
+            Process process = builder.start();
+            String output = new String(process.getInputStream().readAllBytes());
+            int exit = process.waitFor();
+            if (exit == 0) {
+                emitStorage("storage.image_prune", Map.of(
+                    "removed", output.contains("Deleted Images") || output.contains("deleted") ? 1 : 0,
+                    "reclaimed", output.strip()));
+            }
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.debug("Dangling image prune skipped: {}", e.getMessage());
+        }
+    }
+
     private Path repoBase() {
+        Path override = repoBaseOverride;
+        if (override != null) {
+            return override;
+        }
         return Paths.get(System.getenv().getOrDefault("REPO_CLONE_DIR", "/repos"));
     }
 
     private Path runtimeRoot(TrackedChild child) {
-        Long id = runtimeIds.get(child.name);
+        Long id = resolveRuntimeId(child.slot);
         String key = id == null ? child.name : String.valueOf(id);
         return repoBase().resolve("runtimes").resolve(key);
     }
@@ -583,6 +628,11 @@ public final class Supervisor implements AutoCloseable {
         return storagePolicy.evaluate(storageUsage, state);
     }
 
+    /** fg-58: test seam for the runtime base used by refresh/sweep. */
+    void setRepoBase(Path base) {
+        this.repoBaseOverride = base;
+    }
+
     private Map<String, String> buildEnvironment(RuntimeConfig.RuntimeSlot slot, Long runtimeId) {
         Map<String, String> env = new LinkedHashMap<>();
         putIfPresent(env, "BACKEND_URL", System.getenv("BACKEND_URL"));
@@ -601,7 +651,7 @@ public final class Supervisor implements AutoCloseable {
         }
         env.put("AGENT_RUNTIME_CONCURRENCY", String.valueOf(concurrencyFor(slot.runtimeName())));
         env.put("AGENT_RUNTIME_STOP_FILE", stopMarkerPath(slot.runtimeName()).toString());
-        String baseRoot = System.getenv().getOrDefault("REPO_CLONE_DIR", "/repos");
+        String baseRoot = repoBase().toString();
         String runtimeKey = runtimeId == null ? slot.name() : String.valueOf(runtimeId);
         env.put("REPO_CLONE_DIR", baseRoot.replaceAll("/+$", "") + "/runtimes/" + runtimeKey);
         putIfPresent(env, "AGENT_DISK_BUDGET_GB", System.getenv("AGENT_DISK_BUDGET_GB"));

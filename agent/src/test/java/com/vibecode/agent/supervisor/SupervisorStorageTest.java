@@ -3,11 +3,14 @@ package com.vibecode.agent.supervisor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,6 +68,57 @@ class SupervisorStorageTest {
         assertFalse(policy.lifetimeExpired(oldBusy));
         assertEquals(StoragePolicy.StorageAction.CLEAN_IDLE, policy.evaluate(
             new StoragePolicy.Usage(10, 10), oldIdle));
+
+        Instant now = Instant.now();
+        assertTrue(StoragePolicy.refreshDue(false, now.minus(Duration.ofHours(25)),
+            now.minus(Duration.ofMinutes(1)), now, Duration.ofHours(2).toMillis(), 24));
+        assertTrue(StoragePolicy.refreshDue(false, now,
+            now.minus(Duration.ofHours(3)), now, Duration.ofHours(2).toMillis(), 24));
+        assertFalse(StoragePolicy.refreshDue(true, now.minus(Duration.ofHours(25)),
+            now.minus(Duration.ofHours(3)), now, Duration.ofHours(2).toMillis(), 24));
+    }
+
+    @Test
+    void idleRuntimeIsStoppedAndItsRootRemoved() throws Exception {
+        Path repoBase = pidDir.resolve("repos");
+        RuntimeConfig config = RuntimeConfig.parse("""
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 1
+            """);
+        AtomicInteger spawns = new AtomicInteger();
+        java.util.List<String> events = new java.util.ArrayList<>();
+        Supervisor supervisor = new Supervisor(
+            pidDir, config, 64,
+            spec -> {
+                spawns.incrementAndGet();
+                return new ProcessBuilder("sleep", "60").start();
+            },
+            Map.of("workers", 12L),
+            Duration.ofSeconds(2),
+            Duration.ofMillis(50));
+        supervisor.setRepoBase(repoBase);
+        supervisor.setStoragePolicy(new StoragePolicy(
+            1000L, 24, 70, 80, 85, 90, 95, 24, 24));
+        supervisor.setStorageEventSink((type, payload) -> events.add(type));
+        try {
+            supervisor.reconcile();
+            assertEquals(1, spawns.get());
+
+            Path runtimeRoot = Files.createDirectories(repoBase.resolve("runtimes/12"));
+            Files.setLastModifiedTime(runtimeRoot,
+                FileTime.from(Instant.now().minus(Duration.ofHours(3))));
+
+            supervisor.reconcile();
+
+            assertTrue(events.contains("storage.refresh"), events.toString());
+            assertFalse(Files.exists(runtimeRoot), "idle runtime root removed");
+            assertEquals(2, spawns.get(), "the runtime is respawned");
+        } finally {
+            supervisor.close();
+        }
     }
 
     @Test
@@ -103,6 +157,13 @@ class SupervisorStorageTest {
         } finally {
             supervisor.close();
         }
+    }
+
+    @Test
+    void samplesDiskAndInodePercentages() {
+        StorageUsage usage = StorageUsage.sample(pidDir);
+        assertTrue(usage.diskPct() >= 0 && usage.diskPct() <= 100);
+        assertTrue(usage.inodePct() >= 0 && usage.inodePct() <= 100);
     }
 
     @Test

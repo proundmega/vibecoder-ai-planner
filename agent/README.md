@@ -189,13 +189,14 @@ The supervisor refuses to start if `agent.ini` grows past
 role counts. `AGENT_HOST_MAX_RUNTIMES=0` disables the guard for a hand-managed
 host.
 
-## Storage lifecycle (fg-44)
+## Storage lifecycle (fg-44 / fg-58)
 
 Workspaces are runtime-scoped:
 
 ```
 /repos/runtimes/<runtimeId>/<ticketId>/{repo,tmp,logs}
 /repos/runtimes/<runtimeId>/cache
+/repos/orphans/<runtime>-<timestamp>
 ```
 
 - The supervisor passes `REPO_CLONE_DIR=/repos/runtimes/<runtimeId>` to each
@@ -203,14 +204,21 @@ Workspaces are runtime-scoped:
 - `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start and removes
   the ticket root only after the run is terminal and its lease is released.
   Sandbox destroy runs before deletion; a failed destroy keeps the workspace.
+  A budget breach moves the ticket root to `orphans/` instead.
+- The supervisor tick refreshes idle/max-lifetime runtimes between tickets and
+  periodically sweeps old runtime roots, legacy `/repos/<8hex>-*` and temp dirs.
+  Suspicious roots are quarantined under `/repos/orphans/` for the orphan TTL.
 - Idle and max-lifetime refresh use `AGENT_IDLE_REFRESH_MS` (2h) and
   `AGENT_MAX_LIFETIME_HOURS` (24h) and only run between tickets.
 - Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, clean idle,
   recycle the oldest idle runtime, require manual recovery.
+- A periodic `du`/inode meter enforces the per-runtime budget; a breach stops
+  the run with `storage_budget_exceeded` and quarantines the root.
 - Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
   10 GB, `light` 5 GB) or `AGENT_DISK_BUDGET_GB`.
 - `HARNESS_WORKSPACE_RETENTION_HOURS` is the single workspace/orphan TTL.
-- `host-storage.sh` is the stopped-supervisor recovery path:
+- `host-storage.sh` is the stopped-supervisor recovery path. A PID file is live
+  only when `kill -0` succeeds and `.active` only within the retention window:
 
 ```bash
 agent/scripts/host-storage.sh --dry-run
@@ -220,9 +228,10 @@ agent/scripts/host-storage.sh --dry-run --images
 ```
 
 Storage events (`storage.workspace`, `storage.cleanup`,
-`storage.cleanup_failed`, `storage.refresh`, `storage.watermark`,
-`storage.budget_exceeded`, `storage.orphan`, `storage.image_prune`) go through
-the existing event sink/structured logs.
+`storage.cleanup_failed`, `storage.refresh`, `storage.refresh_failed`,
+`storage.watermark`, `storage.budget_exceeded`, `storage.orphan`,
+`storage.image_prune`, `storage.log_bytes`) go through the existing event
+sink/structured logs. Dangling images are pruned weekly.
 
 ## Supervisor lifecycle
 

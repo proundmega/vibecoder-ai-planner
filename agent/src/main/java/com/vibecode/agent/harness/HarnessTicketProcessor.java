@@ -117,6 +117,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile boolean releaseAfterTerminalFinish;
 
     private volatile HarnessEventContext eventContext;
+    private volatile WorkspaceManager activeStorageWorkspace;
+    private volatile Long activeStorageTicketId;
+    private volatile boolean storageBudgetBreached;
+    private volatile long lastStorageMeterAt;
     private volatile HarnessBudgetTracker budgetTracker;
     private volatile HarnessBudgetPolicy budgetPolicy;
     private volatile HarnessPrivacyPolicy privacyPolicy;
@@ -911,6 +915,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             workspace = workspaceFactory.apply(config.getRepoName());
             workspace.setWorkspaceKey(String.valueOf(pickedUp.getId()));
+            activeStorageWorkspace = workspace;
+            activeStorageTicketId = pickedUp.getId();
             if (currentRunId != null) {
                 workspace.writeActiveMarker(currentRunId);
             }
@@ -1256,18 +1262,35 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
             }
             if (workspace != null && !sandboxDestroyFailed) {
-                try {
-                    long bytes = workspace.workspaceBytes();
-                    workspace.cleanup(String.valueOf(pickedUp.getId()));
-                    emitEvent("storage.cleanup", Map.of(
-                        "ticketId", String.valueOf(pickedUp.getId()),
-                        "bytes", bytes,
-                        "reason", "terminal run"));
-                } catch (IOException | RuntimeException e) {
-                    log.warn("Workspace cleanup failed for ticket {}: {}", pickedUp.getId(), e.getMessage());
-                    emitEvent("storage.cleanup_failed", Map.of(
-                        "ticketId", String.valueOf(pickedUp.getId()),
-                        "error", redactWithProvider(e.getMessage())));
+                if (storageBudgetBreached) {
+                    try {
+                        workspace.quarantine();
+                        emitEvent("storage.budget_exceeded", Map.of(
+                            "ticketId", String.valueOf(pickedUp.getId()),
+                            "action", "quarantined"));
+                    } catch (IOException | RuntimeException e) {
+                        log.warn("Could not quarantine workspace for ticket {}: {}",
+                            pickedUp.getId(), e.getMessage());
+                    }
+                } else {
+                    try {
+                        long bytes = workspace.workspaceBytes();
+                        long logBytes = workspace.logsBytes();
+                        emitEvent("storage.log_bytes", Map.of(
+                            "ticketId", String.valueOf(pickedUp.getId()),
+                            "bytes", logBytes));
+                        workspace.cleanup(String.valueOf(pickedUp.getId()));
+                        emitEvent("storage.cleanup", Map.of(
+                            "ticketId", String.valueOf(pickedUp.getId()),
+                            "bytes", bytes,
+                            "reason", "terminal run"));
+                    } catch (IOException | RuntimeException e) {
+                        log.warn("Workspace cleanup failed for ticket {}: {}",
+                            pickedUp.getId(), e.getMessage());
+                        emitEvent("storage.cleanup_failed", Map.of(
+                            "ticketId", String.valueOf(pickedUp.getId()),
+                            "error", redactWithProvider(e.getMessage())));
+                    }
                 }
             }
             currentTicketId = null;
@@ -1279,6 +1302,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             releaseAfterTerminalFinish = false;
             eventContext = null;
             budgetTracker = null;
+            activeStorageWorkspace = null;
+            activeStorageTicketId = null;
+            storageBudgetBreached = false;
+            lastStorageMeterAt = 0;
             routingDecision = null;
             budgetBreached = false;
             terminalEventEmitted = false;
@@ -1681,6 +1708,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             try {
                 tracker.check();
+                checkStorageMeter();
             } catch (RuntimeException e) {
                 log.debug("Harness budget check failed: {}", e.getMessage());
             }
@@ -2052,6 +2080,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
     }
 
     private void handleFailure(Long ticketId, Throwable failure) {
+        if (storageBudgetBreached) {
+            failAndRelease(ticketId, "storage_budget_exceeded");
+            return;
+        }
         if (questionFailure != null) {
             log.warn("Harness stopped by the question loop for ticket {}: {}",
                 ticketId, questionFailure);
@@ -2676,12 +2708,42 @@ public final class HarnessTicketProcessor implements TicketWorker {
         return attempt >= maxAttempts ? maxDelayMs : Math.max(0, delay);
     }
 
+    void checkStorageMeter() {
+        WorkspaceManager workspace = activeStorageWorkspace;
+        if (workspace == null) return;
+        long intervalSeconds = 300;
+        try {
+            String raw = System.getenv("AGENT_STORAGE_METER_SECONDS");
+            if (raw != null && !raw.isBlank()) intervalSeconds = Long.parseLong(raw);
+        } catch (NumberFormatException ignored) {
+            intervalSeconds = 300;
+        }
+        long now = System.currentTimeMillis();
+        if (intervalSeconds <= 0 || now - lastStorageMeterAt < intervalSeconds * 1000L) return;
+        lastStorageMeterAt = now;
+        try {
+            long budgetGb = com.vibecode.agent.supervisor.StoragePolicy.budgetGbFor(
+                config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
+            long used = workspace.workspaceBytes();
+            if (storageBudgetExceeded(used, budgetGb)) {
+                storageBudgetBreached = true;
+                emitEvent("storage.budget_exceeded", Map.of(
+                    "ticketId", String.valueOf(activeStorageTicketId),
+                    "budgetGb", budgetGb,
+                    "usedGb", Math.round((used / (1024.0 * 1024.0 * 1024.0)) * 100.0) / 100.0));
+                HarnessClient harness = activeHarness;
+                if (harness != null) closeQuietly(harness);
+            }
+        } catch (IOException | RuntimeException e) {
+            log.debug("Storage meter skipped: {}", e.getMessage());
+        }
+    }
+
     private void assertStorageBudget(WorkspaceManager workspace, Ticket ticket) throws IOException {
         long budgetGb = com.vibecode.agent.supervisor.StoragePolicy.budgetGbFor(
             config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
-        long budgetBytes = budgetGb * 1024L * 1024L * 1024L;
         long usedBytes = workspace.workspaceBytes();
-        if (budgetBytes > 0 && usedBytes > budgetBytes) {
+        if (storageBudgetExceeded(usedBytes, budgetGb)) {
             java.util.Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("runtimeId", config.getRuntimeId());
             payload.put("ticketId", ticket == null ? null : String.valueOf(ticket.getId()));
@@ -2690,6 +2752,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             emitEvent("storage.budget_exceeded", payload);
             throw new IOException("storage_budget_exceeded");
         }
+    }
+
+    static boolean storageBudgetExceeded(long usedBytes, long budgetGb) {
+        return budgetGb > 0 && usedBytes > budgetGb * 1024L * 1024L * 1024L;
     }
 
     private void postMessage(Long ticketId, String type, String content) {

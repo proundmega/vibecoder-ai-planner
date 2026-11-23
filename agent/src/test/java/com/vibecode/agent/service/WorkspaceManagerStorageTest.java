@@ -83,6 +83,34 @@ class WorkspaceManagerStorageTest {
     }
 
     @Test
+    void quarantineMovesTheTicketRootUnderSiblingOrphans() throws Exception {
+        Path runtimeRoot = tempDir.resolve("12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("repo/file.txt"), "x");
+
+        Path moved = manager.quarantine();
+
+        assertFalse(Files.exists(manager.getWorkspaceRoot()));
+        assertTrue(Files.exists(moved));
+        assertTrue(moved.startsWith(tempDir.resolve("orphans")));
+        assertEquals("x", Files.readString(moved.resolve("repo/file.txt")));
+    }
+
+    @Test
+    void measuresLogBytes() throws Exception {
+        Path runtimeRoot = tempDir.resolve("12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Path logs = manager.getWorkspaceRoot().resolve("logs");
+        Files.createDirectories(logs);
+        Files.writeString(logs.resolve("run.log"), "1234567");
+
+        assertEquals(7, manager.logsBytes());
+    }
+
+    @Test
     void refusesTraversalKeys() {
         WorkspaceManager manager = new WorkspaceManager(
             tempDir.toString(), "repo", true, null, null, "34");

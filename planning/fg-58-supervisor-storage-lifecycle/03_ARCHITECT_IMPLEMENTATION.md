@@ -10,10 +10,10 @@
 - [x] Wire idle/max-lifetime refresh into `Supervisor`
 - [x] Apply 85/90/95 actions (clean idle, recycle oldest, stop assignment)
 - [x] Add runtime-root/legacy/temp sweep + `orphans/` quarantine
-- [ ] Add periodic budget meter and quarantine on breach (remaining)
-- [x] Emit the core `storage.workspace/refresh/refresh_failed/watermark/orphan` events
+- [x] Add periodic budget meter and quarantine on breach
+- [x] Emit `storage.workspace/refresh/refresh_failed/watermark/orphan/image_prune/log_bytes` events
 - [x] Make `host-storage.sh` stale-safe and guard `cleanupRuntime()`
-- [ ] Update docs and run the matrix
+- [x] Update docs and run the matrix
 
 ## Per-file changes
 
@@ -30,17 +30,17 @@
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Java | `SupervisorStorageTest` | idle refresh restarts and removes root; active kept | `mvn test` |
-| FR2 | Java | `SupervisorStorageTest` | max lifetime only between tickets | same |
-| FR3 | Java | `SupervisorStorageTest` | 70/80/85/90/95 actions and inode sampling | same |
-| FR4 | Java + Shell | `SupervisorStorageTest`, `host-storage.test.sh` | runtime/legacy/temp sweep and orphan TTL | both |
-| FR5 | Java | `HarnessEventStorageTest` | every storage event type/payload | `mvn test` |
-| FR6 | Java | `HarnessTicketProcessorStorageTest` | periodic breach quarantines | `mvn test` |
-| FR7 | Shell | `host-storage.test.sh` | stale PID/.active allows apply | bash |
+| FR1 | Java | `SupervisorStorageTest` | `idleRuntimeIsStoppedAndItsRootRemoved`; refresh due decision ignores active | `mvn test` |
+| FR2 | Java | `SupervisorStorageTest` | `refreshDue` lifetime/idle cases; active runtime untouched | same |
+| FR3 | Java | `SupervisorStorageTest`, `StorageSweeperTest` | 70/80/85/90/95 actions; `samplesDiskAndInodePercentages`; sweep actions | same |
+| FR4 | Java + Shell | `StorageSweeperTest`, `host-storage.test.sh` | runtime/legacy/temp sweep and orphan TTL | both |
+| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | all event types; meter payload; workspace event | `mvn test` |
+| FR6 | Java | `HarnessTicketProcessorStorageTest`, `WorkspaceManagerStorageTest` | `periodicMeterEmitsBudgetEventAndMarksTheRun`; quarantine moves root | `mvn test` |
+| FR7 | Shell | `host-storage.test.sh` | stale PID/.active allows apply; live state exits 4 | bash |
 | FR8 | Java | `WorkspaceManagerStorageTest` | base root refused | `mvn test` |
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 963; host-storage 14/14; host-init 78/78; Compose base | Supervisor idle/max refresh, disk+inode sampling, 85/90/95 actions, runtime/legacy/temp sweep/quarantine, core storage events. Periodic budget/quarantine remains. |
+| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 970; host-storage 14/14; host-init 78/78; Compose base | Supervisor idle/max refresh, disk+inode sampling, 85/90/95 actions, runtime/legacy/temp sweep/quarantine, periodic budget meter/quarantine, image prune and the full `storage.*` event set. |
