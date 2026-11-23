@@ -1,12 +1,12 @@
 ---
 id: "fg-58"
 title: "Supervisor Storage Lifecycle and Events"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Agent"
 created: "2026-11-22"
-updated: "2026-11-22"
+updated: "2026-11-23"
 pr: 212
 branch: "feat/fg-58-supervisor-storage-lifecycle"
 depends_on: ["fg-44", "fg-43", "fg-54"]
@@ -24,15 +24,15 @@ depends_on: ["fg-44", "fg-43", "fg-54"]
 
 This is the follow-up split from fg-44. PR #209 delivered the workspace and
 recovery foundation (runtime/ticket layout, keyed cleanup, budget helper,
-policy, host-init/Compose env, `host-storage.sh`). The supervisor lifecycle and
-event path remain here.
+policy, host-init/Compose env, `host-storage.sh`). This suite delivered the
+supervisor lifecycle and event path and merged as PR #212.
 
 ## Status evidence
 
 | Claim | Evidence | Checked |
 |---|---|---|
 | Split recorded | fg-44 03/00; this suite | ☑ |
-| Implementation in review | PR #212 | ☑ |
+| Implementation merged | PR #212 (`04081bf`) | ☑ |
 | Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
@@ -51,6 +51,6 @@ event path remain here.
 
 ## Completion gate
 
-- [ ] Every `FR*` in `01` is met
-- [ ] `03` matrix green and Results dated
-- [ ] `status` is `done` after merge
+- [x] Every `FR*` in `01` is met
+- [x] `03` matrix green and Results dated
+- [x] `status` is `done` after merge

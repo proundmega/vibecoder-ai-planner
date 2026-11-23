@@ -98,16 +98,17 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 ## Review checklist
 
-- [ ] Every `FR*` acceptance statement has a passing row (FR3/4/5/8/10/11 and periodic parts are `fg-58`)
-- [ ] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
-- [ ] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
-- [ ] Sandbox destroy precedes workspace deletion
-- [ ] Legacy/temp cleanup is preserved or migrated with tests (`pruneStaleTempDirectories` not dropped)
-- [ ] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
-- [ ] `04` is the implementation contract; `Results` records as-built deviations
+- [x] Every `FR*` acceptance statement has a passing row (FR3/4/5/8/10/11 and periodic parts are `fg-58`)
+- [x] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
+- [x] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
+- [x] Sandbox destroy precedes workspace deletion
+- [x] Legacy/temp cleanup is preserved or migrated with tests (`pruneStaleTempDirectories` not dropped)
+- [x] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
+- [x] `04` is the implementation contract; `Results` records as-built deviations
 
 ## Results
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `feat/fg-44-storage-lifecycle` | Agent 960 tests (storage 15); host-storage 14/14; host-init 78/78; Compose base+sandbox | **Foundation split:** runtime/ticket keyed workspaces, keyed cleanup + active marker, budget helper/policy, host-init/Compose env, host-storage recovery and tests. Supervisor idle refresh, inode watermarks, periodic sweep/quarantine, periodic budget and the full event set are follow-up `fg-58`. |
+| 2026-11-23 | `85944c9` (PR #209 foundation); `04081bf` (fg-58 PR #212 lifecycle) | fg-58 `03` matrix; local agent 978 run / 10 skipped; host-storage 20/20; host-init 78/78 | **Closed.** The foundation merged as `85944c9`; fg-58 completed idle/max refresh, inode watermarks, the periodic runtime/legacy/temp sweep into `/repos/orphans/`, the periodic budget and the complete `storage.*` events. Suite moved to `planning/DONE/`. |
