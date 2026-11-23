@@ -31,6 +31,7 @@ final class StorageSweeper {
         Path runtimeBase,
         Path orphans,
         Duration ttl,
+        Duration markerTtl,
         Set<String> activeRuntimeIds
     ) {
         if (runtimeBase == null || !Files.isDirectory(runtimeBase)) return 0;
@@ -41,7 +42,7 @@ final class StorageSweeper {
                 if (!Files.isDirectory(entry, LinkOption.NOFOLLOW_LINKS)) continue;
                 String id = entry.getFileName().toString();
                 if (activeRuntimeIds != null && activeRuntimeIds.contains(id)) continue;
-                if (hasActiveMarker(entry)) continue;
+                if (hasActiveMarker(entry, markerTtl)) continue;
                 if (!olderThan(entry, cutoff)) continue;
                 try {
                     quarantine(entry, orphans);
@@ -105,11 +106,14 @@ final class StorageSweeper {
         return target;
     }
 
-    static boolean hasActiveMarker(Path root) {
+    static boolean hasActiveMarker(Path root, Duration markerTtl) {
         if (root == null || !Files.isDirectory(root)) return false;
+        Instant cutoff = Instant.now().minus(
+            markerTtl == null || markerTtl.isNegative() ? Duration.ZERO : markerTtl);
         try (var walk = Files.walk(root, 3)) {
             return walk.anyMatch(path -> ".active".equals(path.getFileName().toString())
-                && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS));
+                && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+                && !olderThan(path, cutoff));
         } catch (IOException e) {
             return true; // fail closed for an unreadable root
         }

@@ -206,12 +206,15 @@ Workspaces are runtime-scoped:
   Sandbox destroy runs before deletion; a failed destroy keeps the workspace.
   A budget breach moves the ticket root to `orphans/` instead.
 - The supervisor tick refreshes idle/max-lifetime runtimes between tickets and
-  periodically sweeps old runtime roots, legacy `/repos/<8hex>-*` and temp dirs.
+  sweeps old runtime roots, legacy `/repos/<8hex>-*` and temp dirs on every
+  storage tick, not only at a watermark. Only a `.active` marker newer than
+  `HARNESS_WORKSPACE_RETENTION_HOURS` is live; stale markers never pin a root.
   Suspicious roots are quarantined under `/repos/orphans/` for the orphan TTL.
 - Idle and max-lifetime refresh use `AGENT_IDLE_REFRESH_MS` (2h) and
   `AGENT_MAX_LIFETIME_HOURS` (24h) and only run between tickets.
-- Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, clean idle,
-  recycle the oldest idle runtime, require manual recovery.
+- Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, stop all
+  idle children, stop the oldest idle child, require manual recovery (blocks
+  new spawns).
 - A periodic `du`/inode meter enforces the per-runtime budget; a breach stops
   the run with `storage_budget_exceeded` and quarantines the root.
 - Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
@@ -224,6 +227,7 @@ Workspaces are runtime-scoped:
 agent/scripts/host-storage.sh --dry-run
 agent/scripts/host-storage.sh --apply            # refuses live PID/.active
 agent/scripts/host-storage.sh --apply --legacy   # old /repos/<8hex>-* and temp dirs
+agent/scripts/host-storage.sh --apply --orphans  # /repos/orphans after the orphan TTL
 agent/scripts/host-storage.sh --dry-run --images
 ```
 
@@ -321,6 +325,9 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_STORAGE_RECYCLE_PCT` | Recycle-idle watermark | `90` |
 | `AGENT_STORAGE_MANUAL_PCT` | Manual-recovery watermark | `95` |
 | `AGENT_ORPHAN_TTL_HOURS` | Quarantine TTL | `24` |
+| `AGENT_STORAGE_MAX_INODES` | Optional per-ticket inode cap (0 = off) | `0` |
+| `AGENT_IMAGE_PRUNE_ENABLED` | Weekly dangling-image prune | `true` |
+| `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` | Image prune timeout | `30` |
 | `AGENT_TMPDIR` | Host temp root scanned by `host-storage.sh --legacy` | `${TMPDIR:-/tmp}` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
 | `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |

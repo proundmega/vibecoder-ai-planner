@@ -23,8 +23,10 @@ usage() {
 Usage: agent/scripts/host-storage.sh [--dry-run|--apply] [--orphans] [--legacy] [--images] [--json]
 
 Default is --dry-run. --apply requires the supervisor to be stopped and no
-live .active marker. Exit codes: 0 ok, 2 args, 3 repo/Docker, 4 live state,
-5 apply failed or critical free space remains.
+live .active marker (a marker older than the retention window is stale and
+recoverable). --orphans reaps /repos/orphans older than AGENT_ORPHAN_TTL_HOURS.
+Exit codes: 0 ok, 2 args, 3 repo/Docker, 4 live state, 5 apply failed or
+critical free space remains.
 EOF
 }
 
@@ -77,6 +79,7 @@ if [[ "$APPLY" -eq 1 ]]; then
 fi
 
 cutoff_epoch=$(( $(date +%s) - RETENTION_HOURS * 3600 ))
+orphan_cutoff_epoch=$(( $(date +%s) - ORPHAN_HOURS * 3600 ))
 removed=0
 freed=0
 actions=()
@@ -92,7 +95,8 @@ sweep_runtime_roots() {
     while IFS= read -r root; do
         [[ -d "$root" ]] || continue
         older_than "$root" || continue
-        if [[ -n "$(find "$root" -name '.active' -type f -print -quit 2>/dev/null)" ]]; then
+        if [[ -n "$(find "$root" -name '.active' -type f \
+                -newermt "-${RETENTION_HOURS} hours" -print -quit 2>/dev/null)" ]]; then
             actions+=("skip active $root")
             continue
         fi
@@ -134,11 +138,29 @@ sweep_legacy() {
         \( -name 'opencode-harness-*' -o -name 'vibecode-askpass-*' \) -print 2>/dev/null)
 }
 
+sweep_orphans() {
+    [[ -d "$REPO_DIR/orphans" ]] || return 0
+    while IFS= read -r orphan; do
+        [[ -d "$orphan" ]] || continue
+        epoch="$(stat -c %Y "$orphan" 2>/dev/null || echo 0)"
+        (( epoch > 0 && epoch < orphan_cutoff_epoch )) || continue
+        actions+=("remove orphan $orphan")
+        if [[ "$APPLY" -eq 1 ]]; then
+            size="$(du -sb "$orphan" 2>/dev/null | awk '{print $1}')"
+            rm -rf -- "$orphan"
+            removed=$((removed + 1))
+            freed=$((freed + ${size:-0}))
+        fi
+    done < <(find "$REPO_DIR/orphans" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null)
+}
+
 if [[ "$DO_LEGACY" -eq 1 ]]; then
     sweep_legacy
 else
     sweep_runtime_roots
-    [[ "$DO_ORPHANS" -eq 1 ]] && sweep_legacy
+fi
+if [[ "$DO_ORPHANS" -eq 1 ]]; then
+    sweep_orphans
 fi
 
 if [[ "$DO_IMAGES" -eq 1 ]]; then

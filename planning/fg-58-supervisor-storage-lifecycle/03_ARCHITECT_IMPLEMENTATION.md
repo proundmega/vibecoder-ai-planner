@@ -9,10 +9,10 @@
 - [x] Add `StorageSweeper`/`StorageUsage` and inode sampling
 - [x] Wire idle/max-lifetime refresh into `Supervisor`
 - [x] Apply 85/90/95 actions (clean idle, recycle oldest, stop assignment)
-- [x] Add runtime-root/legacy/temp sweep + `orphans/` quarantine
+- [x] Add runtime-root/legacy/temp sweep + `orphans/` quarantine (stale markers expire)
 - [x] Add periodic budget meter and quarantine on breach
-- [x] Emit `storage.workspace/refresh/refresh_failed/watermark/orphan/image_prune/log_bytes` events
-- [x] Make `host-storage.sh` stale-safe and guard `cleanupRuntime()`
+- [x] Emit every `storage.*` event and run the sweep every tick, not only at 85/90
+- [x] Make `host-storage.sh` stale-safe, sweep `/repos/orphans`, and guard `cleanupRuntime()`
 - [x] Update docs and run the matrix
 
 ## Per-file changes
@@ -30,15 +30,20 @@
 
 | Req | Layer | Test file | Test case | Command |
 |---|---|---|---|---|
-| FR1 | Java | `SupervisorStorageTest` | `idleRuntimeIsStoppedAndItsRootRemoved`; refresh due decision ignores active | `mvn test` |
+| FR1 | Java | `SupervisorStorageTest` | `idleRuntimeIsStoppedAndItsRootRemoved`; `refreshDue` ignores active | `mvn test` |
 | FR2 | Java | `SupervisorStorageTest` | `refreshDue` lifetime/idle cases; active runtime untouched | same |
-| FR3 | Java | `SupervisorStorageTest`, `StorageSweeperTest` | 70/80/85/90/95 actions; `samplesDiskAndInodePercentages`; sweep actions | same |
-| FR4 | Java + Shell | `StorageSweeperTest`, `host-storage.test.sh` | runtime/legacy/temp sweep and orphan TTL | both |
-| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | all event types; meter payload; workspace event | `mvn test` |
-| FR6 | Java | `HarnessTicketProcessorStorageTest`, `WorkspaceManagerStorageTest` | `periodicMeterEmitsBudgetEventAndMarksTheRun`; quarantine moves root | `mvn test` |
-| FR7 | Shell | `host-storage.test.sh` | stale PID/.active allows apply; live state exits 4 | bash |
-| FR8 | Java | `WorkspaceManagerStorageTest` | base root refused | `mvn test` |
+| FR3 | Java | `SupervisorStorageTest` | `samplesDiskAndInodePercentages`; `cleanIdleStopsTheIdleChild`; `recycleOldestStopsTheIdleChildAndReconcileRespawns`; `manualRecoveryBlocksNewSpawns` | same |
+| FR4 | Java + Shell | `StorageSweeperTest`, `SupervisorStorageTest`, `host-storage.test.sh` | `staleMarkerDoesNotPinARuntimeRoot`; `sweepRunsPeriodicallyWithoutWatermarkPressure`; runtime/legacy/temp/orphan tests | both |
+| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `recognisesEveryStorageEventType`; `periodicMeterEmitsBudgetEventAndMarksTheRun`; workspace/refresh/orphan payloads | `mvn test` |
+| FR6 | Java | `HarnessTicketProcessorStorageTest`, `WorkspaceManagerStorageTest` | periodic meter event+flag; `quarantineUnderTheRuntimeLayoutUsesTheRepositoryOrphansDirectory` | `mvn test` |
+| FR7 | Shell | `host-storage.test.sh` | live PID/marker exit 4; stale PID; stale/aged marker is reaped; old orphan reaped | bash |
+| FR8 | Java | `WorkspaceManagerStorageTest` | `refusalToDeleteTheRepositoryBaseRoot` | `mvn test` |
 
+## Results
+
+| Date | Commit | Suites | Outcome |
+|---|---|---|---|
+| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 977; host-storage 18/18; host-init 78/78; Compose base+sandbox | Periodic sweep, stale-marker TTL, real 85/90/95 actions, `/repos/orphans` quarantine, lifecycle env forwarding, async/timeout-bounded image prune, periodic budget+inode meter and the full `storage.*` event set. |
 ## Results
 
 | Date | Commit | Suites | Outcome |

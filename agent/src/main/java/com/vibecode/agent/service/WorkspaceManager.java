@@ -176,12 +176,16 @@ public class WorkspaceManager {
         cleanupPath(root);
     }
 
-    /** Move the ticket workspace to the sibling orphans/ directory. */
+    /** Move the ticket workspace to the repository-level orphans/ directory. */
     public Path quarantine() throws IOException {
         Path root = getWorkspaceRoot();
         if (root == null || !Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return null;
-        Path parent = cloneRoot.getParent();
-        Path orphans = parent == null ? cloneRoot.resolve("orphans") : parent.resolve("orphans");
+        Path base = cloneRoot.getParent();
+        if (base != null && "runtimes".equals(base.getFileName() == null
+                ? "" : base.getFileName().toString())) {
+            base = base.getParent();
+        }
+        Path orphans = (base == null ? cloneRoot : base).resolve("orphans");
         Files.createDirectories(orphans);
         Path target = orphans.resolve(root.getFileName() + "-" + Instant.now().toEpochMilli());
         try {

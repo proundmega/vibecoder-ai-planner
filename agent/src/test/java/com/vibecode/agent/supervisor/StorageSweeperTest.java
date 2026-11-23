@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -33,11 +34,28 @@ class StorageSweeperTest {
         Files.createFile(runtimeBase.resolve("13/34/.active"));
 
         int removed = StorageSweeper.sweepRuntimeRoots(
-            runtimeBase, tempDir.resolve("orphans"), Duration.ofHours(24), Set.of());
+            runtimeBase, tempDir.resolve("orphans"), Duration.ofHours(24),
+            Duration.ofHours(24), Set.of());
 
         assertFalse(Files.exists(old));
         assertTrue(Files.exists(runtimeBase.resolve("13")), "active root is kept");
         assertTrue(removed >= 1);
+    }
+
+    @Test
+    void staleMarkerDoesNotPinARuntimeRoot() throws Exception {
+        Path runtimeBase = tempDir.resolve("runtimes");
+        Path root = Files.createDirectories(runtimeBase.resolve("12"));
+        Path marker = Files.createFile(root.resolve(".active"));
+        age(root, Duration.ofHours(72));
+        age(marker, Duration.ofHours(72));
+
+        int removed = StorageSweeper.sweepRuntimeRoots(
+            runtimeBase, tempDir.resolve("orphans"), Duration.ofHours(24),
+            Duration.ofHours(24), Set.of());
+
+        assertFalse(Files.exists(root), "stale .active must not pin the root");
+        assertEquals(1, removed);
     }
 
     @Test

@@ -80,7 +80,12 @@ public final class Supervisor implements AutoCloseable {
     private volatile StoragePolicy storagePolicy = StoragePolicy.fromEnv(System.getenv());
     private volatile StoragePolicy.Usage storageUsage = new StoragePolicy.Usage(0, 0);
     private volatile long lastStorageCheckMs;
-    private volatile long lastImagePruneMs;
+    private volatile long lastImagePruneMs = System.currentTimeMillis();
+    private final java.util.concurrent.atomic.AtomicBoolean imagePruneRunning =
+        new java.util.concurrent.atomic.AtomicBoolean();
+    private volatile boolean manualRecovery;
+    private volatile boolean imagePruneEnabled = !"false".equalsIgnoreCase(
+        System.getenv().getOrDefault("AGENT_IMAGE_PRUNE_ENABLED", "true"));
     private volatile StorageEventSink storageEventSink = (type, payload) ->
         log.info("{} {}", type, payload);
     private volatile Path repoBaseOverride;
@@ -196,6 +201,7 @@ public final class Supervisor implements AutoCloseable {
     }
 
     private boolean storageAllowsSpawn() {
+        if (manualRecovery) return false;
         StoragePolicy.Usage usage = storageUsage;
         if (usage == null) return true;
         double worst = Math.max(usage.usedPct(), usage.inodePct());
@@ -218,39 +224,94 @@ public final class Supervisor implements AutoCloseable {
             StoragePolicy.StorageAction action = storagePolicy.evaluate(usage,
                 new StoragePolicy.RuntimeState(
                     "worker", 0, false, false, false, false, Instant.now(), Instant.now()));
-            if (action == StoragePolicy.StorageAction.OK) {
-                maybePruneImages();
-                return;
+            manualRecovery = action == StoragePolicy.StorageAction.MANUAL_RECOVERY;
+            if (action != StoragePolicy.StorageAction.OK) {
+                log.warn("storage.watermark action={} diskPct={} inodePct={}",
+                    action,
+                    String.format(java.util.Locale.ROOT, "%.1f", sample.diskPct()),
+                    String.format(java.util.Locale.ROOT, "%.1f", sample.inodePct()));
+                java.util.Map<String, Object> watermark = new LinkedHashMap<>();
+                watermark.put("level", action.name());
+                watermark.put("diskPct", sample.diskPct());
+                watermark.put("inodePct", sample.inodePct());
+                emitStorage("storage.watermark", watermark);
             }
-            log.warn("storage.watermark action={} diskPct={} inodePct={}",
-                action,
-                String.format(java.util.Locale.ROOT, "%.1f", sample.diskPct()),
-                String.format(java.util.Locale.ROOT, "%.1f", sample.inodePct()));
-            java.util.Map<String, Object> watermark = new LinkedHashMap<>();
-            watermark.put("level", action.name());
-            watermark.put("diskPct", sample.diskPct());
-            watermark.put("inodePct", sample.inodePct());
-            emitStorage("storage.watermark", watermark);
             if (action == StoragePolicy.StorageAction.MANUAL_RECOVERY) {
                 log.error("Storage is at manual-recovery pressure; new spawns are blocked");
             }
-            if (action == StoragePolicy.StorageAction.CLEAN_IDLE
-                    || action == StoragePolicy.StorageAction.RECYCLE_OLDEST) {
-                sweepStorage();
-            }
+            applyStorageAction(action);
+            // fg-58: the sweep is periodic, independent of the watermark level.
+            sweepStorage();
             maybePruneImages();
         } catch (RuntimeException e) {
             log.debug("Storage watermark sample skipped: {}", e.getMessage());
         }
     }
 
+    /** fg-58: perform the 85/90/95 actions, not just report them. */
+    void applyStorageAction(StoragePolicy.StorageAction action) {
+        if (action == null) return;
+        switch (action) {
+            case CLEAN_IDLE -> stopIdleRuntimes(Integer.MAX_VALUE, "watermark_clean");
+            case RECYCLE_OLDEST -> stopIdleRuntimes(1, "watermark_recycle");
+            default -> {
+                // WARN/STOP_SPAWN/MANUAL_RECOVERY are enforced elsewhere.
+            }
+        }
+    }
+
+    /** Stop and remove idle runtime roots, oldest first, up to limit. */
+    private void stopIdleRuntimes(int limit, String reason) {
+        StoragePolicy policy = storagePolicy;
+        Duration markerTtl = Duration.ofHours(Math.max(1, policy.workspaceTtlHours()));
+        Instant now = Instant.now();
+        java.util.List<TrackedChild> idle = new ArrayList<>();
+        for (TrackedChild child : new ArrayList<>(tracked.values())) {
+            Path root = runtimeRoot(child);
+            if (StorageSweeper.hasActiveMarker(root, markerTtl)) continue;
+            idle.add(child);
+        }
+        idle.sort((a, b) -> childStartOrEpoch(a).compareTo(childStartOrEpoch(b)));
+        int stopped = 0;
+        for (TrackedChild child : idle) {
+            if (stopped >= limit) break;
+            Path root = runtimeRoot(child);
+            emitStorage("storage.refresh", Map.of(
+                "runtime", child.name,
+                "reason", reason));
+            log.info("storage.refresh runtime={} reason={}", child.name, reason);
+            stopTracked(child);
+            stopped++;
+            if (root != null) {
+                try {
+                    StorageSweeper.deleteTree(root);
+                } catch (IOException e) {
+                    log.warn("storage.refresh_failed runtime={} error={}",
+                        child.name, e.getMessage());
+                    emitStorage("storage.refresh_failed", Map.of(
+                        "runtime", child.name, "error", e.getMessage()));
+                }
+            }
+        }
+        if (stopped > 0 && reason.startsWith("watermark")) {
+            emitStorage("storage.watermark", Map.of(
+                "level", reason, "stopped", stopped));
+        }
+    }
+
+    private static Instant childStartOrEpoch(TrackedChild child) {
+        Instant started = childStart(child);
+        return started == null ? Instant.EPOCH : started;
+    }
+
     private void refreshIdleSlots() {
         StoragePolicy policy = storagePolicy;
         if (policy == null || policy.idleRefreshMs() <= 0) return;
+        Duration markerTtl = Duration.ofHours(Math.max(1, policy.workspaceTtlHours()));
         Instant now = Instant.now();
         for (TrackedChild child : new ArrayList<>(tracked.values())) {
             Path root = runtimeRoot(child);
-            boolean active = StorageSweeper.hasActiveMarker(root);
+            boolean active = StorageSweeper.hasActiveMarker(root, markerTtl);
             Instant rootMtime = null;
             if (root != null && Files.isDirectory(root)) {
                 try {
@@ -295,7 +356,8 @@ public final class Supervisor implements AutoCloseable {
             Long id = resolveRuntimeId(child.slot);
             active.add(id == null ? child.name : String.valueOf(id));
         }
-        int removed = StorageSweeper.sweepRuntimeRoots(runtimeBase, orphans, ttl, active);
+        int removed = StorageSweeper.sweepRuntimeRoots(
+            runtimeBase, orphans, ttl, ttl, active);
         removed += StorageSweeper.sweepLegacy(base,
             Paths.get(System.getenv().getOrDefault("AGENT_TMPDIR",
                 System.getProperty("java.io.tmpdir"))), ttl);
@@ -307,25 +369,48 @@ public final class Supervisor implements AutoCloseable {
     }
 
     private void maybePruneImages() {
+        if (!imagePruneEnabled) return;
         long now = System.currentTimeMillis();
         if (now - lastImagePruneMs < Duration.ofDays(7).toMillis()) {
             return;
         }
+        if (!imagePruneRunning.compareAndSet(false, true)) {
+            return;
+        }
         lastImagePruneMs = now;
-        pruneDanglingImages();
+        Thread worker = new Thread(() -> {
+            try {
+                pruneDanglingImages();
+            } finally {
+                imagePruneRunning.set(false);
+            }
+        }, "storage-image-prune");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     private void pruneDanglingImages() {
+        long timeoutSeconds = longEnv("AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS", 30);
         try {
             ProcessBuilder builder = new ProcessBuilder("docker", "image", "prune", "-f");
             builder.redirectErrorStream(true);
             Process process = builder.start();
+            boolean finished = process.waitFor(Math.max(1, timeoutSeconds), TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.warn("storage.image_prune timed out after {}s", timeoutSeconds);
+                emitStorage("storage.image_prune", Map.of(
+                    "removed", 0, "error", "timeout"));
+                return;
+            }
             String output = new String(process.getInputStream().readAllBytes());
-            int exit = process.waitFor();
-            if (exit == 0) {
+            if (process.exitValue() == 0) {
                 emitStorage("storage.image_prune", Map.of(
                     "removed", output.contains("Deleted Images") || output.contains("deleted") ? 1 : 0,
                     "reclaimed", output.strip()));
+            } else {
+                emitStorage("storage.image_prune", Map.of(
+                    "removed", 0, "error", "exit " + process.exitValue()));
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();

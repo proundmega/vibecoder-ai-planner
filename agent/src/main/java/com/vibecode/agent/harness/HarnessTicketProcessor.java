@@ -1275,7 +1275,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 } else {
                     try {
                         long bytes = workspace.workspaceBytes();
-                        long logBytes = workspace.logsBytes();
+                        long logBytes = safeLogsBytes(workspace);
                         emitEvent("storage.log_bytes", Map.of(
                             "ticketId", String.valueOf(pickedUp.getId()),
                             "bytes", logBytes));
@@ -2724,13 +2724,25 @@ public final class HarnessTicketProcessor implements TicketWorker {
         try {
             long budgetGb = com.vibecode.agent.supervisor.StoragePolicy.budgetGbFor(
                 config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
+            long maxInodes = envLong("AGENT_STORAGE_MAX_INODES", 0);
             long used = workspace.workspaceBytes();
-            if (storageBudgetExceeded(used, budgetGb)) {
+            long inodes = maxInodes > 0 ? workspace.workspaceInodes() : 0;
+            boolean bytesBreach = storageBudgetExceeded(used, budgetGb);
+            boolean inodeBreach = maxInodes > 0 && inodes > maxInodes;
+            if (bytesBreach || inodeBreach) {
                 storageBudgetBreached = true;
-                emitEvent("storage.budget_exceeded", Map.of(
-                    "ticketId", String.valueOf(activeStorageTicketId),
-                    "budgetGb", budgetGb,
-                    "usedGb", Math.round((used / (1024.0 * 1024.0 * 1024.0)) * 100.0) / 100.0));
+                java.util.Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("ticketId", String.valueOf(activeStorageTicketId));
+                if (bytesBreach) {
+                    payload.put("budgetGb", budgetGb);
+                    payload.put("usedGb",
+                        Math.round((used / (1024.0 * 1024.0 * 1024.0)) * 100.0) / 100.0);
+                }
+                if (inodeBreach) {
+                    payload.put("maxInodes", maxInodes);
+                    payload.put("inodes", inodes);
+                }
+                emitEvent("storage.budget_exceeded", payload);
                 HarnessClient harness = activeHarness;
                 if (harness != null) closeQuietly(harness);
             }
@@ -2744,6 +2756,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
         long usedBytes = workspace.workspaceBytes();
         if (storageBudgetExceeded(usedBytes, budgetGb)) {
+            storageBudgetBreached = true;
             java.util.Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("runtimeId", config.getRuntimeId());
             payload.put("ticketId", ticket == null ? null : String.valueOf(ticket.getId()));
@@ -2756,6 +2769,26 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     static boolean storageBudgetExceeded(long usedBytes, long budgetGb) {
         return budgetGb > 0 && usedBytes > budgetGb * 1024L * 1024L * 1024L;
+    }
+
+    private long safeLogsBytes(WorkspaceManager workspace) {
+        try {
+            return workspace.logsBytes();
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not measure workspace logs: {}", e.getMessage());
+            return 0;
+        }
+    }
+
+    private static long envLong(String name, long fallback) {
+        String raw = System.getenv(name);
+        if (raw == null || raw.isBlank()) return fallback;
+        try {
+            long parsed = Long.parseLong(raw.trim());
+            return parsed >= 0 ? parsed : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     private void postMessage(Long ticketId, String type, String content) {

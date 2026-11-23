@@ -99,6 +99,20 @@ class WorkspaceManagerStorageTest {
     }
 
     @Test
+    void quarantineUnderTheRuntimeLayoutUsesTheRepositoryOrphansDirectory() throws Exception {
+        Path repoBase = tempDir.resolve("repos");
+        Path runtimeRoot = repoBase.resolve("runtimes/12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot());
+
+        Path moved = manager.quarantine();
+
+        assertTrue(moved.startsWith(repoBase.resolve("orphans")),
+            "orphans must live under the repository base, got " + moved);
+    }
+
+    @Test
     void measuresLogBytes() throws Exception {
         Path runtimeRoot = tempDir.resolve("12");
         WorkspaceManager manager = new WorkspaceManager(

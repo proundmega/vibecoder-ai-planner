@@ -188,4 +188,123 @@ class SupervisorStorageTest {
             supervisor.close();
         }
     }
+
+    private Supervisor supervisorFor(Path repoBase, java.util.List<Process> processes,
+            AtomicInteger spawns) throws Exception {
+        return new Supervisor(
+            pidDir, RuntimeConfig.parse("""
+                [runtime "workers"]
+                role = worker
+                model = acme/model
+                count = 1
+                project = 1
+                """), 64,
+            spec -> {
+                Process process = new ProcessBuilder("sleep", "60").start();
+                processes.add(process);
+                spawns.incrementAndGet();
+                return process;
+            },
+            Map.of("workers", 12L),
+            Duration.ofSeconds(2),
+            Duration.ofMillis(50));
+    }
+
+    @Test
+    void sweepRunsPeriodicallyWithoutWatermarkPressure() throws Exception {
+        Path repoBase = pidDir.resolve("repos-sweep");
+        Path legacy = Files.createDirectories(repoBase.resolve("abcdef12-old"));
+        Files.setLastModifiedTime(legacy,
+            FileTime.from(Instant.now().minus(Duration.ofHours(30))));
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+
+            assertFalse(Files.exists(legacy), "periodic sweep removes old legacy roots");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void cleanIdleStopsTheIdleChild() throws Exception {
+        Path repoBase = pidDir.resolve("repos-clean");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+            assertEquals(1, spawns.get());
+
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.CLEAN_IDLE);
+
+            assertFalse(processes.get(0).isAlive(), "idle child stopped");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void recycleOldestStopsTheIdleChildAndReconcileRespawns() throws Exception {
+        Path repoBase = pidDir.resolve("repos-recycle");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.RECYCLE_OLDEST);
+            assertFalse(processes.get(0).isAlive(), "oldest idle child stopped");
+
+            supervisor.reconcile();
+            assertEquals(2, spawns.get(), "a fresh child replaces it");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void recycleOldestKeepsAFreshActiveRuntime() throws Exception {
+        Path repoBase = pidDir.resolve("repos-active");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+            Files.createDirectories(repoBase.resolve("runtimes/12"));
+            Files.createFile(repoBase.resolve("runtimes/12/.active"));
+
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.RECYCLE_OLDEST);
+
+            assertTrue(processes.get(0).isAlive(), "active runtime is not recycled");
+            assertEquals(1, spawns.get());
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void manualRecoveryBlocksNewSpawns() throws Exception {
+        Path repoBase = pidDir.resolve("repos-manual");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.MANUAL_RECOVERY);
+
+            supervisor.reconcile();
+
+            assertEquals(1, spawns.get(), "no new spawn at manual recovery");
+        } finally {
+            supervisor.close();
+        }
+    }
 }

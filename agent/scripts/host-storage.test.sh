@@ -37,10 +37,11 @@ else
 fi
 rm -f "$REPO/runtimes/12/34/.active"
 
-# A stale marker is not live: apply is allowed after retention.
+# A stale marker is not live: apply is allowed after retention and reaps the root.
 mkdir -p "$REPO/runtimes/12/34"
-touch -d '30 hours ago' "$REPO/runtimes/12/34/.active"
+touch -d '30 hours ago' "$REPO/runtimes/12/34/.active" "$REPO/runtimes/12"
 if run --apply >/dev/null 2>&1; then pass "stale .active marker does not block apply"; else fail "stale .active marker does not block apply"; fi
+[[ ! -e "$REPO/runtimes/12" ]] && pass "stale .active root is reaped" || fail "stale .active root is reaped"
 
 printf '{"pid":%s}\n' "$$" > "$PID_DIR/worker.pid"
 if run --apply >/dev/null 2>&1; then
@@ -54,6 +55,13 @@ rm -f "$PID_DIR/worker.pid"
 printf '{"pid":999999}\n' > "$PID_DIR/stale.pid"
 if run --apply >/dev/null 2>&1; then pass "stale PID does not block apply"; else fail "stale PID does not block apply"; fi
 rm -f "$PID_DIR/stale.pid"
+
+# Orphans use the orphan TTL, not the workspace TTL.
+mkdir -p "$REPO/orphans/old-1" "$REPO/orphans/fresh-1"
+touch -d '30 hours ago' "$REPO/orphans/old-1"
+if run --apply --orphans >/dev/null 2>&1; then pass "orphan apply succeeds"; else fail "orphan apply succeeds"; fi
+[[ ! -e "$REPO/orphans/old-1" ]] && pass "old orphan is reaped" || fail "old orphan is reaped"
+[[ -d "$REPO/orphans/fresh-1" ]] && pass "fresh orphan is kept" || fail "fresh orphan is kept"
 
 # Legacy and temp fixtures.
 mkdir -p "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" "$TMP_ROOT/vibecode-askpass-y"
