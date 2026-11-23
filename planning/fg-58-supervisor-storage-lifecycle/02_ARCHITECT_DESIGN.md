@@ -39,5 +39,7 @@ Events use the existing fg-41 sink when available, otherwise structured
 
 - Parse the supervisor PID record and `kill -0` the PID; a dead PID is stale.
 - Treat `.active` as live only when its mtime is within
-  `HARNESS_WORKSPACE_RETENTION_HOURS`; stale markers are removed with `--apply`.
+  `HARNESS_WORKSPACE_RETENTION_HOURS`; stale markers are removed with `--apply`
+  and never pin an aged root.
+- `--orphans` reaps `/repos/orphans` after `AGENT_ORPHAN_TTL_HOURS`.
 - `cleanupRuntime()` refuses a base root named `repos`.

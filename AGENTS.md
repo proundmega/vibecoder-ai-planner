@@ -184,12 +184,18 @@ pauses while the backend is unhealthy.
 Question loop (fg-55): `HARNESS_QUESTION_LOOP` (default off),
 `HARNESS_QUESTION_TIMEOUT_MINUTES`, `HARNESS_QUESTION_POLL_SECONDS`,
 `HARNESS_DOOM_LOOP_MAX`, `HARNESS_DOOM_LOOP_CONTINUES`.
-Storage lifecycle (fg-44): `AGENT_IDLE_REFRESH_MS` (2h),
+Storage lifecycle (fg-44/fg-58): `AGENT_IDLE_REFRESH_MS` (2h),
 `AGENT_MAX_LIFETIME_HOURS` (24), `AGENT_DISK_BUDGET_GB`,
 `HARNESS_WORKSPACE_RETENTION_HOURS` (24), `AGENT_STORAGE_CHECK_SECONDS` (60),
+`AGENT_STORAGE_METER_SECONDS` (300), `AGENT_STORAGE_MAX_INODES` (0 = off),
 `AGENT_STORAGE_WARN_PCT`/`STOP_PCT`/`CLEAN_PCT`/`RECYCLE_PCT`/`MANUAL_PCT`
-(70/80/85/90/95), `AGENT_ORPHAN_TTL_HOURS` (24); `agent/scripts/host-storage.sh`
-is the stopped-supervisor recovery path.
+(70/80/85/90/95), `AGENT_ORPHAN_TTL_HOURS` (24),
+`AGENT_IMAGE_PRUNE_ENABLED` (true), `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` (30).
+The supervisor refreshes idle runtimes, samples disk plus inodes, sweeps
+runtime/legacy/temp roots into `/repos/orphans/` on every tick, treats stale
+`.active` markers as recoverable, prunes dangling images weekly off the
+reconcile lock and emits `storage.*` events; `agent/scripts/host-storage.sh` is
+the stopped-supervisor recovery path (including `--orphans`).
 Budgets/routing (fg-38): `HARNESS_DEFAULT_MAX_DURATION_MINUTES`,
 `HARNESS_DEFAULT_MAX_INPUT_TOKENS`, `HARNESS_DEFAULT_MAX_OUTPUT_TOKENS`,
 `HARNESS_DEFAULT_MAX_COST_USD`, `HARNESS_DEFAULT_MAX_TOOL_CALLS`,

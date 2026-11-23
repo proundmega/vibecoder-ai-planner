@@ -112,6 +112,29 @@ public record StoragePolicy(
             .toHours() >= maxLifetimeHours;
     }
 
+    /**
+     * fg-58: decide whether an inactive runtime should be refreshed. A runtime
+     * with an active marker is never refreshed; idle and max-lifetime are
+     * otherwise evaluated from the root mtime and the child start time.
+     */
+    public static boolean refreshDue(
+        boolean active,
+        Instant startedAt,
+        Instant rootLastModified,
+        Instant now,
+        long idleRefreshMs,
+        int maxLifetimeHours
+    ) {
+        if (active) return false;
+        Instant current = now == null ? Instant.now() : now;
+        if (startedAt != null && maxLifetimeHours > 0
+                && Duration.between(startedAt, current).toHours() >= maxLifetimeHours) {
+            return true;
+        }
+        return rootLastModified != null && idleRefreshMs > 0
+            && Duration.between(rootLastModified, current).toMillis() >= idleRefreshMs;
+    }
+
     private static long longValue(Map<String, String> env, String key, long fallback) {
         String value = env.get(key);
         if (value == null || value.isBlank()) return fallback;

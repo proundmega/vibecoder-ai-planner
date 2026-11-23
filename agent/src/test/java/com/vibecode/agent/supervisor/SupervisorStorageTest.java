@@ -3,11 +3,14 @@ package com.vibecode.agent.supervisor;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -65,6 +68,59 @@ class SupervisorStorageTest {
         assertFalse(policy.lifetimeExpired(oldBusy));
         assertEquals(StoragePolicy.StorageAction.CLEAN_IDLE, policy.evaluate(
             new StoragePolicy.Usage(10, 10), oldIdle));
+
+        Instant now = Instant.now();
+        assertTrue(StoragePolicy.refreshDue(false, now.minus(Duration.ofHours(25)),
+            now.minus(Duration.ofMinutes(1)), now, Duration.ofHours(2).toMillis(), 24));
+        assertTrue(StoragePolicy.refreshDue(false, now,
+            now.minus(Duration.ofHours(3)), now, Duration.ofHours(2).toMillis(), 24));
+        assertFalse(StoragePolicy.refreshDue(true, now.minus(Duration.ofHours(25)),
+            now.minus(Duration.ofHours(3)), now, Duration.ofHours(2).toMillis(), 24));
+    }
+
+    @Test
+    void idleRuntimeIsStoppedAndItsRootRemoved() throws Exception {
+        Path repoBase = pidDir.resolve("repos");
+        RuntimeConfig config = RuntimeConfig.parse("""
+            [runtime "workers"]
+            role = worker
+            model = acme/model
+            count = 1
+            project = 1
+            """);
+        AtomicInteger spawns = new AtomicInteger();
+        java.util.Map<String, java.util.Map<String, Object>> events = new java.util.HashMap<>();
+        Supervisor supervisor = new Supervisor(
+            pidDir, config, 64,
+            spec -> {
+                spawns.incrementAndGet();
+                return new ProcessBuilder("sleep", "60").start();
+            },
+            Map.of("workers", 12L),
+            Duration.ofSeconds(2),
+            Duration.ofMillis(50));
+        supervisor.setRepoBase(repoBase);
+        supervisor.setStoragePolicy(new StoragePolicy(
+            1000L, 24, 70, 80, 85, 90, 95, 24, 24));
+        supervisor.setStorageEventSink(events::put);
+        try {
+            supervisor.reconcile();
+            assertEquals(1, spawns.get());
+
+            Path runtimeRoot = Files.createDirectories(repoBase.resolve("runtimes/12"));
+            Files.setLastModifiedTime(runtimeRoot,
+                FileTime.from(Instant.now().minus(Duration.ofHours(3))));
+
+            supervisor.reconcile();
+
+            assertTrue(events.containsKey("storage.refresh"), events.toString());
+            assertEquals("idle", events.get("storage.refresh").get("reason"));
+            assertEquals("workers-1", events.get("storage.refresh").get("runtime"));
+            assertFalse(Files.exists(runtimeRoot), "idle runtime root removed");
+            assertEquals(2, spawns.get(), "the runtime is respawned");
+        } finally {
+            supervisor.close();
+        }
     }
 
     @Test
@@ -85,6 +141,7 @@ class SupervisorStorageTest {
             project = 1
             """);
         AtomicReference<Supervisor.SpawnSpec> spawned = new AtomicReference<>();
+        java.util.Map<String, java.util.Map<String, Object>> events = new java.util.HashMap<>();
         Supervisor supervisor = new Supervisor(
             pidDir, config, 64,
             spec -> {
@@ -94,12 +151,24 @@ class SupervisorStorageTest {
             Map.of("workers", 12L),
             Duration.ofSeconds(2),
             Duration.ofMillis(50));
+        supervisor.setStorageEventSink(events::put);
         try {
             supervisor.reconcile();
             assertEquals("/repos/runtimes/12", spawned.get().environment().get("REPO_CLONE_DIR"));
+            assertTrue(events.containsKey("storage.workspace"), events.toString());
+            assertEquals(12L, events.get("storage.workspace").get("runtimeId"));
+            assertEquals("workers-1", events.get("storage.workspace").get("runtimeName"));
+            assertEquals("/repos/runtimes/12", events.get("storage.workspace").get("path"));
         } finally {
             supervisor.close();
         }
+    }
+
+    @Test
+    void samplesDiskAndInodePercentages() {
+        StorageUsage usage = StorageUsage.sample(pidDir);
+        assertTrue(usage.diskPct() >= 0 && usage.diskPct() <= 100);
+        assertTrue(usage.inodePct() >= 0 && usage.inodePct() <= 100);
     }
 
     @Test
@@ -120,6 +189,136 @@ class SupervisorStorageTest {
             supervisor.setStorageUsage(new StoragePolicy.Usage(96, 0));
             assertEquals(StoragePolicy.StorageAction.MANUAL_RECOVERY,
                 supervisor.storageAction(state(true, Instant.now())));
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    private Supervisor supervisorFor(Path repoBase, java.util.List<Process> processes,
+            AtomicInteger spawns) throws Exception {
+        return new Supervisor(
+            pidDir, RuntimeConfig.parse("""
+                [runtime "workers"]
+                role = worker
+                model = acme/model
+                count = 1
+                project = 1
+                """), 64,
+            spec -> {
+                Process process = new ProcessBuilder("sleep", "60").start();
+                processes.add(process);
+                spawns.incrementAndGet();
+                return process;
+            },
+            Map.of("workers", 12L),
+            Duration.ofSeconds(2),
+            Duration.ofMillis(50));
+    }
+
+    @Test
+    void sweepRunsPeriodicallyWithoutWatermarkPressure() throws Exception {
+        Path repoBase = pidDir.resolve("repos-sweep");
+        Path legacy = Files.createDirectories(repoBase.resolve("abcdef12-old"));
+        Files.setLastModifiedTime(legacy,
+            FileTime.from(Instant.now().minus(Duration.ofHours(30))));
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        java.util.Map<String, java.util.Map<String, Object>> events = new java.util.HashMap<>();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        supervisor.setStorageEventSink(events::put);
+        try {
+            supervisor.reconcile();
+
+            assertFalse(Files.exists(legacy), "periodic sweep removes old legacy roots");
+            assertEquals(1, events.get("storage.orphan").get("removed"));
+            assertEquals("sweep", events.get("storage.orphan").get("action"));
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void cleanIdleStopsTheIdleChild() throws Exception {
+        Path repoBase = pidDir.resolve("repos-clean");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+            assertEquals(1, spawns.get());
+
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.CLEAN_IDLE);
+
+            assertFalse(processes.get(0).isAlive(), "idle child stopped");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void recycleOldestStopsTheIdleChildAndReconcileRespawns() throws Exception {
+        Path repoBase = pidDir.resolve("repos-recycle");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.RECYCLE_OLDEST);
+            assertFalse(processes.get(0).isAlive(), "oldest idle child stopped");
+
+            supervisor.reconcile();
+            assertEquals(2, spawns.get(), "a fresh child replaces it");
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void recycleOldestKeepsAFreshActiveRuntime() throws Exception {
+        Path repoBase = pidDir.resolve("repos-active");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+            Files.createDirectories(repoBase.resolve("runtimes/12"));
+            Files.createFile(repoBase.resolve("runtimes/12/.active"));
+
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.RECYCLE_OLDEST);
+
+            assertTrue(processes.get(0).isAlive(), "active runtime is not recycled");
+            assertEquals(1, spawns.get());
+        } finally {
+            supervisor.close();
+        }
+    }
+
+    @Test
+    void manualRecoveryBlocksNewSpawns() throws Exception {
+        Path repoBase = pidDir.resolve("repos-manual");
+        java.util.List<Process> processes = new java.util.ArrayList<>();
+        AtomicInteger spawns = new AtomicInteger();
+        Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
+        supervisor.setRepoBase(repoBase);
+        try {
+            supervisor.reconcile();
+            supervisor.applyStorageAction(StoragePolicy.StorageAction.MANUAL_RECOVERY);
+
+            RuntimeConfig changed = RuntimeConfig.parse("""
+                [runtime "workers"]
+                role = worker
+                model = acme/changed
+                count = 1
+                project = 1
+                """);
+            supervisor.reconcile(changed);
+
+            assertEquals(1, spawns.get(), "no new spawn at manual recovery");
         } finally {
             supervisor.close();
         }

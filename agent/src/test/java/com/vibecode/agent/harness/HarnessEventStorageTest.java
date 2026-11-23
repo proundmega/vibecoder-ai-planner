@@ -23,6 +23,17 @@ class HarnessEventStorageTest {
     }
 
     @Test
+    void recognisesEveryStorageEventType() {
+        for (String type : java.util.List.of(
+                "storage.workspace", "storage.refresh", "storage.refresh_failed",
+                "storage.watermark", "storage.orphan", "storage.image_prune",
+                "storage.log_bytes", "storage.cleanup", "storage.cleanup_failed",
+                "storage.budget_exceeded")) {
+            assertTrue(HarnessEvent.of(type, mapper.createObjectNode()).isStorageEvent(), type);
+        }
+    }
+
+    @Test
     void carriesWorkspaceAndWatermarkFields() {
         Map<String, Object> workspace = new LinkedHashMap<>();
         workspace.put("runtimeId", 12);

@@ -176,6 +176,43 @@ public class WorkspaceManager {
         cleanupPath(root);
     }
 
+    /** Move the ticket workspace to the repository-level orphans/ directory. */
+    public Path quarantine() throws IOException {
+        Path root = getWorkspaceRoot();
+        if (root == null || !Files.exists(root, LinkOption.NOFOLLOW_LINKS)) return null;
+        Path base = cloneRoot.getParent();
+        if (base != null && "runtimes".equals(base.getFileName() == null
+                ? "" : base.getFileName().toString())) {
+            base = base.getParent();
+        }
+        Path orphans = (base == null ? cloneRoot : base).resolve("orphans");
+        Files.createDirectories(orphans);
+        Path target = orphans.resolve(root.getFileName() + "-" + Instant.now().toEpochMilli());
+        try {
+            Files.move(root, target);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            Files.move(root, target);
+        }
+        return target;
+    }
+
+    /** Bytes under the ticket logs/ directory (0 when absent). */
+    public long logsBytes() throws IOException {
+        Path root = getWorkspaceRoot();
+        if (root == null) return 0;
+        Path logs = root.resolve("logs");
+        if (!Files.isDirectory(logs, LinkOption.NOFOLLOW_LINKS)) return 0;
+        final long[] total = {0};
+        Files.walkFileTree(logs, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                total[0] += attrs.size();
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        return total[0];
+    }
+
     /** Delete the runtime root, including cache/. Refuses the configured base root. */
     public void cleanupRuntime() throws IOException {
         Path name = cloneRoot.getFileName();

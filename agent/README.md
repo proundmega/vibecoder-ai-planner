@@ -189,13 +189,14 @@ The supervisor refuses to start if `agent.ini` grows past
 role counts. `AGENT_HOST_MAX_RUNTIMES=0` disables the guard for a hand-managed
 host.
 
-## Storage lifecycle (fg-44)
+## Storage lifecycle (fg-44 / fg-58)
 
 Workspaces are runtime-scoped:
 
 ```
 /repos/runtimes/<runtimeId>/<ticketId>/{repo,tmp,logs}
 /repos/runtimes/<runtimeId>/cache
+/repos/orphans/<runtime>-<timestamp>
 ```
 
 - The supervisor passes `REPO_CLONE_DIR=/repos/runtimes/<runtimeId>` to each
@@ -203,26 +204,39 @@ Workspaces are runtime-scoped:
 - `HarnessTicketProcessor` writes `<ticketRoot>/.active` at run start and removes
   the ticket root only after the run is terminal and its lease is released.
   Sandbox destroy runs before deletion; a failed destroy keeps the workspace.
+  A budget breach moves the ticket root to `orphans/` instead.
+- The supervisor tick refreshes idle/max-lifetime runtimes between tickets and
+  sweeps old runtime roots, legacy `/repos/<8hex>-*` and temp dirs on every
+  storage tick, not only at a watermark. Only a `.active` marker newer than
+  `HARNESS_WORKSPACE_RETENTION_HOURS` is live; stale markers never pin a root.
+  Suspicious roots are quarantined under `/repos/orphans/` for the orphan TTL.
 - Idle and max-lifetime refresh use `AGENT_IDLE_REFRESH_MS` (2h) and
   `AGENT_MAX_LIFETIME_HOURS` (24h) and only run between tickets.
-- Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, clean idle,
-  recycle the oldest idle runtime, require manual recovery.
+- Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, stop all
+  idle children, stop the oldest idle child, require manual recovery (blocks
+  new spawns).
+- A periodic `du`/inode meter enforces the per-runtime budget; a breach stops
+  the run with `storage_budget_exceeded` and quarantines the root.
 - Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
   10 GB, `light` 5 GB) or `AGENT_DISK_BUDGET_GB`.
-- `HARNESS_WORKSPACE_RETENTION_HOURS` is the single workspace/orphan TTL.
-- `host-storage.sh` is the stopped-supervisor recovery path:
+- `HARNESS_WORKSPACE_RETENTION_HOURS` is the workspace/runtime-root TTL;
+  `AGENT_ORPHAN_TTL_HOURS` is the separate quarantine TTL.
+- `host-storage.sh` is the stopped-supervisor recovery path. A PID file is live
+  only when `kill -0` succeeds and `.active` only within the retention window:
 
 ```bash
 agent/scripts/host-storage.sh --dry-run
 agent/scripts/host-storage.sh --apply            # refuses live PID/.active
 agent/scripts/host-storage.sh --apply --legacy   # old /repos/<8hex>-* and temp dirs
+agent/scripts/host-storage.sh --apply --orphans  # /repos/orphans after the orphan TTL
 agent/scripts/host-storage.sh --dry-run --images
 ```
 
 Storage events (`storage.workspace`, `storage.cleanup`,
-`storage.cleanup_failed`, `storage.refresh`, `storage.watermark`,
-`storage.budget_exceeded`, `storage.orphan`, `storage.image_prune`) go through
-the existing event sink/structured logs.
+`storage.cleanup_failed`, `storage.refresh`, `storage.refresh_failed`,
+`storage.watermark`, `storage.budget_exceeded`, `storage.orphan`,
+`storage.image_prune`, `storage.log_bytes`) go through the existing event
+sink/structured logs. Dangling images are pruned weekly.
 
 ## Supervisor lifecycle
 
@@ -303,7 +317,7 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_IDLE_REFRESH_MS` | Idle refresh threshold | `7200000` |
 | `AGENT_MAX_LIFETIME_HOURS` | Runtime lifetime between tickets | `24` |
 | `AGENT_DISK_BUDGET_GB` | Per-runtime disk budget override | role profile |
-| `HARNESS_WORKSPACE_RETENTION_HOURS` | Workspace/orphan TTL | `24` |
+| `HARNESS_WORKSPACE_RETENTION_HOURS` | Workspace/runtime-root TTL | `24` |
 | `AGENT_STORAGE_CHECK_SECONDS` | Watermark sample interval | `60` |
 | `AGENT_STORAGE_METER_SECONDS` | `du`/inode meter interval | `300` |
 | `AGENT_STORAGE_WARN_PCT` | Warn watermark | `70` |
@@ -312,6 +326,9 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_STORAGE_RECYCLE_PCT` | Recycle-idle watermark | `90` |
 | `AGENT_STORAGE_MANUAL_PCT` | Manual-recovery watermark | `95` |
 | `AGENT_ORPHAN_TTL_HOURS` | Quarantine TTL | `24` |
+| `AGENT_STORAGE_MAX_INODES` | Optional per-ticket inode cap (0 = off) | `0` |
+| `AGENT_IMAGE_PRUNE_ENABLED` | Weekly dangling-image prune | `true` |
+| `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` | Image prune timeout | `30` |
 | `AGENT_TMPDIR` | Host temp root scanned by `host-storage.sh --legacy` | `${TMPDIR:-/tmp}` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |
 | `SUPERVISOR_STOP_TIMEOUT_SECONDS` | Graceful drain budget | `10` |
