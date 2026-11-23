@@ -28,7 +28,7 @@
 |---|---|---|---|---|
 | FR1 | Java | `SupervisorStorageTest` | `imagePruneDefaultsToDockerModeOnly` | `mvn test` |
 | FR2 | Java | `WorkspaceManagerStorageTest`, `HarnessTicketProcessorStorageTest` | `runtimeBytesIncludeTheSharedCache`, `cleanupCacheRemovesOnlyTheRuntimeCache`, `periodicMeter...`, `budgetBreachQuarantines...` | same |
-| FR3 | Java | `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `runtimeActiveMarkerCovers...`, `legacyRepoRootDoesNotGetARuntimeMarker`, `recycleOldestKeepsAFreshActiveRuntime` | same |
+| FR3 | Java | `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `runtimeMarkerExistsDuringProfileFetchAndClearsAfterwards`; `sharedRuntimeDoesNotWriteASingleRootMarker` (>1 skip); `runtimeActiveMarkerCovers...`; `recycleOldestKeepsAFreshActiveRuntime` | same |
 | FR4 | Docs | README/Compose | host-mode default and cache wording | diff |
 
 ## Results

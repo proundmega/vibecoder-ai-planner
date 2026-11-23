@@ -337,7 +337,7 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_STORAGE_RECYCLE_PCT` | Recycle-idle watermark | `90` |
 | `AGENT_STORAGE_MANUAL_PCT` | Manual-recovery watermark | `95` |
 | `AGENT_ORPHAN_TTL_HOURS` | Quarantine TTL | `24` |
-| `AGENT_STORAGE_MAX_INODES` | Optional per-ticket inode cap (0 = off) | `0` |
+| `AGENT_STORAGE_MAX_INODES` | Optional runtime-wide inode cap (0 = off) | `0` |
 | `AGENT_IMAGE_PRUNE_ENABLED` | Weekly dangling-image prune | `true` in Docker mode, `false` in host mode |
 | `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` | Image prune timeout | `30` |
 | `AGENT_TMPDIR` | Host temp root scanned by `host-storage.sh --legacy` | `${TMPDIR:-/tmp}` |

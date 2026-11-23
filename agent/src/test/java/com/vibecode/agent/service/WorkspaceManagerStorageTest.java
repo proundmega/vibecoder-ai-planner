@@ -83,6 +83,7 @@ class WorkspaceManagerStorageTest {
 
         assertEquals(4, manager.workspaceBytes());
         assertEquals(11, manager.runtimeBytes());
+        assertEquals(6, manager.runtimeInodes());
     }
 
     @Test
@@ -97,6 +98,7 @@ class WorkspaceManagerStorageTest {
 
         assertEquals(4, manager.runtimeBytes(),
             "legacy clone roots must not count every workspace");
+        assertEquals(3, manager.runtimeInodes());
     }
 
     @Test

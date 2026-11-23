@@ -20,6 +20,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-43 | `DONE/fg-43-agent-docker-deployment` | Merged (#197) | One supervisor per host, supervisor container limits; per-child cgroups are D6 | fg-33, fg-54 (fg-34 recommended) |
 | fg-44 | `DONE/fg-44-agent-storage-lifecycle` | Merged (#209 foundation, #212 lifecycle) | Runtime-scoped workspaces, cleanup, host recovery | fg-43, fg-33 |
 | fg-58 | `DONE/fg-58-supervisor-storage-lifecycle` | Merged (#212) | Supervisor idle/max refresh, inode watermarks, sweep/quarantine, periodic budget, complete storage events | fg-44, fg-43, fg-54 |
+| fg-59 | `fg-59-storage-hardening` | In review (#217) | Host-mode prune default, runtime-cache/inode budget, pickup marker (shared-runtime skip, D4), legacy budget fallback | fg-44, fg-58 |
 | fg-45 | `DONE/fg-45-ticket-quality-gates` | Merged (#199) | Definition of Ready, pre-implementation risk review (assumptions, failure modes, security, impact), acceptance criteria, readiness gates on every execution path | fg-30 (fg-31 integration deferred, D2) |
 | fg-46 | `fg-46-flow-observability` | Deferred | Flow stages, queue age, harness/provider/review metrics, `run_id` correlation | fg-30, fg-31/32, fg-33, fg-36, fg-41, fg-44, fg-45 |
 | fg-47 | `fg-47-independent-review-pass` | Planned | Independent second reviewer: different model/provider/context, read-only, dedupe/triage, blocking policy | fg-31, fg-32, fg-37, fg-41 |
