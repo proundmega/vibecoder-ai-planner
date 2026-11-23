@@ -83,7 +83,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR8 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | dangling prune keeps active tag | `mvn test` (fg-58) |
 | FR9 | Script + `fg-58` | `host-storage.test.sh`, `fg-58` | host script legacy/retention done; supervisor runtime-root sweep in `fg-58` | `bash agent/scripts/host-storage.test.sh`; `mvn test` (fg-58) |
 | FR10 | Follow-up `fg-58` | `fg-58` `SupervisorStorageTest` | `.active` marker/supervisor slot skipped | `mvn test` (fg-58) |
-| FR11 | Partial + `fg-58` | `HarnessEventStorageTest.java`, `fg-58` | workspace identity/path, cleanup bytes, log bytes, watermark percentages and per-event refresh/cleanup/orphan/image records; byte/inode inventory is fg-44 D12 | `mvn test`; `mvn test` (fg-58) |
+| FR11 | Partial + `fg-58` | `HarnessEventStorageTest.java`, `fg-58` | workspace identity/path, cleanup bytes, log bytes, watermark percentages and per-event refresh/cleanup/orphan/image records; host free bytes/inodes and aggregate counters are fg-44 D12, workspace size/age inventory is fg-33 D8 | `mvn test`; `mvn test` (fg-58) |
 | FR12 | Script | `host-storage.test.sh` | stopped-supervisor/`.active`/PID/`--legacy` over `/repos` and `AGENT_TMPDIR`; full-disk recovery | `bash agent/scripts/host-storage.test.sh` |
 | FR13 | Foundation + `fg-58` | `WorkspaceManagerStorageTest.java`, `fg-58` | runtime guard done; processor destroy-before-delete in `fg-58` | `mvn test`; `mvn test` (fg-58) |
 

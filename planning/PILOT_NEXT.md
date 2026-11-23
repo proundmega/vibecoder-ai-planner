@@ -70,6 +70,6 @@ warnings are visible. No open blocker defects remain.
 
 ## Deferred (not blocking the pilot)
 
-fg-43 D1/D6; fg-44 D3/D5–D8/D12; fg-45 D2/D5/D7/D9; fg-55 D1–D10; fg-31/fg-32/
+fg-33 D8; fg-43 D1/D6; fg-44 D3/D5–D10/D12; fg-58 D1/D2; fg-45 D2/D5/D7/D9; fg-55 D1–D10; fg-31/fg-32/
 fg-36/fg-37/fg-40; fg-46–fg-52 planning/review tooling. The canonical deferred
 scope stays in each suite's `00` register and `PENDING.txt`.

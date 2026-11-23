@@ -40,9 +40,9 @@ If the JVM, container or host dies:
 - **FR2 - Checkpoints:** record a checkpoint after clone, session creation, prompt completion, verification and publish; diff collection is folded into the `publishing`/`done` checkpoints.
 - **FR3 - Lease:** claim a ticket with a TTL and heartbeat; a second agent cannot claim an unexpired lease.
 - **FR4 - Recovery:** on agent startup, find runs owned by that agent; resume or fail them according to policy.
-- **FR5 - Stale reaper:** expire leases, release tickets and mark runs failed in the scheduled backend reaper. Workspace cleanup runs at agent startup; scheduled workspace cleanup is deferred to fg-44.
+- **FR5 - Stale reaper:** expire leases, release tickets and mark runs failed in the scheduled backend reaper. Startup cleanup remains for legacy/temp paths; the supervisor storage tick prunes runtime roots and orphans (fg-58 #212). Full size/age inventory remains fg-33 D8 (fg-59 D1 / fg-46).
 - **FR6 - Idempotent publish:** detect an existing branch/PR for the ticket; push only the expected commit; never open a duplicate PR.
-- **FR7 - Workspace registry:** track `workspace_path` and age-based startup cleanup. Full size/age inventory and disk-usage/leftover metrics are deferred to fg-44.
+- **FR7 - Workspace registry:** track `workspace_path` and age-based startup cleanup. Full size/age inventory and disk-usage/leftover metrics are deferred to fg-33 D8 (fg-59 D1 / fg-46).
 - **FR8 - Dead letter:** operators can dead-letter a failed run. After `HARNESS_RETRY_PIN_ATTEMPTS` the agent automatically finishes the run as `dead_letter` and leaves the ticket in_progress for operator recovery; durable attempt counts across restarts remain Phase 2 (fg-30 #108 item 7).
 - **FR9 - Observability:** expose current run/step via heartbeat, checkpoints and Prometheus counters. Structured event streaming is deferred to fg-41.
 - **FR10 - Manual recovery:** an operator can dead-letter a run or adopt published work. An explicit force-clean-restart action is deferred; the runbook documents manual reset.
@@ -59,7 +59,7 @@ If the JVM, container or host dies:
 
 1. Killing the agent mid-prompt leaves a persisted run; a restart resumes or fails it cleanly and releases the ticket.
 2. The same ticket cannot be processed by two agents concurrently.
-3. Stale leases and ticket state are cleaned by the scheduled backend reaper; stale workspaces are cleaned at agent startup (scheduled workspace cleanup deferred to fg-44).
+3. Stale leases and ticket state are cleaned by the scheduled backend reaper; startup cleanup remains for legacy/temp paths, while the supervisor storage tick prunes runtime roots and orphans (fg-58 #212). Full inventory remains fg-33 D8 (fg-59 D1 / fg-46).
 4. A retry after a publish crash does not create a second PR.
 5. Operators can see the run step and last checkpoint for any ticket.
 6. All recovery paths have service/processor tests, including simulated crash gaps and lease races. A CI process-kill matrix is deferred.
