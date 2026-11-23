@@ -141,11 +141,13 @@ public class GitHubTokenProvider implements GitHubTokenSource {
         if (fallback == null) {
             throw failure;
         }
-        // A definitive backend rejection means the backend has not opted into
-        // the PAT fallback. The only exception is GITHUB_APP_NOT_CONFIGURED in
-        // explicit local PAT mode: the App endpoint cannot mint a token there,
-        // while PAT_FALLBACK_DISABLED, 401/403/404, project-disabled and
-        // repo-binding errors must still propagate.
+        // A definitive backend rejection from /token means the backend has not
+        // opted into the PAT fallback. The only exception is
+        // GITHUB_APP_NOT_CONFIGURED in explicit local PAT mode: the App endpoint
+        // cannot mint there, while PAT_FALLBACK_DISABLED, 401/403/404,
+        // project-disabled and repo-binding errors from /token still propagate.
+        // The fallback source is the agent's explicit GITHUB_TOKEN path; per
+        // the fg-35 runbook that local token is not subject to disabled_at.
         if (failure instanceof GitHubTokenRequestException rejection) {
             boolean appNotConfigured = isExplicitPatMode()
                 && "GITHUB_APP_NOT_CONFIGURED".equalsIgnoreCase(rejection.getCode());

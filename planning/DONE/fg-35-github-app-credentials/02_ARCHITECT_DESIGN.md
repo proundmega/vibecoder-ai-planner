@@ -125,7 +125,7 @@ The token service looks up `project_github_installations` first and falls back t
 | Backend returns a different mode | The agent rejects the credential (`mode mismatch`). | Align `GITHUB_AUTH_MODE`/`ALLOW_PAT` on both sides. |
 | Token expires mid-run | The agent refreshes through the provider before the next git/PR call. | None; if GitHub rejects it, the run fails closed and the next attempt mints again. |
 | Revocation/disable during a run | Cached tokens are revoked immediately; a token not in the cache stays valid until GitHub expiry. The next mint fails and the next run stops. | Re-enable or reinstall, then retry. |
-| Backend unreachable | In explicit `pat` + `ALLOW_PAT` mode the agent may use the local PAT fallback; otherwise publishing stops. | Restore the backend. A definitive backend rejection (for example app mode without App credentials) never uses the fallback. |
+| Backend unreachable | In explicit `pat` + `ALLOW_PAT` mode the agent may use the local PAT fallback; otherwise publishing stops. | Restore the backend. A definitive backend rejection never uses the fallback, with one exception: `GITHUB_APP_NOT_CONFIGURED` in explicit `pat` + `ALLOW_PAT=true` mode, where the App-only endpoint cannot mint and the agent's local `GITHUB_TOKEN` may be used. Normal `pat` mode still calls `/token`, which mints and audits via `mintPat`; `PAT_FALLBACK_DISABLED`, 401/403/404, project-disabled and repo-binding errors still block. |
 
 ## Security considerations
 
