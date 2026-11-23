@@ -100,7 +100,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 - [x] Every `FR*` acceptance statement has a passing row (`03` + `DONE/fg-58-supervisor-storage-lifecycle/03`)
 - [x] No cleanup can escape the runtime root (`toRealPath` + symlink refusal)
-- [x] No active lease/harness/sandbox or live `.active`/supervisor slot is deleted or stopped
+- [x] No live `.active` marker or active supervisor slot is deleted or stopped
 - [x] Sandbox destroy precedes workspace deletion
 - [x] Legacy/temp cleanup is preserved or migrated with tests (`pruneStaleTempDirectories` not dropped)
 - [x] No new `PoolManager`/`POOL_ADMIN_TOKEN` dependency; historical references are explanatory only
