@@ -148,8 +148,10 @@ This includes newly added test files. `git diff -- test` alone would not.
 ## Limits
 
 - 15-minute run cap, 8 files, 400 lines, one ticket per cycle.
-- Three workers at 2 CPU / 2 GB sandbox + 768 MB heap fit the 16 CPU / 31 GB
-  host with headroom.
+- **Plan B:** three workers at 2 CPU / 2 GB sandbox + 768 MB heap fit the
+  16 CPU / 31 GB host with headroom.
+- **Plan A:** host mode, so there is no per-sandbox reservation; three child
+  JVMs plus install/test processes run on the same 16 CPU / 31 GB host.
 - Human review is the gate. `fg-31`/`fg-32` (reviewer and fix loop) are being
   built in Plan A lane A; until they land, `request_changes` does not
   automatically start a fixer.
@@ -190,10 +192,10 @@ merged and proven on a no-op change.
 
 | Slice | Work | FRs | Files | Depends on |
 |---|---|---|---|---|
-| `fg-31a` | Review migration + attempt/finding stores + tests | FR7, FR8 | 5–7 | `FLOW-0` |
+| `fg-31a` | Review migration + attempt/finding stores + tests | FR7 (attempt/finding schema), FR8 (finding storage) | 5–7 | `FLOW-0` |
 | `fg-31b` | Review prompt builder + structured-findings parser + tests | FR2, FR4 | 4–6 | `fg-31a` |
 | `fg-31c` | Review harness client + review-ticket processor/OpenCode session + tests | FR1, FR3, FR9 | 6–8 | `fg-31b` |
-| `fg-31d` | GitHub review service + phase reconciler + legacy mode + tests | FR5, FR6, FR7, FR8, FR10 | 6–8 | `fg-31c` |
+| `fg-31d` | GitHub review service + phase reconciler + legacy mode + tests | FR5, FR6, FR7 (adoption/re-check), FR8 (request-changes handoff), FR10 | 6–8 | `fg-31c` |
 | `fg-32a` | Fix-request schema/migration + `review -> in_progress` state + idempotent request | FR1, FR2 | 6–8 | `fg-31d` |
 | `fg-32b1` | Fix queue + atomic claim/lease/renew | FR3, FR4 | 6–8 | `fg-32a` |
 | `fg-32b2` | Branch resolution pinned to `reviewed_sha` | FR5 | 4–6 | `fg-32b1` |
