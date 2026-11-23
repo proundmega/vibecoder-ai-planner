@@ -114,7 +114,7 @@ The token service looks up `project_github_installations` first and falls back t
 
 | Failure | Behavior | Recovery |
 |---|---|---|
-| App id/private key missing | Token request fails `GITHUB_APP_NOT_CONFIGURED`; publishing stops. | Set both values, restart the backend, retry. |
+| App id/private key missing | Token request fails `GITHUB_APP_NOT_CONFIGURED`; in `app` mode publishing stops, while explicit `pat` + `ALLOW_PAT=true` may use the local `GITHUB_TOKEN` fallback. | Set both values, restart the backend, retry. |
 | Installation mapping missing | Token request fails `GITHUB_INSTALLATION_NOT_CONFIGURED`. | Create the mapping with `PUT /github/:projectId/installation` or set the single-tenant env fallback. |
 | Project disabled | Token request fails `GITHUB_ACCESS_DISABLED`. | Re-enable by upserting the mapping, then retry. |
 | Repo outside allowlist / mismatch | `GITHUB_REPO_NOT_ALLOWED` / `GITHUB_REPO_SCOPE_MISMATCH`; no token is minted. | Fix the allowlist or connected repo. |

@@ -125,7 +125,7 @@ the local `GITHUB_TOKEN`. Normal `pat` mode still calls `/token`, which mints an
 audits via `mintPat`; `PAT_FALLBACK_DISABLED`, 401/403/404, project-disabled and
 repo-binding errors still block. The local env token itself is not subject to
 the project's `disabled_at` flag (the fallback source reads `/repo/agent` and
-uses `GITHUB_TOKEN` when that read fails), so do not rely on disabling a project
+uses `GITHUB_TOKEN` when that read fails or returns no token), so do not rely on disabling a project
 to stop a developer's local env token.
 
 ## 8. Migration from PATs
