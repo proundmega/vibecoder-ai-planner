@@ -59,7 +59,7 @@ Review defects already fixed and covered by regression tests are not open work:
 - **fg-43:** `planning/DONE/fg-43-agent-docker-deployment/03_ARCHITECT_IMPLEMENTATION.md`
   → Results; `host-init.test.sh`, `SupervisorCapacityTest`, `RuntimeConfigTest`.
 
-The fg-45 `04`/status closeout and the fg-44 spec are tracked in #205/#204.
+The fg-45 `04`/status closeout and the fg-44 spec are merged (#205/#204).
 
 ## Definition of done (pilot)
 
