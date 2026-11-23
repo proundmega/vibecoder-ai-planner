@@ -165,56 +165,76 @@ This includes newly added test files. `git diff -- test` alone would not.
    `master` and close/archive bt-60. This is not a worker code ticket and is
    not repeated in a lane.
 3. Create the Planner Flow project, worker grant and project-scoped credential.
-4. Extend `scripts/verify-local.sh` with the `--agent` mode and prove it on a
-   no-op change.
+4. Create and merge `FLOW-0`: extend `scripts/verify-local.sh` with the
+   `--agent` mode and prove it on a no-op change.
 5. Create the slice tickets below with their `depends_on` edges before starting
    a worker. Do not start a lane on a whole suite.
 
 ## Slice catalog
 
-Each row is a **worker ticket**, not a whole suite. The expected file count is
-the planning estimate; split further if a run would exceed 8 files / 400 lines.
+Each row is a **worker ticket**, not a whole suite. `Files` is the planning
+estimate; split further if a run would exceed 8 files / 400 lines. `FRs` maps
+the slice to the suite's requirements so no requirement is left for a later
+worker to discover.
+
+### Prerequisite
+
+| Slice | Work | Files | Depends on |
+|---|---|---|---|
+| `FLOW-0` | Extend `scripts/verify-local.sh` with `--agent`: install missing deps, run changed layers, detect changed/new tests under all three test trees | 2–3 | — |
+
+`FLOW-0` is a prerequisite ticket, not a suite. Do not start Plan A until it is
+merged and proven on a no-op change.
 
 ### Lane A — review and merge
 
-| Slice | Work | Expected files | Depends on |
-|---|---|---|---|
-| `fg-31a` | Review migration + attempt/finding stores + tests | 5–7 | — |
-| `fg-31b` | Review prompt builder + structured-findings parser + tests | 4–6 | `fg-31a` |
-| `fg-31c` | Review harness client + review-ticket processor/OpenCode session + tests | 6–8 | `fg-31b` |
-| `fg-31d` | GitHub review service + phase reconciler + legacy mode + tests | 6–8 | `fg-31c` |
-| `fg-32a` | Request-changes record + fixer queue + same-branch fix test | 5–7 | `fg-31d` |
-| `fg-32b` | Round counter, re-review, no-progress escalation + tests | 4–6 | `fg-32a` |
-| `fg-36a` | Mergeability/rebase gate + stale-SHA check + tests | 5–7 | `fg-32b` |
-| `fg-36b` | Merge queue/rollback + tests | 5–7 | `fg-36a` |
+| Slice | Work | FRs | Files | Depends on |
+|---|---|---|---|---|
+| `fg-31a` | Review migration + attempt/finding stores + tests | design components | 5–7 | `FLOW-0` |
+| `fg-31b` | Review prompt builder + structured-findings parser + tests | design components | 4–6 | `fg-31a` |
+| `fg-31c` | Review harness client + review-ticket processor/OpenCode session + tests | design components | 6–8 | `fg-31b` |
+| `fg-31d` | GitHub review service + phase reconciler + legacy mode + tests | design components | 6–8 | `fg-31c` |
+| `fg-32a` | Fix-request schema/migration + `review -> in_progress` state + idempotent request | FR1, FR2 | 6–8 | `fg-31d` |
+| `fg-32b` | Fix queue, atomic claim/lease/renew, branch resolution pinned to `reviewed_sha` | FR3, FR4, FR5 | 7–9 | `fg-32a` |
+| `fg-32c` | Fix prompt context, fast-forward publish, `FIX_LOOP_MODE`/manual dispatch, fixer run + fg-33 fixer-only `startRun` allow path | FR6, FR7, FR11, FR13 | 8–10 | `fg-32b` |
+| `fg-32d` | Hand-back to review, round cap/escalation, no-progress, failure/backoff | FR8, FR9, FR10, FR12 | 7–9 | `fg-32c` |
+| `fg-36a` | Base-branch resolver + mergeability check | FR1, FR2 | 5–7 | `fg-32d` |
+| `fg-36b` | Update-branch/rebase + conflict classification/hand-off | FR3, FR4 | 6–8 | `fg-36a` |
+| `fg-36c` | CI gate + merge queue ordering + configurable merge method | FR5, FR6, FR7 | 6–8 | `fg-36b` |
+| `fg-36d` | Post-merge verification + rollback/incident + merge audit | FR8, FR9, FR10 | 6–8 | `fg-36c` |
 
-`fg-31` has only `00`–`02` today; these slices come from the components in
-`planning/fg-31-automatic-review-harness/02_ARCHITECT_DESIGN.md`.
+`fg-31` has only `00`–`02` today; its slices come from the components in
+`planning/fg-31-automatic-review-harness/02_ARCHITECT_DESIGN.md`. `fg-32` and
+`fg-36` FR mappings cover every requirement in their `01`; split again if a
+slice still exceeds the file cap.
 
 ### Lane B — Git provider
 
-| Slice | Work | Expected files | Depends on |
-|---|---|---|---|
-| `fg-57a` | Backend `GitProvider` contract + `GitHubService` facade + tests (backend-only) | 4–6 | — |
-| `fg-57b` | `project_repos` provider migration/rollback + `GitProjectService` + tests | 5–7 | `fg-57a` |
-| `fg-57c` | Agent `GitService` contract/facade + tests (after `fg-31a` merges) | 5–7 | `fg-57b`, `fg-31a` |
-| `fg-57d` | Local/bare-SSH provider + credential store + tests | 6–8 | `fg-57c` |
-| `fg-57e` | Forgejo/Gitea connect/push/PR + disposable integration test | 6–8 | `fg-57d` |
-| `fg-57f` | Generic `/api/v1/git` routes, provider picker, docs | 6–8 | `fg-57e` |
+| Slice | Work | FRs | Files | Depends on |
+|---|---|---|---|---|
+| `fg-57a` | Backend `GitProvider` contract + `GitHubService` facade + tests (backend-only) | FR1 | 4–6 | — |
+| `fg-57b` | `project_repos` provider migration/rollback + `GitProjectService` + `HarnessRunService` branch/SHA adoption | FR1, FR6 | 6–8 | `fg-57a` |
+| `fg-57c` | Agent `GitService` contract/facade + provider-neutral `HarnessTicketProcessor` publish path | FR1, FR6 | 6–8 | `fg-57b`, `fg-31a` |
+| `fg-57d` | Local/bare-SSH provider + credential store/host key + tests | FR5, FR8, FR9 | 6–8 | `fg-57c` |
+| `fg-57e` | Forgejo/Gitea connect/push/PR + disposable integration test | FR2, FR3, FR8, FR11 | 6–8 | `fg-57d` |
+| `fg-57f` | Generic `/api/v1/git` routes + provider picker/status + docs | FR7, FR10, FR12 | 6–8 | `fg-57e` |
+| `fg-57g` | GitLab self-hosted provider + MR test (optional, later) | FR4, FR8 | 6–8 | `fg-57f` |
 
 These are an operational split of `fg-57` Phase 1/2/4; see
 `planning/fg-57-git-provider-abstraction/03_ARCHITECT_IMPLEMENTATION.md`.
 
 ### Lane C — repo profiles
 
-| Slice | Work | Expected files | Depends on |
-|---|---|---|---|
-| `fg-39a` | FR8/slice 3 flaky-test retry policy + test-data hooks + tests | 4–6 | — |
-| `fg-39b` | FR3/slice 4a prebuilt per-stack images + pinned toolchains + tests | 6–8 | `fg-39a` |
-| `fg-39c` | FR4/slice 4b persistent cache quota/watchdog/GC + tests | 6–8 | `fg-39b` |
+| Slice | Work | FRs | Files | Depends on |
+|---|---|---|---|---|
+| `fg-39a` | FR8/slice 3 flaky-test retry policy + test-data hooks + tests | FR8 | 4–6 | — |
+| `fg-39b` | FR3/slice 4a prebuilt per-stack images + pinned toolchains + tests | FR3 | 6–8 | `fg-39a` |
+| `fg-39c` | FR4/slice 4b persistent cache quota/watchdog/GC + tests | FR4 | 6–8 | `fg-39b` |
+| `fg-39d` | D11 real-Docker/real-repo profile e2e (optional) | D11 | 4–6 | `fg-39c` |
+| `fg-39e` | D12 service container disk quota/egress-governed pulls (optional) | D12 | 6–8 | `fg-39c` |
 
-Lane C is deliberately only `fg-39`. `fg-48`/`fg-49`/`fg-50` remain blocked by
-`fg-31`/`fg-47` and are not part of this flow test.
+Lane C is `fg-39` only. `fg-48`/`fg-49`/`fg-50` remain blocked by `fg-31`/`fg-47`
+and are not part of this flow test.
 
 ## Waves
 
@@ -223,15 +243,24 @@ Lane C is deliberately only `fg-39`. `fg-48`/`fg-49`/`fg-50` remain blocked by
 | 1 | `fg-31a` | `fg-57a` | `fg-39a` |
 | 2 | `fg-31b` | `fg-57b` | `fg-39b` |
 | 3 | `fg-31c` | `fg-57c` (after `fg-31a` merges) | `fg-39c` |
-| 4 | `fg-31d` | `fg-57d` | — |
-| 5 | `fg-32a` | `fg-57e` | — |
+| 4 | `fg-31d` | `fg-57d` | optional `fg-39d` |
+| 5 | `fg-32a` | `fg-57e` | optional `fg-39e` |
 | 6 | `fg-32b` | `fg-57f` | — |
-| 7 | `fg-36a` | — | — |
-| 8 | `fg-36b` | — | — |
+| 7 | `fg-32c` | optional `fg-57g` | — |
+| 8 | `fg-32d` | — | — |
+| 9 | `fg-36a` | — | — |
+| 10 | `fg-36b` | — | — |
+| 11 | `fg-36c` | — | — |
+| 12 | `fg-36d` | — | — |
 
 Wave 1 is the flow test: three ticket-sized PRs. Wave 2 proceeds only after the
-Wave 1 slice merges in that lane. Set the `depends_on` edges in the planner
-project before each wave; the current project has no dependencies.
+Wave 1 slice merges in that lane. Set the `depends_on` edges in the Planner Flow
+project before each wave; the project does not exist yet and has no tickets.
+
+Lane A is intentionally the long lane. When B or C exhausts, **stop that
+worker**; do not let it claim a blocked suite. The optional `fg-39d`/`fg-39e`
+and `fg-57g` rows are bounded backfill only after their lane's required slices
+merge.
 
 The full dependency map and blocked suites are in `PENDING.txt`; the blocked
 set includes `fg-37`, `fg-40`, `fg-46`, `fg-47` and `fg-48`–`fg-52`.
