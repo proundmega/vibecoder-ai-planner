@@ -86,8 +86,9 @@ credentials below.
 7. Assert:
    - one run, `status=succeeded`, `step=done`, `finished_at` set,
      `head_sha`/`pr_url` populated, `runtime_id` matches;
-   - checkpoints `cloned → session_ready → prompting → verifying → publishing
-     → done`;
+   - stored checkpoints `cloned → session_ready → prompting → verifying →
+     publishing → done` (the rejected `sandbox_ready`/`sandbox_bridge_ready`
+     rows are tracked as D14);
    - no lease row after finish;
    - ticket `review` with `pr_url`;
    - exactly one test PR/branch.
@@ -114,12 +115,13 @@ decrypted PAT. The final #220 head narrows the agent fallback to
 authoritative.
 
 The build was the pre-merge #220 branch at `d8c9132` (child-env isolation,
-explicit PAT mode and the HTTP/1.1 health gate). Re-run this procedure on
-merged `master` after #220 to replace the pre-merge evidence.
+explicit PAT mode and the HTTP/1.1 health gate). The final #220 PAT narrowing
+(`787a941`) is **not** part of this recorded evidence; the post-#220 rerun on
+merged `master` covers it and replaces the pre-merge evidence.
 
 | Ticket | Run | Result | PR |
 |---|---|---|---|
-| 1 - append marker to `script.js` | `1af4a751-0bef-4428-a888-7579bbf7d7fd` | `succeeded`, `done`, `head_sha=bd64fb9`; checkpoints `cloned -> session_ready -> prompting -> verifying -> publishing -> done`; no lease left | #20 |
+| 1 - append marker to `script.js` | `1af4a751-0bef-4428-a888-7579bbf7d7fd` | `succeeded`, `done`, `head_sha=bd64fb9`; stored checkpoints `cloned -> session_ready -> prompting -> verifying -> publishing -> done`; no lease left | #20 |
 | 2 - lease-loss drill | `b9b2682b` then `74216219` | lease deleted during the first run; no PR/branch, ticket recovered; retry succeeded | #21 |
 | 3 - health-gate validation | `d23b7862` | gate passed after the HTTP/1.1 fix; `succeeded`, `done` | #22 |
 | 4 - crash/restart drill | `b889e1fb` then `5a80e787` | child killed mid-run; startup recovery failed the stale run with `Agent restarted before the run finished; restarting cleanly`, no publish; clean retry succeeded | #23 |
