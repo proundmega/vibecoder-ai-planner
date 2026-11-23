@@ -219,7 +219,8 @@ Workspaces are runtime-scoped:
   the run with `storage_budget_exceeded` and quarantines the root.
 - Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
   10 GB, `light` 5 GB) or `AGENT_DISK_BUDGET_GB`.
-- `HARNESS_WORKSPACE_RETENTION_HOURS` is the single workspace/orphan TTL.
+- `HARNESS_WORKSPACE_RETENTION_HOURS` is the workspace/runtime-root TTL;
+  `AGENT_ORPHAN_TTL_HOURS` is the separate quarantine TTL.
 - `host-storage.sh` is the stopped-supervisor recovery path. A PID file is live
   only when `kill -0` succeeds and `.active` only within the retention window:
 
@@ -316,7 +317,7 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_IDLE_REFRESH_MS` | Idle refresh threshold | `7200000` |
 | `AGENT_MAX_LIFETIME_HOURS` | Runtime lifetime between tickets | `24` |
 | `AGENT_DISK_BUDGET_GB` | Per-runtime disk budget override | role profile |
-| `HARNESS_WORKSPACE_RETENTION_HOURS` | Workspace/orphan TTL | `24` |
+| `HARNESS_WORKSPACE_RETENTION_HOURS` | Workspace/runtime-root TTL | `24` |
 | `AGENT_STORAGE_CHECK_SECONDS` | Watermark sample interval | `60` |
 | `AGENT_STORAGE_METER_SECONDS` | `du`/inode meter interval | `300` |
 | `AGENT_STORAGE_WARN_PCT` | Warn watermark | `70` |

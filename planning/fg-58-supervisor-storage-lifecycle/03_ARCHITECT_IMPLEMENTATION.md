@@ -34,8 +34,8 @@
 | FR2 | Java | `SupervisorStorageTest` | `refreshDue` lifetime/idle cases; active runtime untouched | same |
 | FR3 | Java | `SupervisorStorageTest` | `samplesDiskAndInodePercentages`; `cleanIdleStopsTheIdleChild`; `recycleOldestStopsTheIdleChildAndReconcileRespawns`; `manualRecoveryBlocksNewSpawns` | same |
 | FR4 | Java + Shell | `StorageSweeperTest`, `SupervisorStorageTest`, `host-storage.test.sh` | `staleMarkerDoesNotPinARuntimeRoot`; `sweepRunsPeriodicallyWithoutWatermarkPressure`; runtime/legacy/temp/orphan tests | both |
-| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `recognisesEveryStorageEventType`; `periodicMeterEmitsBudgetEventAndMarksTheRun`; workspace/refresh/orphan payloads | `mvn test` |
-| FR6 | Java | `HarnessTicketProcessorStorageTest`, `WorkspaceManagerStorageTest` | periodic meter event+flag; `quarantineUnderTheRuntimeLayoutUsesTheRepositoryOrphansDirectory` | `mvn test` |
+| FR5 | Java | `HarnessEventStorageTest`, `HarnessTicketProcessorStorageTest`, `SupervisorStorageTest` | `recognisesEveryStorageEventType`; `periodicMeter...`; assertions on workspace (`runtimeId/runtimeName/path`), refresh (`reason/runtime`) and orphan (`removed/action`) payloads | `mvn test` |
+| FR6 | Java | `HarnessTicketProcessorStorageTest`, `WorkspaceManagerStorageTest` | periodic meter event+flag; `budgetBreachQuarantinesThroughTheProcessor` (moves instead of deleting); quarantine path test | `mvn test` |
 | FR7 | Shell | `host-storage.test.sh` | live PID/marker exit 4; stale PID; stale/aged marker is reaped; old orphan reaped | bash |
 | FR8 | Java | `WorkspaceManagerStorageTest` | `refusalToDeleteTheRepositoryBaseRoot` | `mvn test` |
 
@@ -43,9 +43,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 977; host-storage 18/18; host-init 78/78; Compose base+sandbox | Periodic sweep, stale-marker TTL, real 85/90/95 actions, `/repos/orphans` quarantine, lifecycle env forwarding, async/timeout-bounded image prune, periodic budget+inode meter and the full `storage.*` event set. |
-## Results
-
-| Date | Commit | Suites | Outcome |
-|---|---|---|---|
-| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 970; host-storage 14/14; host-init 78/78; Compose base | Supervisor idle/max refresh, disk+inode sampling, 85/90/95 actions, runtime/legacy/temp sweep/quarantine, periodic budget meter/quarantine, image prune and the full `storage.*` event set. |
+| 2026-11-22 | `feat/fg-58-supervisor-storage-lifecycle` | Agent 982 (981 at `afc1a20` + the processor quarantine test; 978 locally without image-gated tests); host-storage 18/18; host-init 78/78; Compose base+sandbox | Periodic sweep, stale-marker TTL, real 85/90/95 actions, `/repos/orphans` quarantine, lifecycle env forwarding, async/timeout-bounded image prune, periodic budget+inode meter, processor quarantine on breach and payload assertions for workspace/refresh/orphan events. |

@@ -154,10 +154,9 @@ sweep_orphans() {
     done < <(find "$REPO_DIR/orphans" -mindepth 1 -maxdepth 1 -type d -print 2>/dev/null)
 }
 
+sweep_runtime_roots
 if [[ "$DO_LEGACY" -eq 1 ]]; then
     sweep_legacy
-else
-    sweep_runtime_roots
 fi
 if [[ "$DO_ORPHANS" -eq 1 ]]; then
     sweep_orphans

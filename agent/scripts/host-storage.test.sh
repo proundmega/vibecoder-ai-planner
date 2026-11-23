@@ -63,6 +63,12 @@ if run --apply --orphans >/dev/null 2>&1; then pass "orphan apply succeeds"; els
 [[ ! -e "$REPO/orphans/old-1" ]] && pass "old orphan is reaped" || fail "old orphan is reaped"
 [[ -d "$REPO/orphans/fresh-1" ]] && pass "fresh orphan is kept" || fail "fresh orphan is kept"
 
+# --legacy still reaps aged runtime roots in the same pass.
+mkdir -p "$REPO/runtimes/99/1"
+touch -d '30 hours ago' "$REPO/runtimes/99"
+if run --apply --legacy >/dev/null 2>&1; then pass "legacy apply reaps runtime roots"; else fail "legacy apply reaps runtime roots"; fi
+[[ ! -e "$REPO/runtimes/99" ]] && pass "--legacy does not skip runtime roots" || fail "--legacy does not skip runtime roots"
+
 # Legacy and temp fixtures.
 mkdir -p "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" "$TMP_ROOT/vibecode-askpass-y"
 touch -d '30 hours ago' "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" "$TMP_ROOT/vibecode-askpass-y"

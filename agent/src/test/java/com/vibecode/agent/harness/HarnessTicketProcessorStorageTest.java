@@ -70,18 +70,7 @@ class HarnessTicketProcessorStorageTest {
         WorkspaceManager workspace = mock(WorkspaceManager.class);
         when(workspace.workspaceBytes()).thenReturn(21L * 1024L * 1024L * 1024L);
 
-        HarnessTicketProcessor processor = new HarnessTicketProcessor(
-            config, apiService,
-            new ProviderSettings("opencode-go", "secret", null, "beam-free", 4096),
-            mock(GitHubService.class), "token",
-            new HarnessConfig("opencode", java.time.Duration.ofSeconds(30),
-                java.time.Duration.ofMinutes(45), List.of("npm test"),
-                List.of(".env*"), null, "restart"),
-            repoName -> workspace,
-            (ignored, bridge, effectiveConfig) -> mock(HarnessClient.class),
-            mock(PlanningDocFetcher.class),
-            mock(VerificationRunner.class),
-            new PublishingGuard(List.of(".env*")));
+        HarnessTicketProcessor processor = processor(apiService, workspace);
 
         set(processor, "activeStorageWorkspace", workspace);
         set(processor, "activeStorageTicketId", 7L);
@@ -95,6 +84,48 @@ class HarnessTicketProcessorStorageTest {
         verify(apiService).emitHarnessEvent(body.capture());
         assertEquals("storage.budget_exceeded", body.getValue().get("type"));
         assertTrue((Boolean) get(processor, "storageBudgetBreached"));
+    }
+
+    @Test
+    void budgetBreachQuarantinesThroughTheProcessor() throws Exception {
+        Path repoBase = tempDir.resolve("repos");
+        WorkspaceManager manager = new WorkspaceManager(
+            repoBase.resolve("runtimes/12").toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("repo/file.txt"), "x");
+
+        HarnessTicketProcessor processor = processor(mock(ApiService.class), manager);
+        set(processor, "storageBudgetBreached", true);
+
+        processor.cleanupWorkspaceAfterRun(manager, 34L);
+
+        assertFalse(Files.exists(manager.getWorkspaceRoot()), "the breach does not delete");
+        Path orphans = repoBase.resolve("orphans");
+        assertTrue(Files.isDirectory(orphans), "quarantine goes to /repos/orphans");
+        try (var entries = Files.list(orphans)) {
+            assertTrue(entries.findAny().isPresent(), "quarantined ticket root exists");
+        }
+    }
+
+    private HarnessTicketProcessor processor(
+        ApiService apiService,
+        WorkspaceManager workspace
+    ) {
+        AgentConfig config = mock(AgentConfig.class);
+        when(config.getRole()).thenReturn("worker");
+        when(config.getRuntimeId()).thenReturn("12");
+        return new HarnessTicketProcessor(
+            config, apiService,
+            new ProviderSettings("opencode-go", "secret", null, "beam-free", 4096),
+            mock(GitHubService.class), "token",
+            new HarnessConfig("opencode", java.time.Duration.ofSeconds(30),
+                java.time.Duration.ofMinutes(45), List.of("npm test"),
+                List.of(".env*"), null, "restart"),
+            repoName -> workspace,
+            (ignored, bridge, effectiveConfig) -> mock(HarnessClient.class),
+            mock(PlanningDocFetcher.class),
+            mock(VerificationRunner.class),
+            new PublishingGuard(List.of(".env*")));
     }
 
     private static void set(Object target, String field, Object value) throws Exception {

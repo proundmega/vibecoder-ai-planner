@@ -33,7 +33,7 @@ event path remain here.
 |---|---|---|
 | Split recorded | fg-44 03/00; this suite | ☑ |
 | Implementation in review | PR #212 | ☑ |
-| Verification results | `03` → Results | ☐ |
+| Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
 

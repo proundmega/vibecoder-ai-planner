@@ -89,7 +89,7 @@ class SupervisorStorageTest {
             project = 1
             """);
         AtomicInteger spawns = new AtomicInteger();
-        java.util.List<String> events = new java.util.ArrayList<>();
+        java.util.Map<String, java.util.Map<String, Object>> events = new java.util.HashMap<>();
         Supervisor supervisor = new Supervisor(
             pidDir, config, 64,
             spec -> {
@@ -102,7 +102,7 @@ class SupervisorStorageTest {
         supervisor.setRepoBase(repoBase);
         supervisor.setStoragePolicy(new StoragePolicy(
             1000L, 24, 70, 80, 85, 90, 95, 24, 24));
-        supervisor.setStorageEventSink((type, payload) -> events.add(type));
+        supervisor.setStorageEventSink(events::put);
         try {
             supervisor.reconcile();
             assertEquals(1, spawns.get());
@@ -113,7 +113,9 @@ class SupervisorStorageTest {
 
             supervisor.reconcile();
 
-            assertTrue(events.contains("storage.refresh"), events.toString());
+            assertTrue(events.containsKey("storage.refresh"), events.toString());
+            assertEquals("idle", events.get("storage.refresh").get("reason"));
+            assertEquals("workers-1", events.get("storage.refresh").get("runtime"));
             assertFalse(Files.exists(runtimeRoot), "idle runtime root removed");
             assertEquals(2, spawns.get(), "the runtime is respawned");
         } finally {
@@ -139,7 +141,7 @@ class SupervisorStorageTest {
             project = 1
             """);
         AtomicReference<Supervisor.SpawnSpec> spawned = new AtomicReference<>();
-        java.util.List<String> events = new java.util.ArrayList<>();
+        java.util.Map<String, java.util.Map<String, Object>> events = new java.util.HashMap<>();
         Supervisor supervisor = new Supervisor(
             pidDir, config, 64,
             spec -> {
@@ -149,11 +151,14 @@ class SupervisorStorageTest {
             Map.of("workers", 12L),
             Duration.ofSeconds(2),
             Duration.ofMillis(50));
-        supervisor.setStorageEventSink((type, payload) -> events.add(type));
+        supervisor.setStorageEventSink(events::put);
         try {
             supervisor.reconcile();
             assertEquals("/repos/runtimes/12", spawned.get().environment().get("REPO_CLONE_DIR"));
-            assertTrue(events.contains("storage.workspace"));
+            assertTrue(events.containsKey("storage.workspace"), events.toString());
+            assertEquals(12L, events.get("storage.workspace").get("runtimeId"));
+            assertEquals("workers-1", events.get("storage.workspace").get("runtimeName"));
+            assertEquals("/repos/runtimes/12", events.get("storage.workspace").get("path"));
         } finally {
             supervisor.close();
         }
@@ -218,12 +223,16 @@ class SupervisorStorageTest {
             FileTime.from(Instant.now().minus(Duration.ofHours(30))));
         java.util.List<Process> processes = new java.util.ArrayList<>();
         AtomicInteger spawns = new AtomicInteger();
+        java.util.Map<String, java.util.Map<String, Object>> events = new java.util.HashMap<>();
         Supervisor supervisor = supervisorFor(repoBase, processes, spawns);
         supervisor.setRepoBase(repoBase);
+        supervisor.setStorageEventSink(events::put);
         try {
             supervisor.reconcile();
 
             assertFalse(Files.exists(legacy), "periodic sweep removes old legacy roots");
+            assertEquals(1, events.get("storage.orphan").get("removed"));
+            assertEquals("sweep", events.get("storage.orphan").get("action"));
         } finally {
             supervisor.close();
         }

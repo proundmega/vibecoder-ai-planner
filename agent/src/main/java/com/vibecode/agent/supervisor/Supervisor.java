@@ -168,6 +168,9 @@ public final class Supervisor implements AutoCloseable {
             Map<String, RuntimeConfig.RuntimeSlot> desiredByName = byName(slots);
 
             refreshIdleSlots();
+            // Sample and apply storage pressure before the first spawn so a
+            // full host does not spawn a child before it is measured.
+            storageTick();
             sweep(slots);
 
             for (TrackedChild child : new ArrayList<>(tracked.values())) {
@@ -196,7 +199,6 @@ public final class Supervisor implements AutoCloseable {
                 }
                 spawn(slot);
             }
-            storageTick();
         }
     }
 
@@ -392,15 +394,30 @@ public final class Supervisor implements AutoCloseable {
             ProcessBuilder builder = new ProcessBuilder("docker", "image", "prune", "-f");
             builder.redirectErrorStream(true);
             Process process = builder.start();
+            // Drain the pipe while waiting: waiting first can deadlock when
+            // prune writes more than the pipe buffer.
+            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+            Thread drainer = new Thread(() -> {
+                try (var in = process.getInputStream()) {
+                    in.transferTo(buffer);
+                } catch (IOException ignored) {
+                    // The process was killed on timeout; no output remains.
+                }
+            }, "storage-image-prune-output");
+            drainer.setDaemon(true);
+            drainer.start();
             boolean finished = process.waitFor(Math.max(1, timeoutSeconds), TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
+                process.waitFor(2, TimeUnit.SECONDS);
+                drainer.join(2000);
                 log.warn("storage.image_prune timed out after {}s", timeoutSeconds);
                 emitStorage("storage.image_prune", Map.of(
                     "removed", 0, "error", "timeout"));
                 return;
             }
-            String output = new String(process.getInputStream().readAllBytes());
+            drainer.join(2000);
+            String output = buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
             if (process.exitValue() == 0) {
                 emitStorage("storage.image_prune", Map.of(
                     "removed", output.contains("Deleted Images") || output.contains("deleted") ? 1 : 0,

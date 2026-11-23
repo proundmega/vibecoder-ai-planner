@@ -1262,36 +1262,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
             }
             if (workspace != null && !sandboxDestroyFailed) {
-                if (storageBudgetBreached) {
-                    try {
-                        workspace.quarantine();
-                        emitEvent("storage.budget_exceeded", Map.of(
-                            "ticketId", String.valueOf(pickedUp.getId()),
-                            "action", "quarantined"));
-                    } catch (IOException | RuntimeException e) {
-                        log.warn("Could not quarantine workspace for ticket {}: {}",
-                            pickedUp.getId(), e.getMessage());
-                    }
-                } else {
-                    try {
-                        long bytes = workspace.workspaceBytes();
-                        long logBytes = safeLogsBytes(workspace);
-                        emitEvent("storage.log_bytes", Map.of(
-                            "ticketId", String.valueOf(pickedUp.getId()),
-                            "bytes", logBytes));
-                        workspace.cleanup(String.valueOf(pickedUp.getId()));
-                        emitEvent("storage.cleanup", Map.of(
-                            "ticketId", String.valueOf(pickedUp.getId()),
-                            "bytes", bytes,
-                            "reason", "terminal run"));
-                    } catch (IOException | RuntimeException e) {
-                        log.warn("Workspace cleanup failed for ticket {}: {}",
-                            pickedUp.getId(), e.getMessage());
-                        emitEvent("storage.cleanup_failed", Map.of(
-                            "ticketId", String.valueOf(pickedUp.getId()),
-                            "error", redactWithProvider(e.getMessage())));
-                    }
-                }
+                cleanupWorkspaceAfterRun(workspace, pickedUp.getId());
             }
             currentTicketId = null;
             currentStep = null;
@@ -2706,6 +2677,42 @@ public final class HarnessTicketProcessor implements TicketWorker {
         long exponent = Math.min(Math.max(0, attempt - 1), 10);
         long delay = Math.min(maxDelayMs, baseDelayMs * (1L << exponent));
         return attempt >= maxAttempts ? maxDelayMs : Math.max(0, delay);
+    }
+
+    /** fg-58: terminal cleanup, quarantining instead of deleting on a breach. */
+    void cleanupWorkspaceAfterRun(WorkspaceManager workspace, Long ticketId) {
+        if (workspace == null) return;
+        String key = String.valueOf(ticketId);
+        if (storageBudgetBreached) {
+            try {
+                Path target = workspace.quarantine();
+                emitEvent("storage.budget_exceeded", Map.of(
+                    "ticketId", key,
+                    "action", "quarantined",
+                    "path", target == null ? "" : target.getFileName().toString()));
+            } catch (IOException | RuntimeException e) {
+                log.warn("Could not quarantine workspace for ticket {}: {}",
+                    ticketId, e.getMessage());
+            }
+            return;
+        }
+        try {
+            long bytes = workspace.workspaceBytes();
+            long logBytes = safeLogsBytes(workspace);
+            emitEvent("storage.log_bytes", Map.of(
+                "ticketId", key,
+                "bytes", logBytes));
+            workspace.cleanup(key);
+            emitEvent("storage.cleanup", Map.of(
+                "ticketId", key,
+                "bytes", bytes,
+                "reason", "terminal run"));
+        } catch (IOException | RuntimeException e) {
+            log.warn("Workspace cleanup failed for ticket {}: {}", ticketId, e.getMessage());
+            emitEvent("storage.cleanup_failed", Map.of(
+                "ticketId", key,
+                "error", redactWithProvider(e.getMessage())));
+        }
     }
 
     void checkStorageMeter() {

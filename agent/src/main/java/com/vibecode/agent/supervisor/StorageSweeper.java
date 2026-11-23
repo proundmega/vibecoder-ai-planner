@@ -114,7 +114,7 @@ final class StorageSweeper {
             return walk.anyMatch(path -> ".active".equals(path.getFileName().toString())
                 && Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
                 && !olderThan(path, cutoff));
-        } catch (IOException e) {
+        } catch (IOException | java.io.UncheckedIOException e) {
             return true; // fail closed for an unreadable root
         }
     }
