@@ -93,6 +93,17 @@ class UtilityError extends AppError {
   }
 }
 
+/**
+ * Stored data violates an invariant the request cannot fix, for example a
+ * JSONB column that must hold an array. 500 (not 400) because the request was
+ * valid; the persisted row is not.
+ */
+class DataIntegrityError extends AppError {
+  constructor(message = 'Stored data is invalid') {
+    super(message, 500, 'DATA_INTEGRITY_ERROR');
+  }
+}
+
 module.exports = {
   AppError,
   NotFoundError,
@@ -106,4 +117,5 @@ module.exports = {
   RateLimitError,
   ServiceUnavailableError,
   UtilityError,
+  DataIntegrityError,
 };

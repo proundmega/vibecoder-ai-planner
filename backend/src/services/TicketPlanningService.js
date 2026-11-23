@@ -1,10 +1,11 @@
 
 const { pool } = require('../db');
+const { parseJsonValue } = require('../utils/jsonValue');
 const Ticket = require('../models/ticket');
 const TemplateService = require('./TemplateService');
 const TicketReadinessService = require('./TicketReadinessService');
 const logger = require('../utils/logger');
-const { NotFoundError, ValidationError, PlanningStatusError } = require('../errors/HttpError');
+const { NotFoundError, ValidationError, PlanningStatusError, DataIntegrityError } = require('../errors/HttpError');
 
 class TicketPlanningService {
   async list(ticketId, _userId) {
@@ -303,7 +304,13 @@ class TicketPlanningService {
       throw new NotFoundError(`Custom template not found: ${templateName}`);
     }
 
-    return JSON.parse(result.rows[0].file_definitions);
+    const fileDefinitions = parseJsonValue(result.rows[0].file_definitions, null);
+    if (!Array.isArray(fileDefinitions)) {
+      throw new DataIntegrityError(
+        `Custom template ${templateName} has invalid file_definitions; expected an array`
+      );
+    }
+    return fileDefinitions;
   }
 }
 

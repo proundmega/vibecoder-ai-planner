@@ -1,4 +1,6 @@
 const { pool } = require('../db');
+const { parseJsonValue } = require('../utils/jsonValue');
+const { DataIntegrityError } = require('../errors/HttpError');
 
 // fg-45: `requiredSections` is optional metadata. When present the readiness
 // evaluator checks the heading exists and is non-empty; when absent (custom
@@ -716,7 +718,12 @@ Additional notes go here.
       throw new NotFoundError('Template not found');
     }
     const template = templateResult.rows[0];
-    const fileDefinitions = JSON.parse(template.file_definitions);
+    const fileDefinitions = parseJsonValue(template.file_definitions, null);
+    if (!Array.isArray(fileDefinitions)) {
+      throw new DataIntegrityError(
+        `Template ${template.name} has invalid file_definitions; expected an array`
+      );
+    }
 
     const client = await pool.connect();
     try {

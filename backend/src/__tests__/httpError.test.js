@@ -1,4 +1,16 @@
-const { AppError, UtilityError } = require('../errors/HttpError');
+const { AppError, UtilityError, DataIntegrityError } = require('../errors/HttpError');
+
+describe('DataIntegrityError', () => {
+  it('is an operational 500 with a data-integrity code', () => {
+    const err = new DataIntegrityError('bad row');
+
+    expect(err).toBeInstanceOf(AppError);
+    expect(err.statusCode).toBe(500);
+    expect(err.code).toBe('DATA_INTEGRITY_ERROR');
+    expect(err.isOperational).toBe(true);
+    expect(err.message).toBe('bad row');
+  });
+});
 
 describe('UtilityError (BP-60)', () => {
   it('is exported from HttpError', () => {
