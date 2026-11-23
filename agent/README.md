@@ -215,8 +215,9 @@ Workspaces are runtime-scoped:
 - Disk/inode watermarks are 70/80/85/90/95%: warn, stop spawning, stop all
   idle children, stop the oldest idle child, require manual recovery (blocks
   new spawns).
-- A periodic `du`/inode meter enforces the per-runtime budget; a breach stops
-  the run with `storage_budget_exceeded` and quarantines the root.
+- A periodic `du`/inode meter measures the **whole runtime root including
+  `cache/`**; a breach stops the run with `storage_budget_exceeded`, quarantines
+  the ticket root and (at runtime concurrency 1) clears the shared cache.
 - Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
   10 GB, `light` 5 GB) or `AGENT_DISK_BUDGET_GB`.
 - `HARNESS_WORKSPACE_RETENTION_HOURS` is the workspace/runtime-root TTL;
@@ -231,6 +232,12 @@ agent/scripts/host-storage.sh --apply --legacy   # old /repos/<8hex>-* and temp 
 agent/scripts/host-storage.sh --apply --orphans  # /repos/orphans after the orphan TTL
 agent/scripts/host-storage.sh --dry-run --images
 ```
+
+Dangling-image pruning runs weekly only when the sandbox uses Docker, or when
+`AGENT_IMAGE_PRUNE_ENABLED=true` is set explicitly.
+
+A runtime-level `.active` marker is written at ticket pickup and cleared at the
+end, so an idle refresh cannot claim a runtime before the ticket marker exists.
 
 Storage events (`storage.workspace`, `storage.cleanup`,
 `storage.cleanup_failed`, `storage.refresh`, `storage.refresh_failed`,
@@ -327,7 +334,7 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 | `AGENT_STORAGE_MANUAL_PCT` | Manual-recovery watermark | `95` |
 | `AGENT_ORPHAN_TTL_HOURS` | Quarantine TTL | `24` |
 | `AGENT_STORAGE_MAX_INODES` | Optional per-ticket inode cap (0 = off) | `0` |
-| `AGENT_IMAGE_PRUNE_ENABLED` | Weekly dangling-image prune | `true` |
+| `AGENT_IMAGE_PRUNE_ENABLED` | Weekly dangling-image prune | `true` in Docker mode, `false` in host mode |
 | `AGENT_IMAGE_PRUNE_TIMEOUT_SECONDS` | Image prune timeout | `30` |
 | `AGENT_TMPDIR` | Host temp root scanned by `host-storage.sh --legacy` | `${TMPDIR:-/tmp}` |
 | `SUPERVISOR_MEMORY_BUDGET_MB` | Host budget shared across children (`0` = off) | `0` |

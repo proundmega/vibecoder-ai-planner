@@ -18,6 +18,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -68,7 +69,7 @@ class HarnessTicketProcessorStorageTest {
         ApiService apiService = mock(ApiService.class);
 
         WorkspaceManager workspace = mock(WorkspaceManager.class);
-        when(workspace.workspaceBytes()).thenReturn(21L * 1024L * 1024L * 1024L);
+        when(workspace.runtimeBytes()).thenReturn(21L * 1024L * 1024L * 1024L);
 
         HarnessTicketProcessor processor = processor(apiService, workspace);
 
@@ -93,6 +94,8 @@ class HarnessTicketProcessorStorageTest {
             repoBase.resolve("runtimes/12").toString(), "repo", false, null, null, "34");
         Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
         Files.writeString(manager.getWorkspaceRoot().resolve("repo/file.txt"), "x");
+        Files.createDirectories(manager.getCacheDir());
+        Files.writeString(manager.getCacheDir().resolve("cache.bin"), "x");
 
         HarnessTicketProcessor processor = processor(mock(ApiService.class), manager);
         set(processor, "storageBudgetBreached", true);
@@ -100,6 +103,7 @@ class HarnessTicketProcessorStorageTest {
         processor.cleanupWorkspaceAfterRun(manager, 34L);
 
         assertFalse(Files.exists(manager.getWorkspaceRoot()), "the breach does not delete");
+        assertFalse(Files.exists(manager.getCacheDir()), "single-runtime cache is cleared");
         Path orphans = repoBase.resolve("orphans");
         assertTrue(Files.isDirectory(orphans), "quarantine goes to /repos/orphans");
         try (var entries = Files.list(orphans)) {
@@ -107,13 +111,51 @@ class HarnessTicketProcessorStorageTest {
         }
     }
 
+    @Test
+    void runtimeActiveMarkerCoversThePickupToTicketMarkerWindow() throws Exception {
+        Path runtimeRoot = tempDir.resolve("repos/runtimes/12");
+        HarnessTicketProcessor processor = processor(
+            mock(ApiService.class), mock(WorkspaceManager.class), runtimeRoot.toString());
+
+        processor.writeRuntimeActiveMarker(7L);
+
+        Path marker = runtimeRoot.resolve(".active");
+        assertTrue(Files.exists(marker), "runtime marker written at pickup");
+        assertEquals("7", Files.readString(marker));
+
+        processor.clearRuntimeActiveMarker();
+
+        assertFalse(Files.exists(marker), "runtime marker cleared at the end");
+    }
+
+    @Test
+    void legacyRepoRootDoesNotGetARuntimeMarker() {
+        HarnessTicketProcessor processor = processor(
+            mock(ApiService.class), mock(WorkspaceManager.class),
+            tempDir.resolve("repos").toString());
+
+        assertNull(processor.runtimeActiveMarkerPath());
+    }
+
     private HarnessTicketProcessor processor(
         ApiService apiService,
         WorkspaceManager workspace
     ) {
+        return processor(apiService, workspace, null);
+    }
+
+    private HarnessTicketProcessor processor(
+        ApiService apiService,
+        WorkspaceManager workspace,
+        String repoCloneDir
+    ) {
         AgentConfig config = mock(AgentConfig.class);
         when(config.getRole()).thenReturn("worker");
         when(config.getRuntimeId()).thenReturn("12");
+        when(config.getRuntimeConcurrency()).thenReturn(1);
+        if (repoCloneDir != null) {
+            when(config.getRepoCloneDir()).thenReturn(repoCloneDir);
+        }
         return new HarnessTicketProcessor(
             config, apiService,
             new ProviderSettings("opencode-go", "secret", null, "beam-free", 4096),

@@ -119,6 +119,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private volatile HarnessEventContext eventContext;
     private volatile WorkspaceManager activeStorageWorkspace;
     private volatile Long activeStorageTicketId;
+    private volatile Path runtimeActiveMarker;
     private volatile boolean storageBudgetBreached;
     private volatile long lastStorageMeterAt;
     private volatile HarnessBudgetTracker budgetTracker;
@@ -864,6 +865,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         SandboxBashBridge bridge = null;
 
         try {
+            writeRuntimeActiveMarker(pickedUp.getId());
             List<String> planningDocs = planningDocFetcher.fetch(pickedUp.getId());
             if (planningDocs == null) {
                 planningDocs = List.of();
@@ -1211,6 +1213,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             handleFailure(pickedUp.getId(), failure);
         } finally {
+            clearRuntimeActiveMarker();
             stopHeartbeat();
             stopBudgetWatchdog();
             String terminalStatus = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
@@ -2694,6 +2697,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 log.warn("Could not quarantine workspace for ticket {}: {}",
                     ticketId, e.getMessage());
             }
+            cleanupCacheOnBreach(workspace);
             return;
         }
         try {
@@ -2715,6 +2719,60 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
     }
 
+    private void cleanupCacheOnBreach(WorkspaceManager workspace) {
+        if (config.getRuntimeConcurrency() > 1) {
+            log.info("Skipping shared cache cleanup: runtime concurrency is {}",
+                config.getRuntimeConcurrency());
+            return;
+        }
+        try {
+            workspace.cleanupCache();
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not clean the runtime cache: {}", e.getMessage());
+        }
+    }
+
+    /** fg-59: runtime-level marker, only for the /repos/runtimes/<id> layout. */
+    Path runtimeActiveMarkerPath() {
+        String dir = config.getRepoCloneDir();
+        if (dir == null || dir.isBlank()) return null;
+        Path root;
+        try {
+            root = java.nio.file.Paths.get(dir).toAbsolutePath().normalize();
+        } catch (RuntimeException e) {
+            return null;
+        }
+        Path parent = root.getParent();
+        if (parent == null || !"runtimes".equals(String.valueOf(parent.getFileName()))) {
+            return null;
+        }
+        return root.resolve(".active");
+    }
+
+    void writeRuntimeActiveMarker(Long ticketId) {
+        Path marker = runtimeActiveMarkerPath();
+        if (marker == null) return;
+        try {
+            Files.createDirectories(marker.getParent());
+            Files.writeString(marker, String.valueOf(ticketId),
+                java.nio.charset.StandardCharsets.UTF_8);
+            runtimeActiveMarker = marker;
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not write the runtime active marker: {}", e.getMessage());
+        }
+    }
+
+    void clearRuntimeActiveMarker() {
+        Path marker = runtimeActiveMarker;
+        runtimeActiveMarker = null;
+        if (marker == null) return;
+        try {
+            Files.deleteIfExists(marker);
+        } catch (IOException | RuntimeException e) {
+            log.debug("Could not clear the runtime active marker: {}", e.getMessage());
+        }
+    }
+
     void checkStorageMeter() {
         WorkspaceManager workspace = activeStorageWorkspace;
         if (workspace == null) return;
@@ -2732,7 +2790,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             long budgetGb = com.vibecode.agent.supervisor.StoragePolicy.budgetGbFor(
                 config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
             long maxInodes = envLong("AGENT_STORAGE_MAX_INODES", 0);
-            long used = workspace.workspaceBytes();
+            long used = workspace.runtimeBytes();
             long inodes = maxInodes > 0 ? workspace.workspaceInodes() : 0;
             boolean bytesBreach = storageBudgetExceeded(used, budgetGb);
             boolean inodeBreach = maxInodes > 0 && inodes > maxInodes;
@@ -2761,7 +2819,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private void assertStorageBudget(WorkspaceManager workspace, Ticket ticket) throws IOException {
         long budgetGb = com.vibecode.agent.supervisor.StoragePolicy.budgetGbFor(
             config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
-        long usedBytes = workspace.workspaceBytes();
+        long usedBytes = workspace.runtimeBytes();
         if (storageBudgetExceeded(usedBytes, budgetGb)) {
             storageBudgetBreached = true;
             java.util.Map<String, Object> payload = new LinkedHashMap<>();

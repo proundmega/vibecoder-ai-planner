@@ -72,6 +72,36 @@ class WorkspaceManagerStorageTest {
     }
 
     @Test
+    void runtimeBytesIncludeTheSharedCache() throws Exception {
+        Path runtimeRoot = tempDir.resolve("12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("ticket.txt"), "1234");
+        Files.createDirectories(manager.getCacheDir());
+        Files.writeString(manager.getCacheDir().resolve("cache.bin"), "1234567");
+
+        assertEquals(4, manager.workspaceBytes());
+        assertEquals(11, manager.runtimeBytes());
+    }
+
+    @Test
+    void cleanupCacheRemovesOnlyTheRuntimeCache() throws Exception {
+        Path runtimeRoot = tempDir.resolve("12");
+        WorkspaceManager manager = new WorkspaceManager(
+            runtimeRoot.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("ticket.txt"), "x");
+        Files.createDirectories(manager.getCacheDir());
+        Files.writeString(manager.getCacheDir().resolve("cache.bin"), "x");
+
+        manager.cleanupCache();
+
+        assertFalse(Files.exists(manager.getCacheDir()));
+        assertTrue(Files.exists(manager.getWorkspaceRoot()), "ticket root survives cache cleanup");
+    }
+
+    @Test
     void refusalToDeleteTheRepositoryBaseRoot() throws Exception {
         Path base = tempDir.resolve("repos");
         Files.createDirectories(base);

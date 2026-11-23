@@ -84,8 +84,7 @@ public final class Supervisor implements AutoCloseable {
     private final java.util.concurrent.atomic.AtomicBoolean imagePruneRunning =
         new java.util.concurrent.atomic.AtomicBoolean();
     private volatile boolean manualRecovery;
-    private volatile boolean imagePruneEnabled = !"false".equalsIgnoreCase(
-        System.getenv().getOrDefault("AGENT_IMAGE_PRUNE_ENABLED", "true"));
+    private volatile boolean imagePruneEnabled = imagePruneDefault(System.getenv());
     private volatile StorageEventSink storageEventSink = (type, payload) ->
         log.info("{} {}", type, payload);
     private volatile Path repoBaseOverride;
@@ -981,6 +980,21 @@ public final class Supervisor implements AutoCloseable {
     // ---------------------------------------------------------------------
     // Types
     // ---------------------------------------------------------------------
+
+    /**
+     * fg-59: image pruning is on by default only when the sandbox uses Docker.
+     * An explicit AGENT_IMAGE_PRUNE_ENABLED value always wins.
+     */
+    static boolean imagePruneDefault(Map<String, String> env) {
+        Map<String, String> source = env == null ? Map.of() : env;
+        String explicit = source.get("AGENT_IMAGE_PRUNE_ENABLED");
+        if (explicit != null && !explicit.isBlank()) {
+            String value = explicit.trim().toLowerCase(java.util.Locale.ROOT);
+            return value.equals("true") || value.equals("1")
+                || value.equals("yes") || value.equals("on");
+        }
+        return "docker".equalsIgnoreCase(source.getOrDefault("SANDBOX_MODE", "host"));
+    }
 
     /** fg-58 structured storage event destination. */
     @FunctionalInterface

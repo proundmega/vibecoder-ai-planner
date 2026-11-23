@@ -223,9 +223,19 @@ public class WorkspaceManager {
         cleanupPath(cloneRoot);
     }
 
+    /** Delete only the shared runtime cache. */
+    public void cleanupCache() throws IOException {
+        cleanupPath(getCacheDir());
+    }
+
     /** Bytes under the current ticket workspace. */
     public long workspaceBytes() throws IOException {
         return measureWorkspace(true);
+    }
+
+    /** Bytes under the whole runtime root, including the shared cache. */
+    public long runtimeBytes() throws IOException {
+        return measureTree(cloneRoot, true);
     }
 
     /** Inode count under the current ticket workspace (bounded to regular files/dirs). */
@@ -234,7 +244,10 @@ public class WorkspaceManager {
     }
 
     private long measureWorkspace(boolean bytes) throws IOException {
-        Path root = getWorkspaceRoot();
+        return measureTree(getWorkspaceRoot(), bytes);
+    }
+
+    private long measureTree(Path root, boolean bytes) throws IOException {
         if (root == null || !Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
             return 0;
         }

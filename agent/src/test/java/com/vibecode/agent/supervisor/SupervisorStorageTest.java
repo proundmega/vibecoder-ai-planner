@@ -165,6 +165,18 @@ class SupervisorStorageTest {
     }
 
     @Test
+    void imagePruneDefaultsToDockerModeOnly() {
+        assertFalse(Supervisor.imagePruneDefault(Map.of("SANDBOX_MODE", "host")));
+        assertTrue(Supervisor.imagePruneDefault(Map.of("SANDBOX_MODE", "docker")));
+        assertFalse(Supervisor.imagePruneDefault(Map.of(
+            "SANDBOX_MODE", "docker", "AGENT_IMAGE_PRUNE_ENABLED", "false")));
+        assertTrue(Supervisor.imagePruneDefault(Map.of(
+            "SANDBOX_MODE", "host", "AGENT_IMAGE_PRUNE_ENABLED", "true")));
+        assertTrue(Supervisor.imagePruneDefault(Map.of(
+            "AGENT_IMAGE_PRUNE_ENABLED", "1")));
+    }
+
+    @Test
     void samplesDiskAndInodePercentages() {
         StorageUsage usage = StorageUsage.sample(pidDir);
         assertTrue(usage.diskPct() >= 0 && usage.diskPct() <= 100);
