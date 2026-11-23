@@ -110,4 +110,5 @@ One row per requirement from `01`. A requirement with no row is not done.
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-22 | `feat/fg-44-storage-lifecycle` | Agent 960 tests (storage 15); host-storage 14/14; host-init 78/78; Compose base+sandbox | **Foundation split:** runtime/ticket keyed workspaces, keyed cleanup + active marker, budget helper/policy, host-init/Compose env, host-storage recovery and tests. Supervisor idle refresh, inode watermarks, periodic sweep/quarantine, periodic budget and the full event set are follow-up `fg-58`. |
+| 2026-11-22 | `85944c9` | Agent 960 tests (storage 15); host-storage 14/14; host-init 78/78; Compose base+sandbox | **Foundation split:** runtime/ticket keyed workspaces, keyed cleanup + active marker, budget helper/policy, host-init/Compose env, host-storage recovery and tests. Supervisor idle refresh, inode watermarks, periodic sweep/quarantine, periodic budget and the full event set are follow-up `fg-58`. |
+| 2026-11-22 | `04081bf` | fg-58 verification (`DONE/fg-58-supervisor-storage-lifecycle/03`) | **Lifecycle complete:** supervisor idle/max refresh, watermarks, periodic sweep/quarantine, periodic budget and storage events merged in #212. |

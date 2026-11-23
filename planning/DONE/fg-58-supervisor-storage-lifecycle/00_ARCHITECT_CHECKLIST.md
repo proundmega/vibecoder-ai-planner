@@ -1,7 +1,7 @@
 ---
 id: "fg-58"
 title: "Supervisor Storage Lifecycle and Events"
-status: in_review
+status: done
 priority: "P1"
 effort: "Large"
 scope: "Agent"
@@ -32,7 +32,7 @@ event path remain here.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Split recorded | fg-44 03/00; this suite | ☑ |
-| Implementation in review | PR #212 | ☑ |
+| Implementation merged | PR #212 (`04081bf`) | ☑ |
 | Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
@@ -51,6 +51,6 @@ event path remain here.
 
 ## Completion gate
 
-- [ ] Every `FR*` in `01` is met
-- [ ] `03` matrix green and Results dated
-- [ ] `status` is `done` after merge
+- [x] Every `FR*` in `01` is met
+- [x] `03` matrix green and Results dated
+- [x] `status` is `done` after merge

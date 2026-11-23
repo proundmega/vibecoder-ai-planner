@@ -82,3 +82,15 @@
 - **Merge**: `6c9f6fd`
 - **Date**: 2026-11-22
 - **Description**: `/api/health` startup gate before enrollment/declaration/child spawn, bounded timeout/offline opt-out, and post-start health monitoring that pauses declaration/reconcile while unhealthy.
+
+## fg-44: Agent Storage Lifecycle and Idle Refresh
+- **PR**: #209, #212
+- **Merge**: `85944c9`, `04081bf`
+- **Date**: 2026-11-22
+- **Description**: Runtime/ticket-keyed workspaces with safe cleanup and quarantine, role budgets, 2h idle/24h lifetime refresh, disk/inode watermarks, periodic runtime/legacy/temp/orphan sweep, storage events, `host-storage.sh` recovery, and Compose lifecycle env forwarding.
+
+## fg-58: Supervisor Storage Lifecycle and Events
+- **PR**: #212
+- **Merge**: `04081bf`
+- **Date**: 2026-11-22
+- **Description**: Supervisor tick that refreshes idle runtimes, enforces 70/80/85/90/95 watermarks, samples disk and inodes, sweeps old roots and quarantines them under `/repos/orphans`, enforces periodic budgets and emits the `storage.*` event set.

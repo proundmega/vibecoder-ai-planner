@@ -36,9 +36,8 @@ finish-failure mismatch can pass every current test.
 **Readiness:** fg-33 slices 1-3 are merged (#110). Phase A (#198) and the
 Phase B automated drills (#207) are merged; the remaining blocker is the
 disposable staging project/repo/node/runtime, provider key and GitHub App
-installation. fg-44's workspace foundation is merged (#209), but the supervisor
-lifecycle is still fg-58; the real pilot waits for that plus the staging
-credentials.
+installation. fg-44's workspace and supervisor lifecycle are merged (#209, #212);
+the real pilot waits for the staging credentials.
 The fg-54 clean cut replaced project-bound agents with enrolled nodes and
 declared runtimes; the fixtures, failure drills and cleanup SQL in this suite
 now use `agent_nodes`/`agent_runtimes` and `runtime_id`. See
@@ -66,7 +65,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D3 | Scheduled reaper wiring and guarded ticket release | fg-33 | Reliability | fg-33 (#110) | done |
 | D4 | Idempotent publish: branch/PR detection and duplicate-PR prevention | fg-33 | Reliability | fg-33 (#110) | done |
 | D5 | Dead-letter/adoption flow for operators | fg-33 | Operations | fg-33 (#110) | done |
-| D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | fg-44-agent-storage-lifecycle | open |
+| D6 | Full workspace inventory, retention metrics and scheduled pruning | fg-33 | Storage | DONE/fg-44-agent-storage-lifecycle | scheduled pruning done (#212); retention metrics remain |
 | D7 | Automated fault injection for `/finish`, lease loss, mid-run key expiry, crash/restart | self | Testing | bt-60 Phase B; lease-expiry/reaper adoption and idempotent publish are automated, while a real supervisor restart, finish failure and key-expiry remain staging | open |
 | D8 | Fully containerized real-agent e2e in CI | self | Testing | follow-up | open |
 | D9 | Sandbox isolation for the real staging run | fg-34 | Security | fg-34-harness-sandbox | done (#139); Docker mode is the staging default |
