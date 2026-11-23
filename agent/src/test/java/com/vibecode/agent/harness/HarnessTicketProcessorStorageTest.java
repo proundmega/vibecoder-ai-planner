@@ -1,6 +1,8 @@
 package com.vibecode.agent.harness;
 
 import com.vibecode.agent.config.AgentConfig;
+import com.vibecode.agent.model.Ticket;
+import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
 import com.vibecode.agent.service.WorkspaceManager;
@@ -15,11 +17,16 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -84,6 +91,9 @@ class HarnessTicketProcessorStorageTest {
         ArgumentCaptor<Map<String, Object>> body = ArgumentCaptor.forClass(Map.class);
         verify(apiService).emitHarnessEvent(body.capture());
         assertEquals("storage.budget_exceeded", body.getValue().get("type"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) body.getValue().get("payload");
+        assertEquals(21.0, ((Number) payload.get("usedGb")).doubleValue(), 0.01);
         assertTrue((Boolean) get(processor, "storageBudgetBreached"));
     }
 
@@ -112,6 +122,48 @@ class HarnessTicketProcessorStorageTest {
     }
 
     @Test
+    void runtimeMarkerExistsDuringProfileFetchAndClearsAfterwards() throws Exception {
+        Path runtimeRoot = tempDir.resolve("repos/runtimes/12");
+        Ticket ticket = new Ticket();
+        ticket.setId(1L);
+        ticket.setTitle("Add filtering");
+        ticket.setStatus("in_progress");
+        ApiService apiService = mock(ApiService.class);
+        when(apiService.pickUpTicket(1L)).thenReturn(ticket);
+        when(apiService.postMessage(any(), anyString(), anyString()))
+            .thenReturn(new TicketMessage());
+        when(apiService.releaseTicket(1L)).thenReturn(ticket);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        RepoProfileSource source = () -> {
+            entered.countDown();
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IllegalArgumentException("stop after the latch");
+        };
+        HarnessTicketProcessor processor = processor(
+            apiService, mock(WorkspaceManager.class), runtimeRoot.toString(), source);
+
+        Thread thread = new Thread(() -> processor.processTicket(ticket));
+        thread.start();
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS), "profile fetch reached");
+            assertTrue(Files.exists(runtimeRoot.resolve(".active")),
+                "marker is written before profile fetch");
+        } finally {
+            release.countDown();
+            thread.join(5000);
+        }
+
+        assertFalse(thread.isAlive(), "run exits after the profile failure");
+        assertFalse(Files.exists(runtimeRoot.resolve(".active")),
+            "marker is cleared on every exit");
+    }
+
+    @Test
     void runtimeActiveMarkerCoversThePickupToTicketMarkerWindow() throws Exception {
         Path runtimeRoot = tempDir.resolve("repos/runtimes/12");
         HarnessTicketProcessor processor = processor(
@@ -137,6 +189,15 @@ class HarnessTicketProcessorStorageTest {
         assertNull(processor.runtimeActiveMarkerPath());
     }
 
+    @Test
+    void sharedRuntimeDoesNotWriteASingleRootMarker() {
+        HarnessTicketProcessor processor = processor(
+            mock(ApiService.class), mock(WorkspaceManager.class),
+            tempDir.resolve("repos/runtimes/12").toString(), null, 2);
+
+        assertNull(processor.runtimeActiveMarkerPath());
+    }
+
     private HarnessTicketProcessor processor(
         ApiService apiService,
         WorkspaceManager workspace
@@ -149,10 +210,31 @@ class HarnessTicketProcessorStorageTest {
         WorkspaceManager workspace,
         String repoCloneDir
     ) {
+        return processor(apiService, workspace, repoCloneDir, null, 1);
+    }
+
+    private HarnessTicketProcessor processor(
+        ApiService apiService,
+        WorkspaceManager workspace,
+        String repoCloneDir,
+        RepoProfileSource source
+    ) {
+        return processor(apiService, workspace, repoCloneDir, source, 1);
+    }
+
+    private HarnessTicketProcessor processor(
+        ApiService apiService,
+        WorkspaceManager workspace,
+        String repoCloneDir,
+        RepoProfileSource source,
+        int concurrency
+    ) {
         AgentConfig config = mock(AgentConfig.class);
         when(config.getRole()).thenReturn("worker");
         when(config.getRuntimeId()).thenReturn("12");
-        when(config.getRuntimeConcurrency()).thenReturn(1);
+        when(config.getRuntimeConcurrency()).thenReturn(concurrency);
+        when(config.isDryRun()).thenReturn(false);
+        when(config.getGitHubBranchName(anyLong(), anyString())).thenReturn("branch");
         if (repoCloneDir != null) {
             when(config.getRepoCloneDir()).thenReturn(repoCloneDir);
         }
@@ -166,8 +248,11 @@ class HarnessTicketProcessorStorageTest {
             repoName -> workspace,
             (ignored, bridge, effectiveConfig) -> mock(HarnessClient.class),
             mock(PlanningDocFetcher.class),
+            source == null ? () -> null : source,
             mock(VerificationRunner.class),
-            new PublishingGuard(List.of(".env*")));
+            new PublishingGuard(List.of(".env*")),
+            SandboxConfig.defaults(),
+            SandboxRunnerFactory.hostOnly());
     }
 
     private static void set(Object target, String field, Object value) throws Exception {

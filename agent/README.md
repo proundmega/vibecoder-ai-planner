@@ -217,7 +217,9 @@ Workspaces are runtime-scoped:
   new spawns).
 - A periodic `du`/inode meter measures the **whole runtime root including
   `cache/`**; a breach stops the run with `storage_budget_exceeded`, quarantines
-  the ticket root and (at runtime concurrency 1) clears the shared cache.
+  the ticket root and (at runtime concurrency 1) clears the shared cache. A
+  legacy `/repos` clone root stays ticket-scoped, so it never counts every
+  workspace on the host.
 - Per-runtime budgets come from the role (`worker` 20 GB, `reviewer`/`planner`
   10 GB, `light` 5 GB) or `AGENT_DISK_BUDGET_GB`.
 - `HARNESS_WORKSPACE_RETENTION_HOURS` is the workspace/runtime-root TTL;
@@ -238,6 +240,8 @@ Dangling-image pruning runs weekly only when the sandbox uses Docker, or when
 
 A runtime-level `.active` marker is written at ticket pickup and cleared at the
 end, so an idle refresh cannot claim a runtime before the ticket marker exists.
+Shared runtimes (`AGENT_RUNTIME_CONCURRENCY > 1`) skip the single-root marker;
+per-child markers are tracked as fg-59 D4.
 
 Storage events (`storage.workspace`, `storage.cleanup`,
 `storage.cleanup_failed`, `storage.refresh`, `storage.refresh_failed`,

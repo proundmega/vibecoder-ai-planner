@@ -233,9 +233,24 @@ public class WorkspaceManager {
         return measureWorkspace(true);
     }
 
-    /** Bytes under the whole runtime root, including the shared cache. */
+    /** True when the clone root is the runtime-scoped /repos/runtimes/<id>. */
+    public boolean isRuntimeScoped() {
+        Path parent = cloneRoot.getParent();
+        return parent != null && "runtimes".equals(String.valueOf(parent.getFileName()));
+    }
+
+    /**
+     * Bytes under the whole runtime root, including the shared cache. A legacy
+     * /repos clone root is not a runtime, so this falls back to the ticket root
+     * and never counts every workspace on the host.
+     */
     public long runtimeBytes() throws IOException {
-        return measureTree(cloneRoot, true);
+        return isRuntimeScoped() ? measureTree(cloneRoot, true) : measureWorkspace(true);
+    }
+
+    /** Inodes under the runtime root (ticket root for the legacy layout). */
+    public long runtimeInodes() throws IOException {
+        return isRuntimeScoped() ? measureTree(cloneRoot, false) : measureWorkspace(false);
     }
 
     /** Inode count under the current ticket workspace (bounded to regular files/dirs). */

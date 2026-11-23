@@ -73,7 +73,7 @@ class WorkspaceManagerStorageTest {
 
     @Test
     void runtimeBytesIncludeTheSharedCache() throws Exception {
-        Path runtimeRoot = tempDir.resolve("12");
+        Path runtimeRoot = tempDir.resolve("repos/runtimes/12");
         WorkspaceManager manager = new WorkspaceManager(
             runtimeRoot.toString(), "repo", false, null, null, "34");
         Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
@@ -83,6 +83,20 @@ class WorkspaceManagerStorageTest {
 
         assertEquals(4, manager.workspaceBytes());
         assertEquals(11, manager.runtimeBytes());
+    }
+
+    @Test
+    void legacyCloneRootBudgetStaysTicketScoped() throws Exception {
+        Path repoBase = tempDir.resolve("repos");
+        WorkspaceManager manager = new WorkspaceManager(
+            repoBase.toString(), "repo", false, null, null, "34");
+        Files.createDirectories(manager.getWorkspaceRoot().resolve("repo"));
+        Files.writeString(manager.getWorkspaceRoot().resolve("ticket.txt"), "1234");
+        Files.createDirectories(repoBase.resolve("sibling/repo"));
+        Files.writeString(repoBase.resolve("sibling/repo/big.bin"), "1234567890");
+
+        assertEquals(4, manager.runtimeBytes(),
+            "legacy clone roots must not count every workspace");
     }
 
     @Test

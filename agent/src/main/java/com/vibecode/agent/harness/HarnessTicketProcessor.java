@@ -776,6 +776,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
         pickedUp.fillMissingFrom(ticket);
 
+        writeRuntimeActiveMarker(pickedUp.getId());
+        try {
+            processPickedUp(pickedUp);
+        } finally {
+            clearRuntimeActiveMarker();
+        }
+    }
+
+    private void processPickedUp(Ticket pickedUp) {
         currentTicketId = String.valueOf(pickedUp.getId());
         currentStep = "processing";
         budgetBreached = false;
@@ -865,7 +874,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
         SandboxBashBridge bridge = null;
 
         try {
-            writeRuntimeActiveMarker(pickedUp.getId());
             List<String> planningDocs = planningDocFetcher.fetch(pickedUp.getId());
             if (planningDocs == null) {
                 planningDocs = List.of();
@@ -1213,7 +1221,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             handleFailure(pickedUp.getId(), failure);
         } finally {
-            clearRuntimeActiveMarker();
             stopHeartbeat();
             stopBudgetWatchdog();
             String terminalStatus = pendingTerminalStatus == null ? "failed" : pendingTerminalStatus;
@@ -2734,6 +2741,11 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
     /** fg-59: runtime-level marker, only for the /repos/runtimes/<id> layout. */
     Path runtimeActiveMarkerPath() {
+        if (config.getRuntimeConcurrency() > 1) {
+            // Siblings share one runtime root and would overwrite/clear each
+            // other's marker; fg-59 D4 tracks per-child markers.
+            return null;
+        }
         String dir = config.getRepoCloneDir();
         if (dir == null || dir.isBlank()) return null;
         Path root;
@@ -2791,7 +2803,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 config.getRole(), System.getenv("AGENT_DISK_BUDGET_GB"));
             long maxInodes = envLong("AGENT_STORAGE_MAX_INODES", 0);
             long used = workspace.runtimeBytes();
-            long inodes = maxInodes > 0 ? workspace.workspaceInodes() : 0;
+            long inodes = maxInodes > 0 ? workspace.runtimeInodes() : 0;
             boolean bytesBreach = storageBudgetExceeded(used, budgetGb);
             boolean inodeBreach = maxInodes > 0 && inodes > maxInodes;
             if (bytesBreach || inodeBreach) {

@@ -35,4 +35,4 @@
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-23 | `feat/fg-59-storage-hardening` | Agent 983 (local); host-storage 20/20; host-init 78/78; Compose base+sandbox | Host-mode prune default, runtime-cache budget and safe cache cleanup, runtime-level pickup marker. |
+| 2026-11-23 | `feat/fg-59-storage-hardening` | Agent 986 (local); host-storage 20/20; host-init 78/78; Compose base+sandbox; planning 17 suites | Host-mode prune default, runtime-cache/inode budget and safe cache cleanup, pickup-time runtime marker (skipped at concurrency > 1; D4), legacy budget fallback. |

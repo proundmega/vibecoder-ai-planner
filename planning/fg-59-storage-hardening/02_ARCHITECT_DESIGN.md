@@ -20,11 +20,15 @@ after `workspaceFactory.apply`, leaving a narrow pickup→marker window.
   and use it for the initial and periodic budget meters. On a breach,
   quarantine the ticket and, only when `AGENT_RUNTIME_CONCURRENCY <= 1`, delete
   `<runtime>/cache`. Shared-cache eviction stays D3.
-- **Pickup marker:** `HarnessTicketProcessor` computes the marker path from
-  `config.getRepoCloneDir()` only when its parent is `runtimes`, writes it at
-  the start of the main run try-block and clears it in `finally`. The
-  supervisor already treats any fresh `.active` under the runtime root as
-  live.
+- **Pickup marker:** `HarnessTicketProcessor` writes the marker immediately
+  after `pickUpTicket` returns and clears it in an outer `finally`, so the
+  profile fetch and durable-start calls are covered. The path is used only when
+  the clone root is `/…/runtimes/<id>` and `AGENT_RUNTIME_CONCURRENCY == 1`;
+  shared runtimes skip the single-root marker (D4). The supervisor already
+  treats any fresh `.active` under the runtime root as live.
+- **Legacy layout:** `runtimeBytes()`/`runtimeInodes()` fall back to the ticket
+  root when the clone root is a legacy `/repos` root, so one workspace never
+  counts every sibling on the host.
 
 ## Failure modes
 
@@ -32,6 +36,7 @@ after `workspaceFactory.apply`, leaving a narrow pickup→marker window.
 |---|---|---|
 | Marker path escapes the runtime root | parent is not `runtimes` | Do not write a marker (legacy `/repos` mode) |
 | Cache deletion races a sibling child | `AGENT_RUNTIME_CONCURRENCY > 1` | Skip cache deletion; D3 |
+| Marker overwritten by a sibling child | `AGENT_RUNTIME_CONCURRENCY > 1` | Skip the single-root marker; D4 |
 | No Docker in host mode | prune process fails | Default off in host mode |
 | Budget event payload changes | tests | Assert `usedGb` reflects runtime bytes |
 

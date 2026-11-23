@@ -26,7 +26,7 @@ ticket closes the remaining non-blocking review residuals.
 | Claim | Evidence | Checked |
 |---|---|---|
 | Implementation in review | PR #217 | ☑ |
-| Verification results | `03` → Results | ☐ |
+| Verification results | `03` → Results | ☑ |
 
 ## Deferred register (canonical)
 
@@ -35,6 +35,7 @@ ticket closes the remaining non-blocking review residuals.
 | D1 | Retention metrics/inventory beyond the sweep | fg-58 | Observability | later | open |
 | D2 | Cross-host workspace migration | fg-40 | Infrastructure | fg-40 | open |
 | D3 | Shared-runtime cache eviction when concurrency > 1 | self | Storage | after the pilot | open |
+| D4 | Per-child pickup markers for `AGENT_RUNTIME_CONCURRENCY > 1` (the single-root marker is skipped there) | self | Reliability | after the pilot | open |
 
 ## Decisions needed from the user
 
