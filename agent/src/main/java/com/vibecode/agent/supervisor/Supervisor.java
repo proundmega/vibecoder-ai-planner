@@ -251,6 +251,7 @@ public final class Supervisor implements AutoCloseable {
     /** fg-58: perform the 85/90/95 actions, not just report them. */
     void applyStorageAction(StoragePolicy.StorageAction action) {
         if (action == null) return;
+        manualRecovery = action == StoragePolicy.StorageAction.MANUAL_RECOVERY;
         switch (action) {
             case CLEAN_IDLE -> stopIdleRuntimes(Integer.MAX_VALUE, "watermark_clean");
             case RECYCLE_OLDEST -> stopIdleRuntimes(1, "watermark_recycle");
@@ -292,10 +293,6 @@ public final class Supervisor implements AutoCloseable {
                         "runtime", child.name, "error", e.getMessage()));
                 }
             }
-        }
-        if (stopped > 0 && reason.startsWith("watermark")) {
-            emitStorage("storage.watermark", Map.of(
-                "level", reason, "stopped", stopped));
         }
     }
 

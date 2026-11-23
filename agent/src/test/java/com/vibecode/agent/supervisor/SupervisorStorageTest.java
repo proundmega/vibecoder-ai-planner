@@ -300,7 +300,14 @@ class SupervisorStorageTest {
             supervisor.reconcile();
             supervisor.applyStorageAction(StoragePolicy.StorageAction.MANUAL_RECOVERY);
 
-            supervisor.reconcile();
+            RuntimeConfig changed = RuntimeConfig.parse("""
+                [runtime "workers"]
+                role = worker
+                model = acme/changed
+                count = 1
+                project = 1
+                """);
+            supervisor.reconcile(changed);
 
             assertEquals(1, spawns.get(), "no new spawn at manual recovery");
         } finally {
