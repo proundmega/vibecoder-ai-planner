@@ -218,7 +218,7 @@ Postgres log shows a backend integration-test run against the same
 (`backend/src/__tests__/integration/setup.js:49`) runs `DROP SCHEMA public
 CASCADE` when `INTEGRATION_TESTS=1`, so that run can reset the shared
 database. The launching session is unidentified.
-The reset also removed the disposable GTD staging project 2 (`gtd-staging`);
+The reset also removed the GTD staging project 2 (outside bt-60, `gtd-staging`);
 GTD PR #19 in `proundmega/gtd` remains open. The checks below verify the
 resulting state and the follow-up removals.
 
@@ -231,8 +231,9 @@ resulting state and the follow-up removals.
 - Removed `pr207-pg` with its anonymous volume. The staging directory
   `/tmp/opencode/bt60-staging` (including `provider.env`,
   `provider-values.json`, `mint.json` and `enrollment-token.txt`) is gone; a
-  sweep of `/tmp` and the OpenCode storage found no `oc_s*` or
-  `CREDENTIAL_NAME=bt60` copies. The staging API/proxy, Redis container and
+  sweep of `/tmp` and the OpenCode storage found no live bt-60 credential
+  values (the literal `CREDENTIAL_NAME=bt60` string remains only in
+  docs/session history, and expired `enr_...` fixtures exist). The staging API/proxy, Redis container and
   `:bt60` images are gone.
 - `bt60-staging-pg` is retained as the shared local integration database and
   holds no staging rows. Do not treat it as disposable staging storage.
