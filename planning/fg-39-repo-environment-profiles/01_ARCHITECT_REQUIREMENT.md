@@ -41,7 +41,8 @@ the operator supplies.
 Slice 2 adds FR5: ephemeral service containers with health checks, a per-run
 internal network, generated test passwords and injected connection env. Slice 5
 adds the project settings profile editor for onboarding, drafts, dry runs,
-activation and version history.
+activation and version history. Slice 4a adds the prebuilt per-stack images,
+their pinned toolchains and stack-image detection (`fg-39b`).
 
 ## Assumptions
 
@@ -106,6 +107,9 @@ activation and version history.
 6. A dry run validates the profile before use.
 7. Node, Python, Java and monorepo examples pass.
 8. Missing profiles fall back to autodetection with a warning.
+9. Stack detection proposes a digest-pinned prebuilt image only when the
+   operator has configured that stack; otherwise it warns and requires an
+   admin-supplied pinned image.
 
 ## Out of scope
 

@@ -9,6 +9,9 @@ const {
   validateRepoProfile, normalizeExactHost,
 } = require('../validators/repoProfiles');
 const {
+  selectStackImage, stackImagesFromEnv,
+} = require('../config/stackImages');
+const {
   NotFoundError, ForbiddenError, ValidationError,
 } = require('../errors/HttpError');
 
@@ -276,11 +279,19 @@ async function detectStack(projectId) {
     verify.push('make test');
   }
 
+  const stackImage = selectStackImage(languages, stackImagesFromEnv());
+  if (!stackImage && languages.length > 0) {
+    warnings.push(
+      'No pinned stack image is configured for the detected stack; '
+      + 'set REPO_PROFILE_STACK_IMAGES or provide a digest-pinned image');
+  }
+
   const profile = {
     schema_version: 1,
     repo_url: repo.repoUrl.replace(/\.git$/, ''),
     base_branch: repo.defaultBranch || 'main',
     languages: [...new Set(languages)],
+    ...(stackImage ? { image: stackImage.image } : {}),
     setup: [...new Set(setup)],
     verify: [...new Set(verify)],
     caches: [],

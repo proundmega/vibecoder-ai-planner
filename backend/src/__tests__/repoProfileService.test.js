@@ -84,6 +84,7 @@ function validProfile(overrides = {}) {
 describe('RepoProfileService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    delete process.env.REPO_PROFILE_STACK_IMAGES;
     Project.findById.mockResolvedValue({ id: 1, ownerId: 7 });
     GitHubService.getProjectRepo.mockResolvedValue(REPO);
     GitHubService.readRepoFile.mockResolvedValue(null);
@@ -770,6 +771,81 @@ describe('RepoProfileService', () => {
       expect(result.detected).toBe(false);
       expect(result.profile.verify).toEqual([]);
       expect(result.warnings.join(' ')).toMatch(/add verify commands manually/);
+    });
+
+    it('proposes the configured pinned image for the detected stack', async () => {
+      const image = `registry.example/vibecode-sandbox-node:latest@sha256:${'a'.repeat(64)}`;
+      process.env.REPO_PROFILE_STACK_IMAGES = JSON.stringify({ node: image });
+      const files = {
+        'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      try {
+        const result = await RepoProfileService.detectStack(1);
+        expect(result.profile.languages).toEqual(['node']);
+        expect(result.profile.image).toBe(image);
+        expect(result.warnings.join(' ')).not.toMatch(/No pinned stack image/);
+      } finally {
+        delete process.env.REPO_PROFILE_STACK_IMAGES;
+      }
+    });
+
+    it('proposes the monorepo image when several languages are detected', async () => {
+      const image = `registry.example/vibecode-sandbox-monorepo:latest@sha256:${'b'.repeat(64)}`;
+      process.env.REPO_PROFILE_STACK_IMAGES = JSON.stringify({ monorepo: image });
+      const files = {
+        'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'package-lock.json': '{}',
+        'pom.xml': '<project/>',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      try {
+        const result = await RepoProfileService.detectStack(1);
+        expect(result.profile.languages).toEqual(expect.arrayContaining(['node', 'java']));
+        expect(result.profile.image).toBe(image);
+      } finally {
+        delete process.env.REPO_PROFILE_STACK_IMAGES;
+      }
+    });
+
+    it('warns when no pinned stack image is configured', async () => {
+      const files = {
+        'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.image).toBeUndefined();
+      expect(result.warnings.join(' ')).toMatch(/No pinned stack image/);
+    });
+
+    it('rejects an invalid stack-image configuration instead of guessing', async () => {
+      process.env.REPO_PROFILE_STACK_IMAGES = '{"node":"node:24"}';
+      const files = {
+        'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'package-lock.json': '{}',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      try {
+        await expect(RepoProfileService.detectStack(1))
+          .rejects.toThrow(/pinned by digest/);
+      } finally {
+        delete process.env.REPO_PROFILE_STACK_IMAGES;
+      }
     });
 
     it('requires a connected repository', async () => {

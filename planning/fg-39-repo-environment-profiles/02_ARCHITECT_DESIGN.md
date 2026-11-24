@@ -54,8 +54,17 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
 
 ## Images and caches
 
-- Start with a small set of prebuilt images: Node 24, Python 3.12, Java 21/17, Go, and a monorepo image with common tools.
-- Pin images by digest; rebuild on a schedule (fg-34 supply chain).
+- Ship one pinned stage per stack in `agent/sandbox-stacks.Dockerfile`: Node 24,
+  Python 3.12, Java 21 + Maven 3.9, Go 1.23 and a monorepo image with common
+  tools. `agent/scripts/build-sandbox-images.sh` builds every target.
+- Pin base images by digest; rebuild on a schedule (fg-34 supply chain). The
+  pin check covers the stack Dockerfile.
+- Detection maps one detected language to its stack and multiple languages to
+  the monorepo image. It proposes only digest-pinned references configured in
+  `REPO_PROFILE_STACK_IMAGES`; it never guesses a tag. Without a configured
+  image it warns and leaves the field for an admin-supplied pinned image.
+- Registry publishing, signing and the rebuild cadence remain part of the
+  fg-34 supply chain (D1).
 - Cache directories are mounted from a per-repo cache volume, keyed by repo + profile version + lockfile hash.
 - Cache is read-only for untrusted repo scripts where possible; writes go to a scratch layer, then a sanitized cache update.
 - Never share caches across projects.
