@@ -69,8 +69,8 @@ against the real app and Postgres. These drills are merged as `c0ff5c0`
 OpenCode/GitHub/PR path; they are not replaced by the automated drills.
 
 fg-44 (foundation #209, supervisor lifecycle #212) is merged, so the storage
-prerequisite is satisfied. The staging run was executed on 2026-11-23; the
-post-#220 rerun on merged `master` is the remaining formality.
+prerequisite is satisfied. The staging run was executed on 2026-11-23, and the
+post-#220 rerun on merged `master` completed on 2026-11-24 (`98d6f814`, PR #24).
 
 ## Happy path
 
@@ -152,7 +152,8 @@ Deviations from the procedure above:
   of the restricted proxy container, so the supervisor/daemon boundary is the
   staging host, not the production isolation.
 - **Git credential:** long-lived PAT in explicit local mode instead of a
-  repo-scoped GitHub App installation.
+  repo-scoped GitHub App installation; this is a documented local-mode
+  deviation and the disposable PAT must be revoked per `00` D15.
 - The repository has no `main`; the agent detected `vibecode/ticket-1-testnew`
   as the default branch, which is expected for this fixture.
 
@@ -185,7 +186,8 @@ Not yet reproduced here: `/finish` unavailable after PR and mid-run key expiry
 ## Cleanup
 
 - Close/delete the test PR and branch if safe.
-- Revoke the provider key and the GitHub App installation/token.
+- Revoke the provider key and the GitHub App installation/token (or delete the
+  local-mode PAT/project token).
 - Delete the test ticket/project/node/runtime and harness rows; use the IDs
   recorded above.
 - If cleanup is blocked, run:
@@ -205,10 +207,37 @@ DELETE FROM agent_nodes WHERE id = :node_id;
 
 (Use the actual test IDs; never run against production.)
 
+The executed 2026-11-24 cleanup is recorded below; the disposable PAT and
+provider key still require operator revocation (`00` D15).
+
+### Executed cleanup (2026-11-24)
+
+At the start of this follow-up the staging `vibecode` database already
+reported zero rows; the checks below verify that state. The PRs, branches,
+local credentials and staging-only runtime resources were removed in this
+follow-up.
+
+- Closed PRs #20-#24 on `proundmega/planner-test` and deleted their
+  `vibecode/ticket-*` branches.
+- Verified the disposable `vibecode` database is empty: `projects=0`,
+  `tickets=0`, `harness_runs=0`, `harness_checkpoints=0`, `harness_leases=0`,
+  `agent_nodes=0`, `agent_runtimes=0`, `provider_credentials=0`,
+  `project_repos=0`, `users=0`.
+- Removed the staged node credential and workspace copies, stopped the staging
+  API/proxy, and removed the staging-only Redis container and `:bt60` sandbox
+  images. The shared local Postgres container remains for the integration-test
+  database; the staging database is empty.
+- The provider credential and project repo token were stored only in the
+  deleted rows; the stored ciphertext is gone. The GitHub PAT was used in local
+  mode and the provider key is disposable; revoke both at GitHub/the provider
+  (`00` D15). Non-local runs require a repo-scoped GitHub App installation.
+
 ## Do not
 
 - Use a product ticket, repo, PR or database.
 - Reuse a long-lived GitHub token or an uncapped provider key.
+- Use the local-mode PAT outside the disposable local stack; it is documented
+  as D15 and must be revoked after staging.
 - Run an untrusted repo without the Docker sandbox and the D14 gate.
 - Treat the egress allowlist as a hard host boundary while D16 is open.
 - Expect the agent to ask questions until `fg-55` lands; Phase 1 denies
