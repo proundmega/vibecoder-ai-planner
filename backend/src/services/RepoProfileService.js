@@ -279,7 +279,12 @@ async function detectStack(projectId) {
     verify.push('make test');
   }
 
-  const stackImage = selectStackImage(languages, stackImagesFromEnv());
+  let stackImage;
+  try {
+    stackImage = selectStackImage(languages, stackImagesFromEnv());
+  } catch (error) {
+    throw new ValidationError(error.message);
+  }
   if (!stackImage && languages.length > 0) {
     warnings.push(
       'No pinned stack image is configured for the detected stack; '

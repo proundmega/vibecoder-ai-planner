@@ -49,7 +49,8 @@ detection) is in review as PR #232, and `caches` still fails closed until slice
 |---|---|---|
 | Slice 1 implementation | PR #161 | ☑ |
 | Slice 2/5 implementation | PR #167 (`867b9f7`) | ☑ |
-| Slice 3 implementation | PR #225; `03` → Results | ☑ |
+| Slice 3 implementation | PR #225 (`e2b94f1`); `03` → Results | ☑ |
+| Slice 4a images | PR #232; all five stages build; Python/monorepo pip+pytest smoke under the sanitized PATH | ☑ |
 | Verification results | `03` → Results | ☑ |
 | Remaining slices | FR3 (D7) in review; FR4 (D9) open | ☐ |
 

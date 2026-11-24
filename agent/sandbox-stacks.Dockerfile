@@ -10,9 +10,10 @@
 # propose the digest-pinned image:
 #   REPO_PROFILE_STACK_IMAGES='{"node":"...@sha256:...","python":"...@sha256:..."}'
 #
-# The monorepo stage is the fallback for repositories that detect more than
-# one language. Its distro toolchains are pinned by the base digest; the exact
-# Debian package versions are recorded in the image labels.
+# The monorepo stage assembles the same pinned toolchains as the per-stack
+# stages (Node 24, Python 3.12, Java 21 + Maven 3.9.11, Go 1.23) from their
+# pinned images. The Python stages expose pip/pytest through /usr/local/bin so
+# they work under the supervisor's sanitized PATH.
 
 FROM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS node
 LABEL com.vibecode.sandbox.stack="node"
@@ -27,13 +28,22 @@ USER 1000:1000
 
 FROM python:3.12-slim-bookworm@sha256:44cf1793efa7c7a476bb0f2cff81443f4a072c90c1cb127e2924933daa3e8c64 AS python
 LABEL com.vibecode.sandbox.stack="python"
-LABEL com.vibecode.sandbox.toolchains="python=3.12,pip,git,ripgrep"
+LABEL com.vibecode.sandbox.toolchains="python=3.12,pytest,git,ripgrep"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git bash ripgrep curl jq ca-certificates build-essential \
     && rm -rf /var/lib/apt/lists/*
 RUN if ! getent group 1000 >/dev/null; then groupadd -g 1000 sandbox; fi \
-    && if ! getent passwd 1000 >/dev/null; then useradd -u 1000 -g 1000 -m -s /bin/bash sandbox; fi \
+    && if ! getent passwd 1000 >/dev/null; then useradd -u 1000 -g 1000 -m -s /bin/bash sandbox; fi
+# The supervisor forces a fixed PATH that does not include ~/.local/bin or
+# /opt/venv/bin. A uid-1000-owned venv keeps pip installs writable, and the
+# console scripts are exposed through /usr/local/bin, which is on that PATH.
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --disable-pip-version-check pytest \
+    && chown -R 1000:1000 /opt/venv \
+    && ln -sf /opt/venv/bin/pip /usr/local/bin/pip \
+    && ln -sf /opt/venv/bin/pip3 /usr/local/bin/pip3 \
+    && ln -sf /opt/venv/bin/pytest /usr/local/bin/pytest \
     && mkdir -p /workspace && chown -R 1000:1000 /workspace
 WORKDIR /workspace
 USER 1000:1000
@@ -47,7 +57,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN if ! getent group 1000 >/dev/null; then groupadd -g 1000 sandbox; fi \
     && if ! getent passwd 1000 >/dev/null; then useradd -u 1000 -g 1000 -m -s /bin/bash sandbox; fi \
+    && for tool in java javac jar jshell; do ln -sf "/opt/java/openjdk/bin/${tool}" "/usr/local/bin/${tool}"; done \
     && mkdir -p /workspace && chown -R 1000:1000 /workspace
+# The Maven base image's entrypoint writes /root/.m2 before exec; the sandbox
+# runs as uid 1000, so clear it and let Maven use HOME (the runner sets /tmp).
+ENTRYPOINT []
 WORKDIR /workspace
 USER 1000:1000
 
@@ -60,18 +74,41 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN if ! getent group 1000 >/dev/null; then groupadd -g 1000 sandbox; fi \
     && if ! getent passwd 1000 >/dev/null; then useradd -u 1000 -g 1000 -m -s /bin/bash sandbox; fi \
+    && ln -sf /usr/local/go/bin/go /usr/local/bin/go \
+    && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
     && mkdir -p /workspace && chown -R 1000:1000 /workspace
 WORKDIR /workspace
 USER 1000:1000
 
-FROM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530 AS monorepo
+FROM python:3.12-slim-bookworm@sha256:44cf1793efa7c7a476bb0f2cff81443f4a072c90c1cb127e2924933daa3e8c64 AS monorepo
 LABEL com.vibecode.sandbox.stack="monorepo"
-LABEL com.vibecode.sandbox.toolchains="node=24,python3=3.11,java=17,go=1.19,maven=3.8,git,ripgrep"
+LABEL com.vibecode.sandbox.toolchains="node=24,python=3.12,java=21,maven=3.9.11,go=1.23,git,ripgrep"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git bash ripgrep curl jq ca-certificates build-essential \
-        python3 python3-pip python3-venv openjdk-17-jdk maven golang-go \
     && rm -rf /var/lib/apt/lists/*
-RUN mkdir -p /workspace && chown -R 1000:1000 /workspace
+# Assemble the same pinned toolchains as the per-stack stages.
+COPY --from=node /usr/local /usr/local
+COPY --from=java /opt/java/openjdk /opt/java/openjdk
+COPY --from=java /usr/share/maven /opt/maven
+COPY --from=go /usr/local/go /usr/local/go
+RUN if ! getent group 1000 >/dev/null; then groupadd -g 1000 sandbox; fi \
+    && if ! getent passwd 1000 >/dev/null; then useradd -u 1000 -g 1000 -m -s /bin/bash sandbox; fi \
+    && for tool in java javac jar jshell; do ln -sf "/opt/java/openjdk/bin/${tool}" "/usr/local/bin/${tool}"; done \
+    && ln -sf /usr/local/go/bin/go /usr/local/bin/go \
+    && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
+    && printf '#!/bin/sh\nexport JAVA_HOME=/opt/java/openjdk\nexec /opt/maven/bin/mvn "$@"\n' \
+        > /usr/local/bin/mvn \
+    && chmod 0755 /usr/local/bin/mvn
+# pip/pytest live in a uid-1000-owned venv and are exposed on the sanitized PATH.
+# The Debian pip package is deliberately not used: it is PEP 668 managed and
+# rejects `pip install` as uid 1000.
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --disable-pip-version-check pytest \
+    && chown -R 1000:1000 /opt/venv \
+    && ln -sf /opt/venv/bin/pip /usr/local/bin/pip \
+    && ln -sf /opt/venv/bin/pip3 /usr/local/bin/pip3 \
+    && ln -sf /opt/venv/bin/pytest /usr/local/bin/pytest \
+    && mkdir -p /workspace && chown -R 1000:1000 /workspace
 WORKDIR /workspace
 USER 1000:1000

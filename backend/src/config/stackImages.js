@@ -7,7 +7,9 @@
  * proposes an image when it is configured here; it never invents a tag.
  */
 
-const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/;
+// No userinfo and exactly one digest separator; registry ports and tags are allowed.
+const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/;
+const MAX_IMAGE_LENGTH = 500;
 
 const STACKS = Object.freeze({
   node: Object.freeze({
@@ -44,7 +46,7 @@ const STACKS = Object.freeze({
     dockerfile: 'agent/sandbox-stacks.Dockerfile',
     target: 'monorepo',
     tools: [
-      'node 24', 'python 3.11', 'java 17', 'go 1.19', 'maven 3.8',
+      'node 24', 'python 3.12', 'java 21', 'go 1.23', 'maven 3.9.11',
       'git', 'ripgrep', 'build-essential',
     ],
   }),
@@ -68,11 +70,13 @@ function parseStackImages(raw) {
     if (!Object.prototype.hasOwnProperty.call(STACKS, key)) {
       throw new Error(`REPO_PROFILE_STACK_IMAGES has an unknown stack: ${key}`);
     }
-    if (typeof value !== 'string' || !IMAGE.test(value.trim())) {
+    const image = typeof value === 'string' ? value.trim() : '';
+    if (!image || image.length > MAX_IMAGE_LENGTH || !IMAGE.test(image)) {
       throw new Error(
-        `REPO_PROFILE_STACK_IMAGES.${key} must be pinned by digest (@sha256:...)`);
+        `REPO_PROFILE_STACK_IMAGES.${key} must be pinned by digest `
+        + `(@sha256:..., max ${MAX_IMAGE_LENGTH} characters)`);
     }
-    images[key] = value.trim();
+    images[key] = image;
   }
   return images;
 }

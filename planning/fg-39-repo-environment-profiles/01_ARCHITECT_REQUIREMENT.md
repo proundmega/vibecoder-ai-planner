@@ -110,6 +110,8 @@ their pinned toolchains and stack-image detection (`fg-39b`).
 9. Stack detection proposes a digest-pinned prebuilt image only when the
    operator has configured that stack; otherwise it warns and requires an
    admin-supplied pinned image.
+10. Prebuilt images expose their declared toolchains on the supervisor's
+    sanitized PATH; Python `pip install` and `pytest` work as the sandbox user.
 
 ## Out of scope
 

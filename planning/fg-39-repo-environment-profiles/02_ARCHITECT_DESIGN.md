@@ -55,10 +55,17 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
 ## Images and caches
 
 - Ship one pinned stage per stack in `agent/sandbox-stacks.Dockerfile`: Node 24,
-  Python 3.12, Java 21 + Maven 3.9, Go 1.23 and a monorepo image with common
-  tools. `agent/scripts/build-sandbox-images.sh` builds every target.
+  Python 3.12, Java 21 + Maven 3.9.11, Go 1.23 and a monorepo image assembled
+  from those same pinned stages. `agent/scripts/build-sandbox-images.sh` builds
+  every target and `agent/scripts/smoke-sandbox-stacks.sh` checks the default
+  commands under the supervisor's sanitized PATH.
 - Pin base images by digest; rebuild on a schedule (fg-34 supply chain). The
   pin check covers the stack Dockerfile.
+- The supervisor replaces PATH with `/usr/local/sbin:/usr/local/bin:...`, so
+  every stack tool that lives elsewhere is exposed through `/usr/local/bin`.
+  Python stages use a uid-1000-owned `/opt/venv` with `pip` and `pytest`
+  symlinked into `/usr/local/bin`; this also avoids Debian's PEP 668
+  `externally-managed-environment` failure.
 - Detection maps one detected language to its stack and multiple languages to
   the monorepo image. It proposes only digest-pinned references configured in
   `REPO_PROFILE_STACK_IMAGES`; it never guesses a tag. Without a configured

@@ -27,6 +27,9 @@ Usage:
   scripts/build-sandbox-images.sh [--tag TAG]
   scripts/build-sandbox-images.sh --check-pins
 
+Smoke-test the Python/monorepo images with:
+  scripts/smoke-sandbox-stacks.sh
+
 Environment:
   SANDBOX_STACK_TAG   image tag (default: latest)
 
@@ -71,7 +74,10 @@ done
 
 cat <<'EOF'
 
-Built all stack images. Publish them (for example with docker push), then pin:
+Built all stack images. Smoke-test Python and monorepo with:
+  scripts/smoke-sandbox-stacks.sh --no-build
+
+Publish them (for example with docker push), then pin:
   docker buildx imagetools inspect <image>
 and set REPO_PROFILE_STACK_IMAGES to the @sha256 references.
 EOF
