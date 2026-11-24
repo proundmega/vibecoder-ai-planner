@@ -72,6 +72,20 @@ for target in python monorepo; do
         rm -rf smoke && mkdir smoke && cd smoke
         printf "pytest\n" > requirements.txt
         pip install --no-index -r requirements.txt
+        # A local wheel proves the venv is writable as uid 1000; skip a
+        # preinstalled pytest because that only proves the command resolves.
+        mkdir -p wheelhouse smoke_pkg-0.0.1.dist-info
+        printf "Metadata-Version: 2.1\nName: smoke-pkg\nVersion: 0.0.1\n" \
+            > smoke_pkg-0.0.1.dist-info/METADATA
+        printf "Wheel-Version: 1.0\nGenerator: vibecode-smoke\nRoot-Is-Purelib: true\nTag: py3-none-any\n" \
+            > smoke_pkg-0.0.1.dist-info/WHEEL
+        printf "def ok():\n    return True\n" > smoke_pkg.py
+        printf "smoke_pkg.py,,\nsmoke_pkg-0.0.1.dist-info/METADATA,,\nsmoke_pkg-0.0.1.dist-info/WHEEL,,\n" \
+            > smoke_pkg-0.0.1.dist-info/RECORD
+        python3 -m zipfile -c wheelhouse/smoke_pkg-0.0.1-py3-none-any.whl \
+            smoke_pkg.py smoke_pkg-0.0.1.dist-info
+        pip install --no-index --find-links wheelhouse smoke-pkg
+        python3 -c "import smoke_pkg; assert smoke_pkg.ok()"
         printf "def test_smoke():\n    assert True\n" > test_smoke.py
         pytest -q
     '

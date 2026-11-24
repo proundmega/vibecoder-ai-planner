@@ -765,6 +765,34 @@ describe('RepoProfileService', () => {
       ]));
     });
 
+    it('warns when a Gradle project has no wrapper', async () => {
+      const files = { 'build.gradle': 'plugins { id "java" }' };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.languages).toEqual(['java']);
+      expect(result.profile.verify).toEqual(['gradle test']);
+      expect(result.warnings.join(' ')).toMatch(/no \.\/gradlew.*Maven.*not Gradle/);
+    });
+
+    it('uses the Gradle wrapper without warning when present', async () => {
+      const files = {
+        'build.gradle': 'plugins { id "java" }',
+        'gradlew': '#!/bin/sh',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.verify).toEqual(['./gradlew test']);
+      expect(result.warnings.join(' ')).not.toMatch(/no \.\/gradlew/);
+    });
+
     it('warns instead of silently skipping verification when nothing is detected', async () => {
       const result = await RepoProfileService.detectStack(1);
 

@@ -155,6 +155,7 @@ describe('prebuilt stack images', () => {
     expect(script).toContain('--network none');
     expect(script).toContain('pip install --no-index -r requirements.txt');
     expect(script).toContain('pytest -q');
+    expect(script).toContain('smoke_pkg-0.0.1-py3-none-any.whl');
   });
 
   it('has a build helper that covers every stage and the pin check', () => {

@@ -255,7 +255,14 @@ async function detectStack(projectId) {
   }
   if (gradle) {
     const wrapper = await readOptionalFile(projectId, 'gradlew');
-    verify.push(wrapper ? './gradlew test' : 'gradle test');
+    if (wrapper) {
+      verify.push('./gradlew test');
+    } else {
+      verify.push('gradle test');
+      warnings.push(
+        'Gradle project has no ./gradlew; the prebuilt Java image provides Maven, '
+        + 'not Gradle. Add a wrapper or use a custom pinned image with Gradle');
+    }
   }
 
   const pyproject = await readOptionalFile(projectId, 'pyproject.toml');

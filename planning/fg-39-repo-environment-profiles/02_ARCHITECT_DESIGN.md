@@ -66,6 +66,10 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   Python stages use a uid-1000-owned `/opt/venv` with `pip` and `pytest`
   symlinked into `/usr/local/bin`; this also avoids Debian's PEP 668
   `externally-managed-environment` failure.
+- The Java image carries Maven, not Gradle. A Gradle project without `./gradlew`
+  gets a detection warning; use the wrapper or a custom pinned image with
+  Gradle. Real `npm install`/`mvn test`/`go test` coverage belongs to the D11
+  dry-run.
 - Detection maps one detected language to its stack and multiple languages to
   the monorepo image. It proposes only digest-pinned references configured in
   `REPO_PROFILE_STACK_IMAGES`; it never guesses a tag. Without a configured
