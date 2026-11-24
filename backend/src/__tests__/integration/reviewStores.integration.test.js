@@ -54,6 +54,29 @@ describe('fg-31a review stores (real DB)', () => {
       .toContain('uq_review_attempt_completed');
   });
 
+  test('migration enforces the store contracts at the database boundary', async () => {
+    const fixture = await createTicket();
+    try {
+      await expect(global.db.query(
+        `INSERT INTO ticket_review_attempts (ticket_id, reviewed_sha, status)
+         VALUES ($1, 'abc1234', 'started')`,
+        [fixture.ticketId]
+      )).rejects.toMatchObject({ code: '23514' });
+
+      const attempt = await ReviewAttemptStore.start({
+        ticketId: fixture.ticketId,
+        reviewedSha: SHA,
+      });
+      await expect(global.db.query(
+        `INSERT INTO ticket_review_findings (attempt_id, finding_key, severity, message)
+         VALUES ($1, 'k', 'high', 'not a contract severity')`,
+        [attempt.id]
+      )).rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
   test('persists an attempt lifecycle and resolves a duplicate completed SHA', async () => {
     const fixture = await createTicket();
     try {
@@ -85,6 +108,10 @@ describe('fg-31a review stores (real DB)', () => {
       });
       expect((await ReviewAttemptStore.findCompleted(fixture.ticketId, SHA)).id)
         .toBe(first.id);
+
+      const repeated = await ReviewAttemptStore.complete(first.id, { verdict: 'comment' });
+      expect(repeated.id).toBe(first.id);
+      expect(repeated.status).toBe('completed');
 
       const duplicate = await ReviewAttemptStore.start({
         ticketId: fixture.ticketId,
@@ -149,5 +176,59 @@ describe('fg-31a review stores (real DB)', () => {
     } finally {
       await cleanup(fixture);
     }
+  });
+
+  test('orders findings critical, warning, info', async () => {
+    const fixture = await createTicket();
+    try {
+      const attempt = await ReviewAttemptStore.start({
+        ticketId: fixture.ticketId,
+        reviewedSha: SHA,
+      });
+      await ReviewFindingStore.replaceForAttempt(attempt.id, [
+        { findingKey: 'info', severity: 'info', message: 'i' },
+        { findingKey: 'warning', severity: 'warning', message: 'w' },
+        { findingKey: 'critical', severity: 'critical', message: 'c' },
+      ]);
+
+      const rows = await ReviewFindingStore.listForAttempt(attempt.id);
+      expect(rows.map((row) => row.severity)).toEqual(['critical', 'warning', 'info']);
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
+  test('serialises concurrent finding replacements without a duplicate-key error', async () => {
+    const fixture = await createTicket();
+    try {
+      const attempt = await ReviewAttemptStore.start({
+        ticketId: fixture.ticketId,
+        reviewedSha: SHA,
+      });
+
+      const writers = Array.from({ length: 8 }, (_, writer) => [
+        { findingKey: 'shared:a', severity: 'warning', message: `writer ${writer} a` },
+        { findingKey: 'shared:b', severity: 'critical', message: `writer ${writer} b` },
+        { findingKey: 'shared:c', severity: 'info', message: `writer ${writer} c` },
+      ]);
+      const results = await Promise.allSettled(
+        writers.map((findings) => ReviewFindingStore.replaceForAttempt(attempt.id, findings))
+      );
+
+      expect(results.filter((result) => result.status === 'rejected')).toEqual([]);
+      const rows = await ReviewFindingStore.listForAttempt(attempt.id);
+      expect(rows).toHaveLength(3);
+      expect(rows.map((row) => row.finding_key).sort())
+        .toEqual(['shared:a', 'shared:b', 'shared:c']);
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
+  test('rejects findings for a missing attempt', async () => {
+    await expect(ReviewFindingStore.replaceForAttempt(
+      '33333333-3333-4333-8333-333333333333',
+      []
+    )).rejects.toMatchObject({ statusCode: 404 });
   });
 });

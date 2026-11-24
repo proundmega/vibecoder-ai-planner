@@ -71,9 +71,11 @@ describe('review attempt migration (fg-31a FR7/FR8)', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS ticket_review_attempts');
     expect(sql).toContain("status IN ('started', 'completed', 'failed')");
     expect(sql).toContain("verdict IN ('approve', 'request_changes', 'comment')");
+    expect(sql).toContain("reviewed_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'");
     expect(sql).toContain('uq_review_attempt_completed');
     expect(sql).toContain("WHERE status = 'completed'");
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS ticket_review_findings');
+    expect(sql).toContain("severity IN ('critical', 'warning', 'info')");
     expect(sql).toContain('UNIQUE (attempt_id, finding_key)');
     expect(sql).toContain('ON DELETE CASCADE');
   });
@@ -138,6 +140,17 @@ describe('ReviewAttemptStore (fg-31a)', () => {
     expect(query).toContain("status = 'completed'");
     expect(query).toContain('COALESCE($4, github_review_id)');
     expect(params).toEqual([ATTEMPT_ID, 'approve', verification, 9001, 10, 20, 300]);
+  });
+
+  it('returns the existing attempt when it was already completed', async () => {
+    const completed = attempt({ status: 'completed', verdict: 'approve' });
+    pool.query
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE matched no row
+      .mockResolvedValueOnce({ rows: [completed] }); // findById
+
+    const row = await ReviewAttemptStore.complete(ATTEMPT_ID, { verdict: 'approve' });
+
+    expect(row).toEqual(completed);
   });
 
   it('returns the existing completed attempt on a duplicate-key race', async () => {
@@ -225,6 +238,7 @@ describe('ReviewFindingStore (fg-31a)', () => {
     const expected = finding();
     const client = { query: jest.fn() };
     client.query
+      .mockResolvedValueOnce({ rows: [{ id: ATTEMPT_ID }] }) // FOR UPDATE lock
       .mockResolvedValueOnce({ rows: [] }) // DELETE
       .mockResolvedValueOnce({ rows: [expected] });
     transaction.mockImplementationOnce(async (fn) => fn(client));
@@ -240,10 +254,14 @@ describe('ReviewFindingStore (fg-31a)', () => {
 
     expect(rows).toEqual([expected]);
     expect(client.query.mock.calls[0]).toEqual([
+      'SELECT id FROM ticket_review_attempts WHERE id = $1 FOR UPDATE',
+      [ATTEMPT_ID],
+    ]);
+    expect(client.query.mock.calls[1]).toEqual([
       'DELETE FROM ticket_review_findings WHERE attempt_id = $1',
       [ATTEMPT_ID],
     ]);
-    const [query, params] = client.query.mock.calls[1];
+    const [query, params] = client.query.mock.calls[2];
     expect(query).toContain('INSERT INTO ticket_review_findings');
     expect(params).toEqual([
       ATTEMPT_ID,
@@ -257,16 +275,31 @@ describe('ReviewFindingStore (fg-31a)', () => {
   });
 
   it('allows an empty finding set to clear the attempt', async () => {
-    const client = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+    const client = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ rows: [{ id: ATTEMPT_ID }] })
+        .mockResolvedValue({ rows: [] }),
+    };
     transaction.mockImplementationOnce(async (fn) => fn(client));
 
     await ReviewFindingStore.replaceForAttempt(ATTEMPT_ID, []);
 
-    expect(client.query).toHaveBeenCalledTimes(1);
+    expect(client.query).toHaveBeenCalledTimes(2);
     expect(client.query).toHaveBeenCalledWith(
       'DELETE FROM ticket_review_findings WHERE attempt_id = $1',
       [ATTEMPT_ID]
     );
+  });
+
+  it('rejects a missing attempt instead of returning an empty list', async () => {
+    const client = {
+      query: jest.fn().mockResolvedValueOnce({ rows: [] }), // lock matched nothing
+    };
+    transaction.mockImplementationOnce(async (fn) => fn(client));
+
+    await expect(ReviewFindingStore.replaceForAttempt(ATTEMPT_ID, []))
+      .rejects.toThrow(`Review attempt ${ATTEMPT_ID} was not found`);
+    expect(client.query).toHaveBeenCalledTimes(1);
   });
 
   it('rejects malformed and duplicate findings before opening a transaction', async () => {
@@ -295,9 +328,9 @@ describe('ReviewFindingStore (fg-31a)', () => {
     const rows = await ReviewFindingStore.listForAttempt(ATTEMPT_ID);
 
     expect(rows).toEqual([expected]);
-    expect(pool.query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM ticket_review_findings'),
-      [ATTEMPT_ID]
-    );
+    const [query, params] = pool.query.mock.calls[0];
+    expect(query).toContain('CASE severity');
+    expect(query).toContain('WHEN \'critical\' THEN 0');
+    expect(params).toEqual([ATTEMPT_ID]);
   });
 });

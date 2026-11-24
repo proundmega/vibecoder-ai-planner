@@ -149,7 +149,10 @@ async function complete(id, {
         RETURNING *`,
       [attemptId, result, verification, reviewId, input, output, duration]
     );
-    return rows[0] || null;
+    if (rows[0]) return rows[0];
+    // Already completed (or concurrently completed) is an idempotent success.
+    const current = await findById(attemptId);
+    return current && current.status === 'completed' ? current : null;
   } catch (error) {
     if (error.code !== '23505') throw error;
     const duplicate = await findById(attemptId);

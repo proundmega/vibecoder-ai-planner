@@ -1,6 +1,6 @@
 const { transaction } = require('../db');
 const { pool } = require('../db');
-const { ValidationError } = require('../errors/HttpError');
+const { NotFoundError, ValidationError } = require('../errors/HttpError');
 
 /**
  * fg-31a: structured review findings.
@@ -95,6 +95,15 @@ async function replaceForAttempt(attemptId, findings = []) {
   const rowsToWrite = normaliseFindings(findings);
 
   return transaction(async (client) => {
+    // Serialise concurrent replacements for one attempt; also rejects an
+    // attempt that does not exist instead of silently returning [].
+    const locked = await client.query(
+      'SELECT id FROM ticket_review_attempts WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    if (locked.rows.length === 0) {
+      throw new NotFoundError(`Review attempt ${id} was not found`);
+    }
     await client.query('DELETE FROM ticket_review_findings WHERE attempt_id = $1', [id]);
     const saved = [];
     for (const finding of rowsToWrite) {
@@ -124,7 +133,14 @@ async function listForAttempt(attemptId) {
   const { rows } = await pool.query(
     `SELECT * FROM ticket_review_findings
       WHERE attempt_id = $1
-      ORDER BY severity, file NULLS LAST, line NULLS LAST, finding_key`,
+      ORDER BY CASE severity
+                 WHEN 'critical' THEN 0
+                 WHEN 'warning' THEN 1
+                 ELSE 2
+               END,
+               file NULLS LAST,
+               line NULLS LAST,
+               finding_key`,
     [id]
   );
   return rows;

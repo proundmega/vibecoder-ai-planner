@@ -4,7 +4,7 @@
 CREATE TABLE IF NOT EXISTS ticket_review_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-  reviewed_sha TEXT NOT NULL CHECK (char_length(reviewed_sha) > 0),
+  reviewed_sha TEXT NOT NULL CHECK (reviewed_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'),
   status TEXT NOT NULL CHECK (status IN ('started', 'completed', 'failed')),
   round INT NOT NULL DEFAULT 0 CHECK (round >= 0),
   verdict TEXT CHECK (verdict IN ('approve', 'request_changes', 'comment')),
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS ticket_review_findings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   attempt_id UUID NOT NULL REFERENCES ticket_review_attempts(id) ON DELETE CASCADE,
   finding_key TEXT NOT NULL CHECK (char_length(finding_key) > 0),
-  severity TEXT NOT NULL CHECK (char_length(severity) > 0),
+  severity TEXT NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
   file TEXT,
   line INT CHECK (line IS NULL OR line > 0),
   message TEXT NOT NULL CHECK (char_length(message) > 0),
