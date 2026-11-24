@@ -66,6 +66,24 @@ class AgentConfigTest {
     }
 
     @Test
+    void testGitAliasesAndRepoMetadata() {
+        AgentConfig config = new AgentConfig();
+
+        assertEquals(config.getGitHubAuthMode(), config.getGitAuthMode());
+        assertEquals(config.getGitHubToken(), config.getGitToken());
+        assertEquals("github", config.getRepoProvider());
+        assertEquals(config.getGitAuthMode(), config.getRepoAuthMode());
+
+        config.setRepoUrl("https://git.example.com/group/repo.git");
+        config.setRepoProvider("Forgejo");
+        config.setRepoAuthMode("PAT");
+
+        assertEquals("https://git.example.com/group/repo.git", config.getRepoUrl());
+        assertEquals("forgejo", config.getRepoProvider());
+        assertEquals("pat", config.getRepoAuthMode());
+    }
+
+    @Test
     void testToStringNeverIncludesSecrets() {
         AgentConfig config = new AgentConfig();
         String text = config.toString();

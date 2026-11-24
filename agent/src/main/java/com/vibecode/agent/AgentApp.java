@@ -146,18 +146,21 @@ public class AgentApp {
     ) {
         RedactionRegistry.register(config.getEnrollmentToken(), config.getAiApiKey(),
             System.getenv("GITHUB_TOKEN"), githubToken);
+        GitHubService gitHubService = null;
+        GitService gitService = null;
         if (providerSettings != null) {
             RedactionRegistry.register(providerSettings.apiKey());
         }
         if (tokenProvider != null) {
             RedactionRegistry.register(tokenProvider.knownTokens());
         }
-        GitHubService gitHubService = new GitHubService(
-            tokenProvider, config.getRepoOwner(), config.getRepoName());
+        GitCredentialProvider credentials = GitCredentialProvider.fromConfig(config);
+        gitHubService = credentials.createGitHubService(tokenProvider);
+        gitService = credentials.createGitService(gitHubService);
         harnessConfig.validate();
         TicketWorker ticketWorker = new HarnessTicketProcessor(
             config, apiService, providerSettings, gitHubService,
-            tokenProvider, githubToken, harnessConfig);
+            tokenProvider, githubToken, harnessConfig, gitService);
         return new GitHubWiring(gitHubService, ticketWorker);
     }
 
@@ -278,6 +281,15 @@ public class AgentApp {
         if (repoConfig == null) return false;
         Object url = repoConfig.get("repoUrl");
         if (url == null) return false;
+        config.setRepoUrl(String.valueOf(url));
+        Object provider = repoConfig.get("provider");
+        if (provider instanceof String value && !value.isBlank()) {
+            config.setRepoProvider(value);
+        }
+        Object authMode = repoConfig.get("authMode");
+        if (authMode instanceof String value && !value.isBlank()) {
+            config.setRepoAuthMode(value);
+        }
         return RepoCoordinates.parse(String.valueOf(url)).map(coordinates -> {
             config.setRepoCoordinates(coordinates.owner(), coordinates.name());
             log.info("Using project repository {}/{} from the backend", coordinates.owner(), coordinates.name());

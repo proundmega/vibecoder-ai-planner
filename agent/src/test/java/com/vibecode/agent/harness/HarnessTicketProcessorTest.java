@@ -6,6 +6,7 @@ import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
+import com.vibecode.agent.service.GitService;
 import com.vibecode.agent.service.ReadinessException;
 import com.vibecode.agent.service.WorkspaceManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -1100,6 +1101,26 @@ class HarnessTicketProcessorTest {
         verify(apiService).updateTicketStatus(1L, "review");
         verify(harness).close();
         verify(workspace).cleanup("1");
+    }
+
+    @Test
+    void branchOnlyPublishSkipsTheReviewRequestAndMarksReview() throws Exception {
+        processor.setGitService(GitService.branchOnly(
+            "local", "ssh://git@git.example.com/group/repo.git", "repo"));
+
+        processor.processTicket(ticket());
+
+        verify(workspace).cloneRepo(
+            eq("ssh://git@git.example.com/group/repo.git"),
+            eq("vibecode/ticket-1-add-filtering"),
+            isNull(),
+            any(Duration.class));
+        verify(workspace).commitAndPushStaged(
+            "feat: Add filtering", "vibecode/ticket-1-add-filtering");
+        verify(gitHubService, never()).createPullRequest(
+            anyString(), anyString(), anyString(), anyString());
+        verify(apiService, never()).updateTicketPrUrl(anyLong(), anyString());
+        verify(apiService).updateTicketStatus(1L, "review");
     }
 
     @Test
