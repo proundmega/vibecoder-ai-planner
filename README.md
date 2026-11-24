@@ -24,9 +24,11 @@ bash scripts/verify-local.sh      # local Node/Java checks (not the full Jenkins
 `verify-local.sh --quick` skips coverage and the Java agent tests. `--agent`
 installs missing dependencies, runs only the changed layers and requires a
 changed/new test file; the coding harness uses it as
-`HARNESS_VERIFY_COMMANDS='bash scripts/verify-local.sh --agent'`. Neither mode
-runs Docker integration, Cypress, agent packaging/image or sandbox checks; run
-the Jenkins pipeline or the dedicated commands for those.
+`HARNESS_VERIFY_COMMANDS='bash scripts/verify-local.sh --agent'`. The agent
+layer needs Maven/JDK; missing backend/frontend dependencies are installed with
+`npm ci`, so the first run needs network access. Neither mode runs Docker
+integration, Cypress, agent packaging/image or sandbox checks; run the Jenkins
+pipeline or the dedicated commands for those.
 
 ### Docker Setup (Recommended)
 

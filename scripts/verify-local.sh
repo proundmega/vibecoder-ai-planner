@@ -93,8 +93,8 @@ step() {
 
 changed_paths() {
   {
-    git -C "$ROOT" diff --name-only
-    git -C "$ROOT" diff --cached --name-only
+    git -C "$ROOT" diff --name-only --diff-filter=ACMR
+    git -C "$ROOT" diff --cached --name-only --diff-filter=ACMR
     git -C "$ROOT" ls-files --others --exclude-standard
   } | sed '/^[[:space:]]*$/d' | sort -u
 }
@@ -115,48 +115,58 @@ run_agent_mode() {
     return 1
   fi
 
-  local backend=0 frontend=0 agent=0 scripts=0 shared=0
-  local has_code_test=0 has_script_test=0
+  local backend=0 frontend=0 agent=0 scripts=0 planning=0 shared=0
+  local backend_test=0 frontend_test=0 agent_test=0 scripts_test=0
   local path
   for path in "${changed[@]}"; do
     case "$path" in
+      planning/*) planning=1 ;;
+      docs/*|*.md|README*|AGENTS.md|FUTURE_IDEAS.txt|PENDING.txt|tickets.txt|DREAM*|.gitignore|LICENSE) ;;
       backend/*) backend=1 ;;
       frontend/*) frontend=1 ;;
       agent/*) agent=1 ;;
       scripts/*) scripts=1 ;;
-      planning/*|docs/*|*.md|README*|AGENTS.md|FUTURE_IDEAS.txt|PENDING.txt|tickets.txt|DREAM*) ;;
       *) shared=1 ;;
     esac
     case "$path" in
-      backend/src/__tests__/*.test.js|frontend/src/__tests__/*.test.js|frontend/src/__tests__/*.test.ts|frontend/src/__tests__/*.test.tsx|agent/src/test/*Test.java) has_code_test=1 ;;
-      scripts/*.test.sh) has_script_test=1 ;;
+      backend/*.test.js|backend/*.test.ts|backend/*.test.sh) backend_test=1 ;;
+      frontend/*.test.js|frontend/*.test.ts|frontend/*.test.tsx|frontend/*.cy.js|frontend/*.cy.ts|frontend/*.test.sh) frontend_test=1 ;;
+      agent/*Test.java|agent/*.test.sh) agent_test=1 ;;
+      scripts/*.test.sh|*.test.sh) scripts_test=1 ;;
     esac
   done
 
-  if [ "$shared" -eq 1 ]; then
-    backend=1
-    frontend=1
-    agent=1
+  if [ "$backend" -eq 1 ] && [ "$backend_test" -eq 0 ]; then
+    echo "error: --agent requires a changed/new backend test (backend/src/__tests__, backend/src/middleware or backend/*.test.sh)" >&2
+    return 1
   fi
-
-  if [ "$backend" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$agent" -eq 1 ]; then
-    if [ "$has_code_test" -eq 0 ]; then
-      echo "error: --agent requires a changed/new test file under backend/src/__tests__, frontend/src/__tests__ or agent/src/test" >&2
-      return 1
-    fi
-  elif [ "$scripts" -eq 1 ] && [ "$has_script_test" -eq 0 ]; then
+  if [ "$frontend" -eq 1 ] && [ "$frontend_test" -eq 0 ]; then
+    echo "error: --agent requires a changed/new frontend test (frontend/src/__tests__ or frontend/cypress)" >&2
+    return 1
+  fi
+  if [ "$agent" -eq 1 ] && [ "$agent_test" -eq 0 ]; then
+    echo "error: --agent requires a changed/new agent test (agent/src/test or agent/*.test.sh)" >&2
+    return 1
+  fi
+  if [ "$scripts" -eq 1 ] && [ "$scripts_test" -eq 0 ]; then
     echo "error: --agent requires a changed/new scripts/*.test.sh for a scripts-only change" >&2
+    return 1
+  fi
+  if [ "$shared" -eq 1 ] && [ "$backend_test" -eq 0 ] && [ "$frontend_test" -eq 0 ] \
+      && [ "$agent_test" -eq 0 ] && [ "$scripts_test" -eq 0 ]; then
+    echo "error: --agent requires a changed/new test file for a shared root change" >&2
     return 1
   fi
 
   local -a layers=()
-  [ "$backend" -eq 1 ] && layers+=(backend)
-  [ "$frontend" -eq 1 ] && layers+=(frontend)
-  [ "$agent" -eq 1 ] && layers+=(agent)
-  [ "$scripts" -eq 1 ] && layers+=(scripts)
+  if [ "$backend" -eq 1 ] || [ "$shared" -eq 1 ]; then layers+=(backend); fi
+  if [ "$frontend" -eq 1 ] || [ "$shared" -eq 1 ]; then layers+=(frontend); fi
+  if [ "$agent" -eq 1 ] || [ "$shared" -eq 1 ]; then layers+=(agent); fi
+  if [ "$scripts" -eq 1 ]; then layers+=(scripts); fi
+  if [ "$planning" -eq 1 ]; then layers+=(planning); fi
 
   if [ "${#layers[@]}" -eq 0 ]; then
-    echo "error: --agent found no runnable layer (only planning or docs changed)" >&2
+    echo "error: --agent found no runnable layer (only docs changed)" >&2
     return 1
   fi
 
@@ -164,7 +174,7 @@ run_agent_mode() {
     echo "agent verification plan"
     echo "changed: ${changed[*]}"
     echo "layers: ${layers[*]}"
-    echo "code-test: $has_code_test script-test: $has_script_test"
+    echo "tests: backend=$backend_test frontend=$frontend_test agent=$agent_test scripts=$scripts_test"
     return 0
   fi
 
@@ -172,11 +182,18 @@ run_agent_mode() {
     case "$layer" in
       backend)
         ensure_npm_deps backend jest
-        (cd "$ROOT/backend" && npm run lint && node --check src/index.js && npm test)
+        (cd "$ROOT/backend" && npm run lint && node --check src/index.js \
+          && bash integration-test/helpers_unit.test.sh && npm test)
+        for path in "${changed[@]}"; do
+          case "$path" in
+            backend/*.test.sh) (cd "$ROOT" && bash "$path") ;;
+          esac
+        done
         ;;
       frontend)
         ensure_npm_deps frontend vitest
-        (cd "$ROOT/frontend" && npm run lint && npm run typecheck && npm test -- --run)
+        (cd "$ROOT/frontend" && npm run lint && npm run typecheck \
+          && npm test -- --run && npm run build)
         ;;
       agent)
         if ! command -v mvn >/dev/null 2>&1; then
@@ -192,11 +209,15 @@ run_agent_mode() {
           esac
         done
         ;;
+      planning)
+        (cd "$ROOT" && node planning/check-planning.js)
+        ;;
     esac
   done
 
-  if printf '%s\n' "${changed[@]}" | grep -q '^planning/'; then
-    (cd "$ROOT" && node planning/check-planning.js)
+  if [ "$backend" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$shared" -eq 1 ]; then
+    ensure_npm_deps frontend vitest
+    (cd "$ROOT/frontend" && ./node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts)
   fi
 }
 
@@ -244,6 +265,9 @@ step "API contract test"
 
 step "Planning check"
 node planning/check-planning.js
+
+step "Agent verification gate tests"
+bash scripts/verify-local-agent.test.sh
 
 if [ "$QUICK" -eq 0 ]; then
   if command -v mvn >/dev/null 2>&1; then
