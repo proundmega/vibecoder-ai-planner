@@ -106,9 +106,13 @@ changed_paths() {
 
 deleted_paths() {
   {
-    git -C "$ROOT" diff --name-only --diff-filter=D
-    git -C "$ROOT" diff --cached --name-only --diff-filter=D
-  } | sed '/^[[:space:]]*$/d' | sort -u
+    git -C "$ROOT" diff --name-status -M
+    git -C "$ROOT" diff --cached --name-status -M
+  } | while IFS=$'\t' read -r status first _second; do
+    case "$status" in
+      D|R*) [ -n "$first" ] && printf '%s\n' "$first" ;;
+    esac
+  done | sed '/^[[:space:]]*$/d' | sort -u
 }
 
 ensure_npm_deps() {

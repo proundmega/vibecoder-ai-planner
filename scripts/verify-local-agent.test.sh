@@ -151,6 +151,13 @@ expect_layers "staged changes are detected" backend
 make .nvmrc
 expect_layers ".nvmrc runs all layers without requiring a test" "backend frontend agent"
 
+# A test renamed to a non-test is not evidence.
+make backend/src/__tests__/renamed-away.test.js
+git -C "$TMP" add backend/src/__tests__/renamed-away.test.js
+git -C "$TMP" commit -q -m "add test to rename"
+git -C "$TMP" mv backend/src/__tests__/renamed-away.test.js backend/src/renamed-away.js
+expect_fail "a test renamed to a non-test is not evidence" 1 "requires a changed/new backend test"
+
 # A deleted test is not evidence.
 make backend/src/__tests__/deleted.test.js
 git -C "$TMP" add backend/src/__tests__/deleted.test.js
