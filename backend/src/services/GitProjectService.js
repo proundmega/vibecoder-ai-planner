@@ -30,8 +30,17 @@ class GitProjectService {
 
     const providerId = gitProviders.normalizeProviderId(input.provider || 'github');
     const capabilities = gitProviders.getCapabilities(providerId);
+    const globalGithubMode = providerId === 'github'
+      ? GitHubAppAuthService.getAuthMode()
+      : null;
+    if (providerId === 'github' && input.authMode && input.authMode !== globalGithubMode) {
+      throw new ValidationError(
+        `GitHub auth mode is deployment-wide (${globalGithubMode}); `
+        + `explicit ${input.authMode} is not supported`
+      );
+    }
     const authMode = input.authMode
-      || (providerId === 'github' ? GitHubAppAuthService.getAuthMode() : 'pat');
+      || (providerId === 'github' ? globalGithubMode : 'pat');
     if (!capabilities.authModes.includes(authMode)) {
       throw new ValidationError(`Unsupported auth mode for ${providerId}: ${authMode}`);
     }
@@ -48,9 +57,17 @@ class GitProjectService {
     if (authMode === 'ssh' && !sshKey) {
       throw new ValidationError('An SSH key is required for ssh authentication');
     }
+    if (capabilities.requiresBaseUrl && !input.baseUrl) {
+      throw new ValidationError(`baseUrl is required for ${providerId}`);
+    }
 
     const baseUrl = input.baseUrl ? await gitProviders.assertSafeBaseUrl(input.baseUrl) : null;
-    const provider = gitProviders.registry.get(providerId, token || sshKey);
+    const providerConfig = {
+      credential: token || sshKey,
+      baseUrl,
+      authMode,
+    };
+    const provider = gitProviders.registry.get(providerId, providerConfig);
     try {
       provider.parseRepoUrl(input.repoUrl);
     } catch (error) {
@@ -93,23 +110,32 @@ class GitProjectService {
     return this._formatRepoResult(result.rows[0]);
   }
 
-  async disconnect(projectId) {
+  async disconnect(projectId, { provider = null } = {}) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    await pool.query(
-      'UPDATE project_repos SET is_active = FALSE, updated_at = NOW() WHERE project_id = $1',
-      [projectId]
-    );
+    if (provider) {
+      await pool.query(
+        `UPDATE project_repos
+         SET is_active = FALSE, updated_at = NOW()
+         WHERE project_id = $1 AND provider = $2`,
+        [projectId, provider]
+      );
+    } else {
+      await pool.query(
+        'UPDATE project_repos SET is_active = FALSE, updated_at = NOW() WHERE project_id = $1',
+        [projectId]
+      );
+    }
 
     return { success: true };
   }
 
-  async getRepo(projectId) {
+  async getRepo(projectId, { provider = null } = {}) {
     const project = await Project.findById(projectId);
     if (!project) throw new NotFoundError('Project not found');
 
-    const row = await this._getRepoRow(projectId);
+    const row = await this._getRepoRow(projectId, { provider });
     return row ? this._formatRepoResult(row) : null;
   }
 
@@ -118,8 +144,8 @@ class GitProjectService {
    * mode deliberately returns no stored PAT: the agent requests a scoped token
    * from the existing token route instead.
    */
-  async getAgentCredential(projectId) {
-    const row = await this._getRepoRow(projectId);
+  async getAgentCredential(projectId, { provider = null } = {}) {
+    const row = await this._getRepoRow(projectId, { provider });
     if (!row) return null;
 
     const providerId = row.provider || 'github';
@@ -157,34 +183,41 @@ class GitProjectService {
     };
   }
 
-  async getRepos(projectId) {
-    const result = await pool.query(
-      `SELECT * FROM project_repos
-       WHERE project_id = $1 AND is_active = TRUE
-       ORDER BY created_at DESC`,
-      [projectId]
-    );
+  async getRepos(projectId, { provider = null } = {}) {
+    const result = provider
+      ? await pool.query(
+        `SELECT * FROM project_repos
+         WHERE project_id = $1 AND provider = $2 AND is_active = TRUE
+         ORDER BY created_at DESC`,
+        [projectId, provider]
+      )
+      : await pool.query(
+        `SELECT * FROM project_repos
+         WHERE project_id = $1 AND is_active = TRUE
+         ORDER BY created_at DESC`,
+        [projectId]
+      );
 
     return result.rows.map(row => this._formatRepoResult(row));
   }
 
-  async readFile(projectId, path, ref = null) {
-    const repo = await this._requireRepo(projectId);
+  async readFile(projectId, path, ref = null, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
     return this._withProvider(
       projectId,
-      (provider) => provider.getFileContent(repo, path, ref),
-      { repo }
+      (providerInstance) => providerInstance.getFileContent(connected, path, ref),
+      { repo: connected, provider }
     );
   }
 
-  async createBranch(projectId, ticketId, { repo = null } = {}) {
-    const connected = await this._requireRepo(projectId, repo);
+  async createBranch(projectId, ticketId, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
     const ticket = await this._ticketForProject(ticketId, projectId);
 
     const branchName = await this._withProvider(
       projectId,
-      (provider) => provider.createBranch(connected, ticket.id, ticket.title),
-      { repo: connected }
+      (providerInstance) => providerInstance.createBranch(connected, ticket.id, ticket.title),
+      { repo: connected, provider }
     );
 
     await pool.query(
@@ -195,8 +228,8 @@ class GitProjectService {
     return { branchName, ticketId };
   }
 
-  async createReviewRequest(projectId, ticketId, description, { repo = null } = {}) {
-    const connected = await this._requireRepo(projectId, repo);
+  async createReviewRequest(projectId, ticketId, description, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
     const ticket = await this._ticketForProject(ticketId, projectId);
     if (!ticket.branchName) {
       throw new ValidationError('No branch created for this ticket yet');
@@ -204,11 +237,11 @@ class GitProjectService {
 
     const review = await this._withProvider(
       projectId,
-      (provider) => provider.createReviewRequest(
+      (providerInstance) => providerInstance.createReviewRequest(
         connected, ticket.id, ticket.title, ticket.branchName,
         description || ticket.description
       ),
-      { repo: connected }
+      { repo: connected, provider }
     );
 
     if (!review) {
@@ -225,17 +258,16 @@ class GitProjectService {
     return { ...review, ticketId };
   }
 
-  async deleteBranch(projectId, ticketId, { repo = null } = {}) {
-    const connected = await this._requireRepo(projectId, repo);
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
+  async deleteBranch(projectId, ticketId, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
+    const ticket = await this._ticketForProject(ticketId, projectId);
     if (!ticket.branchName) return { success: true, message: 'No branch to delete' };
 
     try {
       await this._withProvider(
         projectId,
-        (provider) => provider.deleteBranch(connected, ticket.branchName),
-        { repo: connected }
+        (providerInstance) => providerInstance.deleteBranch(connected, ticket.branchName),
+        { repo: connected, provider }
       );
     } catch (error) {
       logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
@@ -249,35 +281,34 @@ class GitProjectService {
     return { success: true };
   }
 
-  async listBranches(projectId, { repo = null } = {}) {
-    const connected = await this._requireRepo(projectId, repo);
+  async listBranches(projectId, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
     return this._withProvider(
       projectId,
-      (provider) => provider.listBranches(connected),
-      { repo: connected }
+      (providerInstance) => providerInstance.listBranches(connected),
+      { repo: connected, provider }
     );
   }
 
-  async listReviewRequests(projectId, { repo = null } = {}) {
-    const connected = await this._requireRepo(projectId, repo);
+  async listReviewRequests(projectId, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
     return this._withProvider(
       projectId,
-      (provider) => provider.listReviewRequests(connected),
-      { repo: connected }
+      (providerInstance) => providerInstance.listReviewRequests(connected),
+      { repo: connected, provider }
     );
   }
 
-  async getReviewDiff(projectId, ticketId, { repo = null } = {}) {
-    const connected = await this._requireRepo(projectId, repo);
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
+  async getReviewDiff(projectId, ticketId, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
+    const ticket = await this._ticketForProject(ticketId, projectId);
     if (!ticket.prUrl) throw new ValidationError('No PR linked to this ticket');
 
     const reviewNumber = this._extractReviewNumber(ticket.prUrl);
     return this._withProvider(
       projectId,
-      (provider) => provider.getReviewDiff(connected, reviewNumber),
-      { repo: connected }
+      (providerInstance) => providerInstance.getReviewDiff(connected, reviewNumber),
+      { repo: connected, provider }
     );
   }
 
@@ -290,37 +321,48 @@ class GitProjectService {
     return ticket;
   }
 
-  async _requireRepo(projectId, repo = null) {
-    const connected = repo || await this.getRepo(projectId);
+  async _requireRepo(projectId, repo = null, { provider = null } = {}) {
+    const connected = repo || await this.getRepo(projectId, { provider });
     if (!connected) {
       throw new ValidationError('No repository connected to this project');
     }
     return connected;
   }
 
-  async _getRepoRow(projectId) {
-    const result = await pool.query(
-      `SELECT * FROM project_repos
-       WHERE project_id = $1 AND is_active = TRUE
-       ORDER BY created_at DESC LIMIT 1`,
-      [projectId]
-    );
+  async _getRepoRow(projectId, { provider = null } = {}) {
+    const result = provider
+      ? await pool.query(
+        `SELECT * FROM project_repos
+         WHERE project_id = $1 AND provider = $2 AND is_active = TRUE
+         ORDER BY created_at DESC LIMIT 1`,
+        [projectId, provider]
+      )
+      : await pool.query(
+        `SELECT * FROM project_repos
+         WHERE project_id = $1 AND is_active = TRUE
+         ORDER BY created_at DESC LIMIT 1`,
+        [projectId]
+      );
     return result.rows[0] || null;
   }
 
   /**
    * Build a provider for backend-initiated operations. GitHub App mode mints a
    * repo-scoped installation token; PAT/self-hosted modes decrypt the stored
-   * credential.
+   * credential. The factory receives the credential, base URL and auth mode.
    */
-  async _createProvider(repo, projectId) {
-    const providerId = repo?.provider || 'github';
+  async _createProvider(repo, projectId, { provider = null } = {}) {
+    const providerId = repo?.provider || provider || 'github';
     if (providerId === 'github') {
       if (GitHubAppAuthService.getAuthMode() === 'app') {
         const token = await GitHubAppAuthService.mintToken(projectId, {
           operation: 'backend',
         });
-        return gitProviders.registry.get('github', token.token);
+        return gitProviders.registry.get('github', {
+          credential: token.token,
+          baseUrl: repo?.providerBaseUrl || null,
+          authMode: 'app',
+        });
       }
       if (!GitHubAppAuthService.isPatAllowed()) {
         throw new ForbiddenError(
@@ -328,37 +370,47 @@ class GitProjectService {
         );
       }
       await GitHubAppAuthService.assertProjectEnabled(projectId);
-      const connected = repo || await this.getRepo(projectId);
+      const connected = repo || await this.getRepo(projectId, { provider: 'github' });
       if (!connected) throw new ValidationError('No repository connected to this project');
       let encrypted = connected.accessTokenEncrypted;
+      let baseUrl = connected.providerBaseUrl || null;
       if (!encrypted) {
-        const row = await this._getRepoRow(projectId);
+        const row = await this._getRepoRow(projectId, { provider: 'github' });
         encrypted = row?.access_token_encrypted || null;
+        baseUrl = baseUrl || row?.provider_base_url || null;
       }
       if (!encrypted) {
         throw new ValidationError('No repository connected to this project');
       }
-      return gitProviders.registry.get('github', decrypt(encrypted));
+      return gitProviders.registry.get('github', {
+        credential: decrypt(encrypted),
+        baseUrl,
+        authMode: 'pat',
+      });
     }
 
-    const row = await this._getRepoRow(projectId);
+    const row = await this._getRepoRow(projectId, { provider: providerId });
     if (!row) throw new ValidationError('No repository connected to this project');
     const authMode = row.auth_mode || repo?.authMode || 'pat';
     const encrypted = authMode === 'ssh' ? row.ssh_key_encrypted : row.access_token_encrypted;
-    return gitProviders.registry.get(providerId, encrypted ? decrypt(encrypted) : null);
+    return gitProviders.registry.get(providerId, {
+      credential: encrypted ? decrypt(encrypted) : null,
+      baseUrl: row.provider_base_url || null,
+      authMode,
+    });
   }
 
-  async _withProvider(projectId, operation, { repo = null } = {}) {
-    let provider = await this._createProvider(repo, projectId);
+  async _withProvider(projectId, operation, { repo = null, provider = null } = {}) {
+    let providerInstance = await this._createProvider(repo, projectId, { provider });
     try {
-      return await operation(provider);
+      return await operation(providerInstance);
     } catch (error) {
       if (GitHubAppAuthService.getAuthMode() !== 'app' || !this._isAuthError(error)) {
         throw error;
       }
       GitHubAppAuthService.clearCacheForProject(projectId);
-      provider = await this._createProvider(repo, projectId);
-      return operation(provider);
+      providerInstance = await this._createProvider(repo, projectId, { provider });
+      return operation(providerInstance);
     }
   }
 
@@ -384,7 +436,9 @@ class GitProjectService {
       isActive: row.is_active,
       providerBaseUrl: row.provider_base_url || null,
       providerProjectId: row.provider_project_id || null,
-      authMode: row.auth_mode || null,
+      authMode: row.provider === 'github' || !row.provider
+        ? GitHubAppAuthService.getAuthMode()
+        : (row.auth_mode || null),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

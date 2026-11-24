@@ -9,11 +9,17 @@ const { ValidationError } = require('../../errors/HttpError');
  * behaviour and response shapes; only the entry point is provider-neutral.
  */
 class GitHubGitProvider {
-  constructor(token) {
+  constructor(config) {
+    const credential = typeof config === 'string' || config == null
+      ? config
+      : config.credential;
     this.id = 'github';
     this.capabilities = getCapabilities('github');
-    this.token = token;
-    this.provider = new GitHubProvider(token);
+    this.token = credential;
+    this.config = typeof config === 'object' && config !== null
+      ? { ...config }
+      : { credential };
+    this.provider = new GitHubProvider(credential);
   }
 
   parseRepoUrl(repoUrl) {
@@ -71,8 +77,8 @@ class GitHubGitProvider {
   }
 }
 
-function createProvider(token) {
-  return new GitHubGitProvider(token);
+function createProvider(config) {
+  return new GitHubGitProvider(config);
 }
 
 module.exports = { GitHubGitProvider, createProvider };

@@ -48,7 +48,7 @@ Files:
 - `backend/src/providers/git/local.js` (new)
 - `backend/src/services/GitProjectService.js` (new)
 - `backend/src/services/GitHubService.js` (facade)
-- `backend/src/migrations/061_git_provider.sql` + rollback
+- `backend/src/migrations/062_git_provider.sql` + rollback
 - `backend/src/services/HarnessRunService.js` (adoption condition)
 - `agent/src/main/java/com/vibecode/agent/service/GitService.java` (new)
 - `agent/src/main/java/com/vibecode/agent/service/GitCredentialProvider.java`

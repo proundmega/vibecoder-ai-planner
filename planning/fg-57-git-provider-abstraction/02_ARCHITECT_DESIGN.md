@@ -218,7 +218,7 @@ No new provider secret is ever written to `agent.ini` or the prompt.
 
 ## Database Changes
 
-- New migration `061_git_provider.sql` (verify the number is free at
+- New migration `062_git_provider.sql` (verify the number is free at
   implementation time):
   - add `provider_base_url`, `provider_project_id`, `auth_mode`,
     `ssh_key_encrypted` to `project_repos`;

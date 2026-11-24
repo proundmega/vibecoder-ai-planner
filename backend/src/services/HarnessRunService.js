@@ -633,6 +633,7 @@ class HarnessRunService {
                   'status', f.status,
                   'error', f.error,
                   'prUrl', f.pr_url,
+                  'headSha', f.head_sha,
                   'ticketId', f.ticket_id)
          FROM finished f
          CROSS JOIN recipients
@@ -1264,10 +1265,11 @@ class HarnessRunService {
    * lease stolen after expiry) are reaped once their heartbeat is stale. The
    * partial unique index prevents a second live run for the same ticket.
    *
-   * Runs with a stored PR URL are marked `succeeded`, not failed, so reaping
-   * never disagrees with publish evidence. Returns every reaped row, including
-   * whether this call failed the run. Ticket changes belong in `reconcileRun`,
-   * which re-checks the run/ticket/PR guards after this statement.
+   * Runs with a stored PR URL or head SHA are marked `succeeded`, not failed,
+   * so reaping never disagrees with publish evidence. Returns every reaped
+   * row, including whether this call failed the run. Ticket changes belong in
+   * `reconcileRun`, which re-checks the run/ticket/PR guards after this
+   * statement.
    */
   async reapExpiredLeases(limit = 50, orphanAfterSeconds = DEFAULT_ORPHAN_AFTER_SECONDS) {
     const parsedLimit = Number(limit);

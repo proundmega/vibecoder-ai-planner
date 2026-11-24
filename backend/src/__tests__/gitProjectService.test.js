@@ -87,6 +87,11 @@ describe('GitProjectService', () => {
       }, 100);
 
       expect(gitProviders.assertSafeBaseUrl).toHaveBeenCalledWith('https://git.example.com');
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('forgejo', {
+        credential: 'secret',
+        baseUrl: 'https://git.example.com',
+        authMode: 'pat',
+      });
       expect(encrypt).toHaveBeenCalledWith('secret');
       const [sql, params] = pool.query.mock.calls[0];
       expect(sql).toContain('INSERT INTO project_repos');
@@ -134,6 +139,34 @@ describe('GitProjectService', () => {
       expect(pool.query.mock.calls[0][1][8]).toBe('enc:key');
     });
 
+    it('requires a base URL for self-hosted providers', async () => {
+      await expect(GitProjectService.connect(1, {
+        provider: 'forgejo',
+        repoUrl: 'https://git.example.com/group/repo',
+        token: 't',
+        authMode: 'pat',
+      }, 100)).rejects.toThrow('baseUrl is required for forgejo');
+    });
+
+    it('rejects a GitHub auth mode that differs from the deployment mode', async () => {
+      GitHubAppAuthService.getAuthMode.mockReturnValue('app');
+
+      await expect(GitProjectService.connect(1, {
+        provider: 'github',
+        repoUrl: 'owner/repo',
+        token: 't',
+        authMode: 'pat',
+      }, 100)).rejects.toThrow('GitHub auth mode is deployment-wide');
+
+      GitHubAppAuthService.getAuthMode.mockReturnValue('pat');
+      await expect(GitProjectService.connect(1, {
+        provider: 'github',
+        repoUrl: 'owner/repo',
+        token: 't',
+        authMode: 'app',
+      }, 100)).rejects.toThrow('GitHub auth mode is deployment-wide');
+    });
+
     it('rejects unknown providers, auth modes and missing credentials', async () => {
       await expect(GitProjectService.connect(1, {
         provider: 'bitbucket', repoUrl: 'x', token: 't',
@@ -160,9 +193,13 @@ describe('GitProjectService', () => {
         }),
       });
       jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      jest.spyOn(gitProviders, 'assertSafeBaseUrl').mockResolvedValue('https://git.example.com');
 
       await expect(GitProjectService.connect(1, {
-        provider: 'forgejo', repoUrl: 'https://git.example.com/group/repo', token: 't',
+        provider: 'forgejo',
+        repoUrl: 'https://git.example.com/group/repo',
+        baseUrl: 'https://git.example.com',
+        token: 't',
       }, 100)).rejects.toThrow('Cannot access repository: Repository not found');
     });
   });
@@ -238,6 +275,65 @@ describe('GitProjectService', () => {
         sshKey: 'key',
         authMode: 'ssh',
       });
+    });
+  });
+
+  describe('provider scoping', () => {
+    it('filters repo lookups by provider', async () => {
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'github',
+          repo_url: 'https://github.com/owner/repo',
+          is_active: true,
+        }],
+      });
+
+      const repo = await GitProjectService.getRepo(1, { provider: 'github' });
+
+      expect(repo.provider).toBe('github');
+      const [sql, params] = pool.query.mock.calls[0];
+      expect(sql).toContain('provider = $2');
+      expect(params).toEqual([1, 'github']);
+    });
+
+    it('filters repo lists and disconnect by provider', async () => {
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await GitProjectService.getRepos(1, { provider: 'forgejo' });
+      expect(pool.query.mock.calls[0][0]).toContain('provider = $2');
+      expect(pool.query.mock.calls[0][1]).toEqual([1, 'forgejo']);
+
+      await GitProjectService.disconnect(1, { provider: 'github' });
+      expect(pool.query.mock.calls[1][0]).toContain('provider = $2');
+      expect(pool.query.mock.calls[1][1]).toEqual([1, 'github']);
+    });
+  });
+
+  describe('ticket ownership', () => {
+    const repo = {
+      provider: 'github',
+      repoUrl: 'owner/repo',
+      accessTokenEncrypted: 'enc:pat',
+    };
+
+    it('rejects deleting a branch for another project ticket', async () => {
+      Ticket.findById.mockResolvedValue({
+        id: 42, projectId: 2, branchName: 'branch',
+      });
+
+      await expect(GitProjectService.deleteBranch(1, 42, { repo }))
+        .rejects.toThrow('Ticket does not belong to this project');
+    });
+
+    it('rejects a review diff for another project ticket', async () => {
+      Ticket.findById.mockResolvedValue({
+        id: 42, projectId: 2, prUrl: 'https://example.test/pull/7',
+      });
+
+      await expect(GitProjectService.getReviewDiff(1, 42, { repo }))
+        .rejects.toThrow('Ticket does not belong to this project');
     });
   });
 
@@ -318,6 +414,103 @@ describe('GitProjectService', () => {
 
       expect(result).toEqual({ ticketId: 42, branchName: 'vibecode/ticket-42-title' });
       expect(pool.query).not.toHaveBeenCalled();
+    });
+
+    it('forwards read, list, diff and delete operations', async () => {
+      const provider = fakeProvider({
+        getFileContent: jest.fn().mockResolvedValue('contents'),
+        listBranches: jest.fn().mockResolvedValue(['branch']),
+        listReviewRequests: jest.fn().mockResolvedValue([{ url: 'pr' }]),
+        getReviewDiff: jest.fn().mockResolvedValue({ files: [] }),
+        deleteBranch: jest.fn().mockResolvedValue(undefined),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: 1,
+        branchName: 'vibecode/ticket-42-title',
+        prUrl: 'https://example.test/pull/7',
+      });
+      pool.query.mockResolvedValue({ rows: [] });
+      const repo = {
+        provider: 'github',
+        repoUrl: 'owner/repo',
+        accessTokenEncrypted: 'enc:pat',
+      };
+
+      await expect(GitProjectService.readFile(1, 'a.md', 'main', { repo }))
+        .resolves.toBe('contents');
+      expect(provider.getFileContent).toHaveBeenCalledWith(repo, 'a.md', 'main');
+
+      await expect(GitProjectService.listBranches(1, { repo })).resolves.toEqual(['branch']);
+      expect(provider.listBranches).toHaveBeenCalledWith(repo);
+
+      await expect(GitProjectService.listReviewRequests(1, { repo }))
+        .resolves.toEqual([{ url: 'pr' }]);
+      expect(provider.listReviewRequests).toHaveBeenCalledWith(repo);
+
+      await expect(GitProjectService.getReviewDiff(1, 42, { repo }))
+        .resolves.toEqual({ files: [] });
+      expect(provider.getReviewDiff).toHaveBeenCalledWith(repo, 7);
+
+      await expect(GitProjectService.deleteBranch(1, 42, { repo }))
+        .resolves.toEqual({ success: true });
+      expect(provider.deleteBranch).toHaveBeenCalledWith(repo, 'vibecode/ticket-42-title');
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SET branch_name = NULL'),
+        [42]
+      );
+    });
+
+    it('passes base URL and auth mode to a self-hosted provider factory', async () => {
+      const provider = fakeProvider({
+        createBranch: jest.fn().mockResolvedValue('vibecode/ticket-42-title'),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      const row = {
+        provider: 'forgejo',
+        repo_url: 'https://git.example.com/group/repo',
+        provider_base_url: 'https://git.example.com',
+        access_token_encrypted: 'enc:token',
+        auth_mode: 'pat',
+        is_active: true,
+      };
+      pool.query
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [row] })
+        .mockResolvedValueOnce({ rows: [] });
+      Ticket.findById.mockResolvedValue({
+        id: 42, projectId: 1, title: 'Title',
+      });
+
+      await GitProjectService.createBranch(1, 42, { provider: 'forgejo' });
+
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('forgejo', {
+        credential: 'token',
+        baseUrl: 'https://git.example.com',
+        authMode: 'pat',
+      });
+    });
+  });
+
+  describe('migration 062', () => {
+    it('registers 062 after 061 and ships a rollback', () => {
+      const fs = require('fs');
+      const path = require('path');
+      const { SQL_FILES } = require('../migrations/apply');
+      const names = SQL_FILES.map(file => path.basename(file));
+
+      expect(names.indexOf('062_git_provider.sql'))
+        .toBeGreaterThan(names.indexOf('061_ticket_readiness.sql'));
+
+      const rollback = fs.readFileSync(
+        path.join(__dirname, '../migrations/062_git_provider_rollback.sql'),
+        'utf8'
+      );
+      expect(rollback).toContain("ADD CONSTRAINT valid_provider CHECK (provider = 'github')");
+      expect(rollback).toContain('DROP COLUMN IF EXISTS ssh_key_encrypted');
+      expect(rollback).toContain('DROP COLUMN IF EXISTS auth_mode');
+      expect(rollback).toContain('DROP COLUMN IF EXISTS provider_base_url');
     });
   });
 });

@@ -1,14 +1,17 @@
 const githubController = require('../controllers/githubController');
 const GitHubService = require('../services/GitHubService');
 const Ticket = require('../models/ticket');
+const Project = require('../models/project');
 
 jest.mock('../services/GitHubService');
 jest.mock('../models/ticket');
+jest.mock('../models/project');
 
 describe('GitHub Controller', () => {
   let mockReq, mockRes, nextFn;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     nextFn = jest.fn();
     mockRes = {
       status: jest.fn().mockReturnThis(),
@@ -19,6 +22,7 @@ describe('GitHub Controller', () => {
       body: {},
       user: { userId: 'user-1', role: 'project_admin' },
     };
+    Project.findById.mockResolvedValue({ id: '1', ownerId: 'user-1' });
   });
 
   describe('connectRepo', () => {
@@ -160,6 +164,20 @@ describe('GitHub Controller', () => {
 
       expect(GitHubService.deleteTicketBranch).toHaveBeenCalledWith('1', '42');
       expect(nextFn).not.toHaveBeenCalled();
+    });
+
+    it('rejects a project the caller does not own', async () => {
+      Project.findById.mockResolvedValue({ id: '1', ownerId: 'other-user' });
+
+      mockReq.params.ticketId = '42';
+      mockReq.body = { projectId: '1' };
+
+      await githubController.deleteBranch(mockReq, mockRes, nextFn);
+
+      expect(GitHubService.deleteTicketBranch).not.toHaveBeenCalled();
+      expect(nextFn).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'FORBIDDEN',
+      }));
     });
   });
 

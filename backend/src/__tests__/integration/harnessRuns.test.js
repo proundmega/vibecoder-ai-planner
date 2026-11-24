@@ -508,6 +508,12 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     );
     expect(ticket.rows[0].status).toBe('review');
     expect(ticket.rows[0].pr_url).toBeNull();
+
+    const notification = await pool.query(
+      "SELECT payload FROM notifications WHERE run_id = $1 AND type = 'run_succeeded'",
+      [run.id]
+    );
+    expect(notification.rows[0].payload.headSha).toBe('branch123');
   });
 
   test('adopts a failed run that only recorded a head sha and promotes it', async () => {

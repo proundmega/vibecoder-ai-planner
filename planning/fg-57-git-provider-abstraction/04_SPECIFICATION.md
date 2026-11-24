@@ -48,8 +48,8 @@ Before production code:
 4. **MODIFY** `backend/src/services/GitHubService.js`
    - Delegate to `GitProjectService` while preserving the public methods used by
      `githubController`.
-5. **CREATE** `backend/src/migrations/061_git_provider.sql` and
-   `061_git_provider_rollback.sql`
+5. **CREATE** `backend/src/migrations/062_git_provider.sql` and
+   `062_git_provider_rollback.sql`
    - Add `provider_base_url`, `provider_project_id`, `auth_mode`,
      `ssh_key_encrypted`; backfill `provider='github'`, `auth_mode='app'`.
 6. **MODIFY** `backend/src/api/v1/index.js`
