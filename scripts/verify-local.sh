@@ -97,8 +97,8 @@ changed_paths() {
       git -C "$ROOT" diff --name-status -M
       git -C "$ROOT" diff --cached --name-status -M
     } | while IFS=$'\t' read -r _status first second; do
-      [ -n "$first" ] && printf '%s\n' "$first"
-      [ -n "${second:-}" ] && printf '%s\n' "$second"
+      if [ -n "$first" ]; then printf '%s\n' "$first"; fi
+      if [ -n "${second:-}" ]; then printf '%s\n' "$second"; fi
     done
     git -C "$ROOT" ls-files --others --exclude-standard
   } | sed '/^[[:space:]]*$/d' | sort -u
@@ -110,7 +110,13 @@ deleted_paths() {
     git -C "$ROOT" diff --cached --name-status -M
   } | while IFS=$'\t' read -r status first _second; do
     case "$status" in
-      D|R*) [ -n "$first" ] && printf '%s\n' "$first" ;;
+      D|R*)
+        # A path re-created at the same location is no longer deleted; this
+        # covers a renamed test that is re-added under its old name.
+        if [ -n "$first" ] && [ ! -e "$ROOT/$first" ]; then
+          printf '%s\n' "$first"
+        fi
+        ;;
     esac
   done | sed '/^[[:space:]]*$/d' | sort -u
 }
