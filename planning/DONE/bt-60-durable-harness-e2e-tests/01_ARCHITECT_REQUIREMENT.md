@@ -34,8 +34,8 @@ expected.
 3. Detect contract, authorization and finish-failure gaps that split-layer
    tests miss.
 4. Run the automated Phase A immediately; the manual staging layer was executed
-   on 2026-11-23 against a disposable local stack. The post-#220 rerun remains;
-   fg-33 slices 1-3 are merged (#110).
+   on 2026-11-23 against a disposable local stack and rerun on merged `master`
+   on 2026-11-24 (`98d6f814`, PR #24); fg-33 slices 1-3 are merged (#110).
 
 ## Non-goals
 
@@ -56,7 +56,7 @@ expected.
 | FR3 | The e2e asserts persisted state, not only HTTP status. | `harness_runs` status/step/attempt/head_sha/pr_url/runtime_id, `harness_checkpoints` order/context, and `harness_leases` claim/renew/release are asserted. |
 | FR4 | Auth, ownership and project scope are exercised through the routes. | Wrong runtime/owner/status → 403; JWT mutation → 403; project owner/member read → 200; outside-project → 403; super_admin → 200. |
 | FR5 | Lifecycle guards hold over HTTP. | Duplicate start → 409 with one active run; backwards/unknown/after-finish checkpoints rejected; finish is idempotent and releases the lease. |
-| FR6 | A manual staging happy path runs against a disposable project, repo, ticket, enrolled node and worker runtime. | Run/checkpoint/lease/ticket/PR state matches expectations and every artifact is cleaned up. |
+| FR6 | A manual staging happy path runs against a disposable project, repo, ticket, enrolled node and worker runtime. | Run/checkpoint/lease/ticket/PR state matches expectations; the staging rows, PRs and branches are removed and verified (2026-11-24). |
 | FR7 | Phase A failure cases are exercised where slice 1 supports them. | Finish failure after publish leaves the ticket in `review` with no release/reset; start 401/expiry classification is covered at the client/processor layer; mid-run node revocation is manual-only or covered by a focused processor test (D7); lease loss blocks publish. |
 | FR8 | Phase B cases are explicitly marked, not silently claimed. | Crash/restart, reaper/ticket release and idempotent publish are listed as Phase B with their tests; a skipped case is recorded in `00` D7. |
 | FR9 | No production data is touched. | The runbook requires a dedicated test project/repo/ticket/node/runtime; no production ticket, repo, PR or credentials appear in the suite or docs. |
@@ -68,7 +68,7 @@ expected.
 |---|---|---|
 | NFR1 | Test-only change. | No production source, migration or behavior change; no test-only production kill switch. |
 | NFR2 | Verification stays green. | Backend unit, backend integration, agent `mvn test` and lint pass. |
-| NFR3 | Staging safety. | Isolated/disposable host, GitHub token scoped to the one test repo and revoked after, dedicated spend-capped provider key, and a verified disposable `DATABASE_URL` before cleanup SQL. |
+| NFR3 | Staging safety. | Isolated/disposable host, GitHub credential used only for the one test repo and removed from the system after (the disposable PAT was used in local mode; GitHub-side PAT revocation and provider-key revocation are the operator actions in `00` D15; non-local runs require a repo-scoped App installation), dedicated spend-capped provider key, and a verified disposable `DATABASE_URL` before cleanup SQL. |
 
 ## In scope
 
@@ -95,7 +95,8 @@ Summarise only. The authoritative list with reasons, follow-ups and state is
 
 1. **Test repository and credentials** — resolved for the 2026-11-23 run with
    `proundmega/planner-test`, a disposable provider key and PAT local mode.
-   The post-#220 rerun reuses that disposable set; never use production.
+   The 2026-11-24 rerun reused that disposable set; the staging rows, PRs and
+   branches were cleaned up on 2026-11-24. Never use production.
 2. **Fault injection for `/finish`** — there is no test-only finish-failure
    switch. Use a proxy or controlled outage, or rely on the processor test;
    do not add a production switch.

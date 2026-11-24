@@ -36,7 +36,9 @@ assertions.
    `backend/src/__tests__/integration/harnessHttpE2E.test.js`
    - Use `supertest(app)` against the real app; no service mocks.
    - [x] Phase B backend drills: E19-E21 and E29.
-   - [ ] Real OpenCode/GitHub staging path (E15-E18/E22).
+   - [x] Real OpenCode/GitHub staging path: E15 (happy path) and E18 (lease loss) on 2026-11-23/24.
+   - [ ] E16/E17 (finish unavailable, node revocation) remain D7.
+   - [ ] E22 (containerized CI e2e) remains D8.
    - Exercise start/claim/checkpoints/heartbeat/finish and DB assertions.
    - Cover auth, ticket assignment, duplicate start, lease conflict, step
      ordering, finish idempotency and operator read scope.
@@ -112,7 +114,7 @@ Required cases (details in the Verification matrix):
   runtime own run 200, other runtime 403.
 - Phase B: publish/reconcile/dead-letter/adopt/release-ticket guards and
   idempotency.
-- Cleanup: no residual test rows.
+- Cleanup: fixture rows removed and verified (see Results).
 
 Use `jest.integration.config.js` and the existing
 `src/__tests__/integration/setup.js`; the file is discovered by
@@ -204,7 +206,7 @@ crash/reaper/idempotent-publish cases now that fg-33 slices 1-3 are merged.
 
 ### `03_ARCHITECT_IMPLEMENTATION.md` (MODIFY)
 
-- Record run results, residual rows and manual evidence in the Results table.
+- Record run results, cleanup verification and manual evidence in the Results table.
 - Do not add a status/date/PR/branch block; those belong to `00` frontmatter.
 
 ### `00_ARCHITECT_CHECKLIST.md` (MODIFY)
@@ -323,11 +325,13 @@ keep a copy.
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-22 | `19cfc33` (PR #198, merged; includes #200 `865565e`) | Phase A: `harnessHttpE2E` 16/16; backend integration 20 suites / 158 tests; backend unit 152 suites / 1788 tests; lint 0 errors (30 warnings); `HarnessTicketProcessorTest#leaseExpiryBeforePublishStopsThePush` 1/1 | Phase A green and merged. E12/E13 assert `artifacts_finalized_at`; the usage-flush UUID defect they exposed is fixed in the separate production PR #200. Phase B staging is deferred pending the disposable repo/key/App installation. |
-| 2026-11-23 | `c0ff5c0` (PR #207, merged) | `harnessHttpE2E` 20/20 (E19-E21, E29); backend integration 21 suites / 167 tests; backend unit 1857 tests; lint clean | Phase B backend drills merged: crash-equivalent lease-expiry adoption, stale-run release (including the review-ticket negative case via the reaper), idempotent publish/reconcile, dead-letter/release authorization. The real OpenCode/GitHub staging run remains pending the disposable repo, provider key and GitHub App installation. |
+| 2026-11-23 | `c0ff5c0` (PR #207, merged) | `harnessHttpE2E` 20/20 (E19-E21, E29); backend integration 21 suites / 167 tests; backend unit 1857 tests; lint clean | Phase B backend drills merged: crash-equivalent lease-expiry adoption, stale-run release (including the review-ticket negative case via the reaper), idempotent publish/reconcile, dead-letter/release authorization. This row predates the post-#220 rerun, which is recorded in the 2026-11-24 row (E15/E18). |
 | 2026-11-23 | `d8c9132` (#220 pre-merge build) | Disposable local stack (Postgres/Redis/API, node 1/runtime 1, Docker sandbox `:bt60`); runs `1af4a751` PR #20, `74216219` PR #21, `d23b7862` PR #22, `5a80e787` PR #23; agent 989 tests / 0 failures / 10 skipped | Phase B staging executed on `proundmega/planner-test` with OpenCode 1.19.5 and `opencode-go/beam-free` behind a local session-header proxy; the backend ran in explicit PAT mode after the initial app-mode `GITHUB_APP_NOT_CONFIGURED` configuration error. Happy path, lease-loss abort+retry, health gate after the HTTP/1.1 fix, and supervisor restart recovery pass; stale runs never publish and no duplicate PR/branch appears. Finish-unavailable and key-expiry remain (D7). |
+| 2026-11-24 | `110aa97` (master) | Run `98d6f814-903d-4a24-8973-32d30706f237`; PR #24; `head_sha=4b80530`; checkpoints `cloned -> session_ready -> prompting -> verifying -> publishing -> done`; verification `node --check script.js`; no lease | Formal master rerun after #220: health gate passed, child isolation and explicit PAT mode active, OpenCode Go session-header proxy and native supervisor remain staging deviations. Cleanup verified 2026-11-24: PRs #20-#24 closed, branches deleted and staging rows zero. The reset coincided with an integration-test run against the same `localhost:5432/vibecode` URL (04:15-04:17Z) and also removed the GTD staging project 2 (outside bt-60); `pr207-pg`, the staging directory/secrets, Redis and `:bt60` images are gone. Credential revocation (PAT and provider key) is D15. Finish-unavailable/key-expiry (D7) and D13/D14 remain. |
 
 | Field | Value |
 |---|---|
-| Residual rows | none (verified `bt60_*` counts are 0 after the suite) |
-| Phase B automated drills | E19-E21, E29 pass in `harnessHttpE2E`; no residual rows |
-| Manual staging evidence | Recorded in `05_RUNBOOK.md`; runs `1af4a751`/`74216219`/`d23b7862`/`5a80e787`, PRs #20-#23, no residual rows after the suite |
+| Staging cleanup | 2026-11-24: PRs #20-#24 closed and branches deleted; `vibecode` counts `projects=0`, `tickets=0`, `harness_runs=0`, `harness_checkpoints=0`, `harness_leases=0`, `agent_nodes=0`, `agent_runtimes=0`, `provider_credentials=0`, `project_repos=0`, `users=0`. The staging directory and its `provider.env`/`provider-values.json`/`mint.json`/`enrollment-token.txt` are gone, and a sweep of `/tmp` and the OpenCode storage found no live bt-60 credential values (the literal `CREDENTIAL_NAME=bt60` string remains only in docs/session history, and expired `enr_...` fixtures exist). `pr207-pg` was removed with its volume; the staging API/proxy, Redis and `:bt60` images are gone. `bt60-staging-pg` is retained as the shared local integration database and holds no staging rows. |
+| Reset attribution | The zero state coincides with a backend integration-test run against the same `localhost:5432/vibecode` URL at 04:15-04:17Z; `backend/src/__tests__/integration/setup.js:49` runs `DROP SCHEMA public CASCADE` when `INTEGRATION_TESTS=1`, so that run can reset the shared database. The launching session is unidentified. It also removed the GTD staging project 2 (outside bt-60, `gtd-staging`); GTD PR #19 remains open. |
+| Phase B automated drills | E19-E21, E29 pass in `harnessHttpE2E`; fixture cleanup leaves no residual rows. |
+| Manual staging evidence | Recorded in `05_RUNBOOK.md`; 2026-11-23 runs `1af4a751`/`74216219`/`d23b7862`/`5a80e787` (PRs #20-#23) and the 2026-11-24 master rerun `98d6f814` (PR #24); staging cleanup verified on 2026-11-24, including the integration-run reset and GTD staging-project collateral; credential revocation (D15) remains open. |

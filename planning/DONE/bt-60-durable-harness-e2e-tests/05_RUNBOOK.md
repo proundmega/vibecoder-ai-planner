@@ -69,8 +69,8 @@ against the real app and Postgres. These drills are merged as `c0ff5c0`
 OpenCode/GitHub/PR path; they are not replaced by the automated drills.
 
 fg-44 (foundation #209, supervisor lifecycle #212) is merged, so the storage
-prerequisite is satisfied. The staging run was executed on 2026-11-23; the
-post-#220 rerun on merged `master` is the remaining formality.
+prerequisite is satisfied. The staging run was executed on 2026-11-23, and the
+post-#220 rerun on merged `master` completed on 2026-11-24 (`98d6f814`, PR #24).
 
 ## Happy path
 
@@ -119,12 +119,25 @@ explicit PAT mode and the HTTP/1.1 health gate). The final #220 PAT narrowing
 (`787a941`) is **not** part of this recorded evidence; the post-#220 rerun on
 merged `master` covers it and replaces the pre-merge evidence.
 
+### Formal master rerun (2026-11-24)
+
+The agent and API were rebuilt from merged `master` at `110aa97`. A new ticket
+13 (ticket ID in the disposable project) ran as
+`98d6f814-903d-4a24-8973-32d30706f237`: health gate passed, checkpoints
+`cloned -> session_ready -> prompting -> verifying -> publishing -> done`,
+verification `node --check script.js` passed, no lease remained, and PR #24
+(`head_sha=4b80530`) was opened on `planner-test`. The same staging deviations
+remain: OpenCode Go behind the session-header proxy (D13), PAT local mode and a
+native supervisor with the direct Docker socket. The `sandbox_ready` /
+`sandbox_bridge_ready` checkpoint warnings (D14) still occur.
+
 | Ticket | Run | Result | PR |
 |---|---|---|---|
 | 1 - append marker to `script.js` | `1af4a751-0bef-4428-a888-7579bbf7d7fd` | `succeeded`, `done`, `head_sha=bd64fb9`; stored checkpoints `cloned -> session_ready -> prompting -> verifying -> publishing -> done`; no lease left | #20 |
 | 2 - lease-loss drill | `b9b2682b` then `74216219` | lease deleted during the first run; no PR/branch, ticket recovered; retry succeeded | #21 |
 | 3 - health-gate validation | `d23b7862` | gate passed after the HTTP/1.1 fix; `succeeded`, `done` | #22 |
 | 4 - crash/restart drill | `b889e1fb` then `5a80e787` | child killed mid-run; startup recovery failed the stale run with `Agent restarted before the run finished; restarting cleanly`, no publish; clean retry succeeded | #23 |
+| 13 - master rerun | `98d6f814` | built from `master` `110aa97`; health gate passed; full checkpoint sequence; `node --check` passed; no lease | #24 |
 
 Deviations from the procedure above:
 
@@ -139,7 +152,8 @@ Deviations from the procedure above:
   of the restricted proxy container, so the supervisor/daemon boundary is the
   staging host, not the production isolation.
 - **Git credential:** long-lived PAT in explicit local mode instead of a
-  repo-scoped GitHub App installation.
+  repo-scoped GitHub App installation; this is a documented local-mode
+  deviation and the disposable PAT must be revoked per `00` D15.
 - The repository has no `main`; the agent detected `vibecode/ticket-1-testnew`
   as the default branch, which is expected for this fixture.
 
@@ -172,7 +186,8 @@ Not yet reproduced here: `/finish` unavailable after PR and mid-run key expiry
 ## Cleanup
 
 - Close/delete the test PR and branch if safe.
-- Revoke the provider key and the GitHub App installation/token.
+- Revoke the provider key and the GitHub App installation/token (or delete the
+  local-mode PAT/project token).
 - Delete the test ticket/project/node/runtime and harness rows; use the IDs
   recorded above.
 - If cleanup is blocked, run:
@@ -192,10 +207,50 @@ DELETE FROM agent_nodes WHERE id = :node_id;
 
 (Use the actual test IDs; never run against production.)
 
+The executed 2026-11-24 cleanup is recorded below; the disposable PAT and
+provider key still require operator revocation (`00` D15).
+
+### Executed cleanup (2026-11-24)
+
+The `vibecode` database was already empty when this follow-up started. The
+Postgres log shows a backend integration-test run against the same
+`localhost:5432/vibecode` URL at 04:15-04:17Z; the integration setup
+(`backend/src/__tests__/integration/setup.js:49`) runs `DROP SCHEMA public
+CASCADE` when `INTEGRATION_TESTS=1`, so that run can reset the shared
+database. The launching session is unidentified.
+The reset also removed the GTD staging project 2 (outside bt-60, `gtd-staging`);
+GTD PR #19 in `proundmega/gtd` remains open. The checks below verify the
+resulting state and the follow-up removals.
+
+- Closed PRs #20-#24 on `proundmega/planner-test` and deleted their
+  `vibecode/ticket-*` branches.
+- Verified the disposable `vibecode` database is empty: `projects=0`,
+  `tickets=0`, `harness_runs=0`, `harness_checkpoints=0`, `harness_leases=0`,
+  `agent_nodes=0`, `agent_runtimes=0`, `provider_credentials=0`,
+  `project_repos=0`, `users=0`.
+- Removed `pr207-pg` with its anonymous volume. The staging directory
+  `/tmp/opencode/bt60-staging` (including `provider.env`,
+  `provider-values.json`, `mint.json` and `enrollment-token.txt`) is gone; a
+  sweep of `/tmp` and the OpenCode storage found no live bt-60 credential
+  values (the literal `CREDENTIAL_NAME=bt60` string remains only in
+  docs/session history, and expired `enr_...` fixtures exist). The staging API/proxy, Redis container and
+  `:bt60` images are gone.
+- `bt60-staging-pg` is retained as the shared local integration database and
+  holds no staging rows. Do not treat it as disposable staging storage.
+- The provider credential and project repo token were stored in the deleted
+  rows; the plaintext staging copies are gone. Revoke the disposable PAT at
+  GitHub and the provider key at the provider (`00` D15); D15 does not cover a
+  local plaintext copy. Non-local runs require a repo-scoped GitHub App
+  installation.
+
 ## Do not
 
 - Use a product ticket, repo, PR or database.
 - Reuse a long-lived GitHub token or an uncapped provider key.
+- Use the local-mode PAT outside the disposable local stack; it is documented
+  as D15 and must be revoked after staging.
+- Keep a plaintext provider key, enrollment token or provider values file after
+  staging; sanitize or delete them before recording cleanup.
 - Run an untrusted repo without the Docker sandbox and the D14 gate.
 - Treat the egress allowlist as a hard host boundary while D16 is open.
 - Expect the agent to ask questions until `fg-55` lands; Phase 1 denies
