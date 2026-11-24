@@ -518,11 +518,11 @@ describe('GitProjectService', () => {
       const { SQL_FILES } = require('../migrations/apply');
       const names = SQL_FILES.map(file => path.basename(file));
 
-      expect(names.indexOf('062_git_provider.sql'))
-        .toBeGreaterThan(names.indexOf('061_ticket_readiness.sql'));
+      expect(names.indexOf('063_git_provider.sql'))
+        .toBeGreaterThan(names.indexOf('062_ticket_review_attempts.sql'));
 
       const rollback = fs.readFileSync(
-        path.join(__dirname, '../migrations/062_git_provider_rollback.sql'),
+        path.join(__dirname, '../migrations/063_git_provider_rollback.sql'),
         'utf8'
       );
       expect(rollback).toContain("ADD CONSTRAINT valid_provider CHECK (provider = 'github')");
