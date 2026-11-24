@@ -155,6 +155,13 @@ class ReviewResultParserTest {
     }
 
     @Test
+    void rejectsDuplicateJsonKeys() {
+        assertMessage("not valid JSON", () -> parser.parse("""
+            {"verdict": "approve", "summary": "ok", "summary": "no", "findings": []}
+            """, CHANGED_FILES));
+    }
+
+    @Test
     void rejectsUnknownVerdict() {
         assertMessage("verdict must be one of", () -> parser.parse("""
             {"verdict": "merge", "summary": "ok", "findings": []}

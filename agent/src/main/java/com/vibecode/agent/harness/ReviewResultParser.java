@@ -31,7 +31,8 @@ public final class ReviewResultParser {
     static final int MAX_LIST_ITEMS = 200;
 
     private final ObjectMapper objectMapper = new ObjectMapper()
-        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+        .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
 
     public Result parse(String raw) {
         return parse(raw, List.of());

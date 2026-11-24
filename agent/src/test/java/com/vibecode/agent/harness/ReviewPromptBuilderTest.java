@@ -53,7 +53,7 @@ class ReviewPromptBuilderTest {
     }
 
     private String build(ReviewPromptBuilder.Request request) {
-        return new ReviewPromptBuilder().build(request);
+        return new ReviewPromptBuilder("testnonce").build(request);
     }
 
     @Test
@@ -76,8 +76,8 @@ class ReviewPromptBuilderTest {
 
         assertTrue(prompt.contains("Planning doc: implement filters"));
         assertTrue(prompt.contains("AGENTS.md: run npm test"));
-        assertTrue(prompt.contains("<untrusted-content source=\"planning\">"));
-        assertTrue(prompt.contains("<untrusted-content source=\"repository\">"));
+        assertTrue(prompt.contains("<untrusted-content-testnonce source=\"planning\">"));
+        assertTrue(prompt.contains("<untrusted-content-testnonce source=\"repository\">"));
     }
 
     @Test
@@ -92,7 +92,7 @@ class ReviewPromptBuilderTest {
         assertTrue(prompt.contains("backend/src/TicketService.js (modified)"));
         assertTrue(prompt.contains("backend/src/filter.js (added)"));
         assertTrue(prompt.contains("+filter"));
-        assertTrue(prompt.contains("<untrusted-content source=\"pull-request-diff\">"));
+        assertTrue(prompt.contains("<untrusted-content-testnonce source=\"pull-request-diff\">"));
     }
 
     @Test
@@ -156,7 +156,7 @@ class ReviewPromptBuilderTest {
         assertTrue(prompt.contains("Round: 2"));
         assertTrue(prompt.contains("Missing test for empty status"));
         assertTrue(prompt.contains("backend/src/filter.js:10"));
-        assertTrue(prompt.contains("<untrusted-content source=\"previous-findings\">"));
+        assertTrue(prompt.contains("<untrusted-content-testnonce source=\"previous-findings\">"));
     }
 
     @Test
@@ -338,6 +338,20 @@ class ReviewPromptBuilderTest {
 
         assertTrue(prompt.contains("remaining files omitted"));
         assertTrue(prompt.length() < 220_000);
+    }
+
+    @Test
+    void usesARandomNonceForBlockDelimiters() {
+        ReviewPromptBuilder.Request request = request();
+        String first = new ReviewPromptBuilder().build(request);
+        String second = new ReviewPromptBuilder().build(request);
+
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+            .compile("<untrusted-content-([0-9a-f]+) source=\"ticket\">")
+            .matcher(first);
+        assertTrue(matcher.find());
+        assertTrue(first.contains("</untrusted-content-" + matcher.group(1) + ">"));
+        assertFalse(first.equals(second));
     }
 
     @Test
