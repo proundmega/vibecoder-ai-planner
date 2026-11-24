@@ -83,6 +83,10 @@ class ProfileValidationProcessorTest {
     }
 
     private static String profileJson(String extra) {
+        return profileJson(extra, "");
+    }
+
+    private static String profileJson(String extra, String testData) {
         return """
             {
               "schema_version": 1,
@@ -91,9 +95,9 @@ class ProfileValidationProcessorTest {
               "setup": ["npm ci"],
               "verify": ["npm test"],
               "env": {"NODE_ENV": "test"}
-              %s
+              %s%s
             }
-            """.formatted(extra);
+            """.formatted(extra, testData);
     }
 
     @Test
@@ -134,6 +138,104 @@ class ProfileValidationProcessorTest {
         assertEquals("setup", commands.get(0).get("phase"));
         assertEquals("verify", commands.get(1).get("phase"));
         verify(workspace).cleanup();
+    }
+
+    @Test
+    void runsTestDataSetupBeforeVerifyAndCleanupAfter() throws Exception {
+        RepoProfileValidation validation = validation(profileJson("", ",\"test_data\":{\"setup\":[\"npm run seed\"],\"cleanup\":[\"npm run seed:reset\"]}"));
+        when(apiService.claimRepoProfileValidation("1")).thenReturn(validation);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processor(SandboxConfig.defaults()).pollOnce();
+
+        ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
+        verify(apiService).finishRepoProfileValidation(
+            eq("1"),
+            eq("22222222-2222-4222-8222-222222222222"),
+            eq("succeeded"),
+            result.capture(),
+            eq(null)
+        );
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
+        assertEquals(4, commands.size());
+        assertEquals("setup", commands.get(0).get("phase"));
+        assertEquals("test_data_setup", commands.get(1).get("phase"));
+        assertEquals("verify", commands.get(2).get("phase"));
+        assertEquals("test_data_cleanup", commands.get(3).get("phase"));
+        assertEquals(1, commands.get(0).get("attempts"));
+        assertEquals(false, commands.get(0).get("flaky"));
+    }
+
+    @Test
+    void testDataCleanupFailureFailsTheValidation() throws Exception {
+        RepoProfileValidation validation = validation(profileJson("", ",\"test_data\":{\"setup\":[\"npm run seed\"],\"cleanup\":[\"npm run seed:reset\"]}"));
+        when(apiService.claimRepoProfileValidation("1")).thenReturn(validation);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                if (commands.equals(List.of("npm run seed:reset"))) {
+                    return List.of(new VerificationResult(
+                        "npm run seed:reset", 1, "cleanup failed", false));
+                }
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processor(SandboxConfig.defaults()).pollOnce();
+
+        ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
+        verify(apiService).finishRepoProfileValidation(
+            eq("1"),
+            eq("22222222-2222-4222-8222-222222222222"),
+            eq("failed"),
+            result.capture(),
+            anyString()
+        );
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
+        assertEquals(4, commands.size());
+        assertEquals("test_data_cleanup", commands.get(3).get("phase"));
+    }
+
+    @Test
+    void cleanupRunsAfterSetupFailure() throws Exception {
+        RepoProfileValidation validation = validation(profileJson("",
+            ",\"test_data\":{\"setup\":[],\"cleanup\":[\"clean-data\"]}"));
+        when(apiService.claimRepoProfileValidation("1")).thenReturn(validation);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                if (commands.equals(List.of("npm ci"))) {
+                    return List.of(new VerificationResult("npm ci", 1, "setup failed", false));
+                }
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processor(SandboxConfig.defaults()).pollOnce();
+
+        ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
+        verify(apiService).finishRepoProfileValidation(
+            eq("1"),
+            eq("22222222-2222-4222-8222-222222222222"),
+            eq("failed"),
+            result.capture(),
+            anyString()
+        );
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
+        assertEquals("test_data_cleanup", commands.get(2).get("phase"));
+        assertEquals("verify", commands.get(1).get("phase"));
+        assertEquals(true, commands.get(1).get("skipped"));
     }
 
     @Test

@@ -166,7 +166,7 @@ public class VerificationRunner {
     }
 
     public List<VerificationResult> run(Path workspace, List<String> commands, Duration timeout) {
-        return run(workspace, commands, timeout, Map.of());
+        return run(workspace, commands, timeout, Map.of(), FlakyPolicy.none());
     }
 
     /**
@@ -179,25 +179,21 @@ public class VerificationRunner {
         Duration timeout,
         Map<String, String> extraEnv
     ) {
-        List<VerificationResult> results = new ArrayList<>();
-        if (commands == null || workspace == null) {
-            return results;
+        return run(workspace, commands, timeout, extraEnv, FlakyPolicy.none());
+    }
+
+    public List<VerificationResult> run(
+        Path workspace,
+        List<String> commands,
+        Duration timeout,
+        Map<String, String> extraEnv,
+        FlakyPolicy policy
+    ) {
+        if (workspace == null) {
+            return new ArrayList<>();
         }
-        long budgetMs = timeout == null ? 600_000L : Math.max(1, timeout.toMillis());
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs);
-        for (String command : commands) {
-            if (command == null || command.isBlank()) {
-                continue;
-            }
-            long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
-            if (remainingMs <= 0) {
-                results.add(new VerificationResult(
-                    command.trim(), -1, "verification budget exhausted", true));
-                continue;
-            }
-            results.add(runOne(workspace, command.trim(), Duration.ofMillis(remainingMs), extraEnv));
-        }
-        return results;
+        return runWithPolicy(commands, timeout, policy,
+            (command, remaining) -> runOne(workspace, command, remaining, extraEnv));
     }
 
     /**
@@ -212,43 +208,125 @@ public class VerificationRunner {
         List<String> commands,
         Duration timeout
     ) {
+        return run(sandbox, handle, commands, timeout, FlakyPolicy.none());
+    }
+
+    public List<VerificationResult> run(
+        SandboxRunner sandbox,
+        SandboxHandle handle,
+        List<String> commands,
+        Duration timeout,
+        FlakyPolicy policy
+    ) {
+        if (sandbox == null || handle == null) {
+            return new ArrayList<>();
+        }
+        return runWithPolicy(commands, timeout, policy,
+            (command, remaining) -> runSandboxOne(sandbox, handle, command, remaining));
+    }
+
+    private List<VerificationResult> runWithPolicy(
+        List<String> commands,
+        Duration timeout,
+        FlakyPolicy policy,
+        java.util.function.BiFunction<String, Duration, VerificationResult> runner
+    ) {
         List<VerificationResult> results = new ArrayList<>();
-        if (commands == null || sandbox == null || handle == null) {
+        if (commands == null) {
             return results;
         }
+        FlakyPolicy effective = policy == null ? FlakyPolicy.none() : policy;
         long budgetMs = timeout == null ? 600_000L : Math.max(1, timeout.toMillis());
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(budgetMs);
         for (String command : commands) {
             if (command == null || command.isBlank()) {
                 continue;
             }
+            String trimmed = command.trim();
             long remainingMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
             if (remainingMs <= 0) {
                 results.add(new VerificationResult(
-                    command.trim(), -1, "verification budget exhausted", true));
+                    trimmed, -1, "verification budget exhausted", true));
                 continue;
             }
-            String trimmed = command.trim();
-            try {
-                ExecResult result = sandbox.exec(handle, new ExecRequest(
-                    trimmed,
-                    null,
-                    Duration.ofMillis(remainingMs),
-                    MAX_CAPTURE_BYTES,
-                    Map.of()
-                ));
-                results.add(new VerificationResult(
-                    trimmed,
-                    result.exitCode(),
-                    truncateOutput(result.output()),
-                    result.timedOut()
-                ));
-            } catch (IOException e) {
-                results.add(new VerificationResult(
-                    trimmed, -1, redactedMessage(e), false));
+            VerificationResult result = runner.apply(trimmed, Duration.ofMillis(remainingMs));
+            if (!result.passed() && effective.enabled() && effective.matches(result.output())) {
+                VerificationResult current = result;
+                int attempts = 1;
+                while (attempts <= effective.maxRetries()) {
+                    long retryMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
+                    if (retryMs <= 0) {
+                        break;
+                    }
+                    attempts++;
+                    current = runner.apply(trimmed, Duration.ofMillis(retryMs));
+                    if (current.passed()) {
+                        break;
+                    }
+                }
+                result = new VerificationResult(
+                    trimmed, current.exitCode(), current.output(),
+                    current.timedOut(), attempts, true);
+                log.warn("Flaky verification retry for {}: attempts={} passed={}",
+                    trimmed, attempts, result.passed());
             }
+            results.add(result);
         }
         return results;
+    }
+
+    private VerificationResult runSandboxOne(
+        SandboxRunner sandbox,
+        SandboxHandle handle,
+        String command,
+        Duration remaining
+    ) {
+        try {
+            ExecResult result = sandbox.exec(handle, new ExecRequest(
+                command,
+                null,
+                remaining,
+                MAX_CAPTURE_BYTES,
+                Map.of()
+            ));
+            return new VerificationResult(
+                command,
+                result.exitCode(),
+                truncateOutput(result.output()),
+                result.timedOut()
+            );
+        } catch (IOException e) {
+            return new VerificationResult(command, -1, redactedMessage(e), false);
+        }
+    }
+
+    /**
+     * Retry only commands whose failed output names a known-flaky test.
+     * A consistent failure still fails: retries never turn a persistent
+     * failure into a pass.
+     */
+    public record FlakyPolicy(List<String> tests, int maxRetries) {
+        public FlakyPolicy {
+            tests = tests == null ? List.of() : List.copyOf(tests);
+            maxRetries = Math.max(0, Math.min(2, maxRetries));
+        }
+
+        public static FlakyPolicy none() {
+            return new FlakyPolicy(List.of(), 0);
+        }
+
+        public boolean enabled() {
+            return !tests.isEmpty() && maxRetries > 0;
+        }
+
+        public boolean matches(String output) {
+            if (output == null || output.isBlank()) {
+                return false;
+            }
+            return tests.stream()
+                .filter(test -> test != null && !test.isBlank())
+                .anyMatch(output::contains);
+        }
     }
 
     private static String truncateOutput(String text) {

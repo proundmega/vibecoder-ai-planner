@@ -778,6 +778,66 @@ class WorkspaceManagerTest {
 
 
     @Test
+    void worktreeTreeIdDetectsDirtyContentAndUntrackedSourceChanges() throws Exception {
+        Path source = initRepo("tree-source");
+        Path bare = initBare("tree-remote.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "tree", false, null);
+        wm.cloneRepo(bare.toString(), "vibecode/ticket-tree");
+
+        Path readme = wm.getRepoDir().resolve("README.md");
+        Files.writeString(readme, "already dirty one\n");
+        String first = wm.worktreeTreeId();
+        Files.writeString(readme, "already dirty two\n");
+        String second = wm.worktreeTreeId();
+        assertNotEquals(first, second, "a dirty file content change must change the tree");
+
+        String beforeUntracked = wm.worktreeTreeId();
+        Files.writeString(wm.getRepoDir().resolve("new-source.js"), "export default 1;\n");
+        assertNotEquals(beforeUntracked, wm.worktreeTreeId(),
+            "an untracked non-ignored file must change the tree");
+    }
+
+    @Test
+    void worktreeTreeIdAllowsIgnoredTestData() throws Exception {
+        Path source = initRepo("tree-ignored-source");
+        Files.writeString(source.resolve(".gitignore"), "test-data/\n");
+        runGit(source, "add", ".gitignore");
+        runGit(source, "commit", "-m", "ignore test data");
+        Path bare = initBare("tree-ignored-remote.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "tree-ignored", false, null);
+        wm.cloneRepo(bare.toString(), "vibecode/ticket-tree-ignored");
+        String before = wm.worktreeTreeId();
+        Files.createDirectories(wm.getRepoDir().resolve("test-data"));
+        Files.writeString(wm.getRepoDir().resolve("test-data/seed.txt"), "seed\n");
+        assertEquals(before, wm.worktreeTreeId(), "ignored test data must not be published");
+    }
+
+    @Test
+    void worktreeTreeIdIgnoresAssumeUnchangedIndexFlags() throws Exception {
+        Path source = initRepo("tree-assume-source");
+        Path bare = initBare("tree-assume-remote.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "tree-assume", false, null);
+        wm.cloneRepo(bare.toString(), "vibecode/ticket-tree-assume");
+        runGit(wm.getRepoDir(), "update-index", "--assume-unchanged", "README.md");
+        String before = wm.worktreeTreeId();
+        Files.writeString(wm.getRepoDir().resolve("README.md"), "changed despite flag\n");
+        assertNotEquals(before, wm.worktreeTreeId(),
+            "the temporary index must see content hidden by assume-unchanged");
+    }
+
+    @Test
     void cloneRepoHonorsAnExplicitCloneTimeout() throws Exception {
         assumePosix();
         Path git = tempDir.resolve("slow-git.sh");

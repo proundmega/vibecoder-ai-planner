@@ -39,6 +39,29 @@
 - [x] Tests for schema/API/detection/dry-run/runtime/repo-binding/activation/D27 paths.
 - [x] Update `PENDING.txt`, `HARNESS_ROADMAP.md`, fg-34 D27 status.
 
+### Slice 3 — flaky tests and test data
+
+- [x] Backend/agent schema: `flaky_tests`, `flaky_retries` (0–2) and
+      `test_data.setup`/`cleanup`; commands and secrets are validated.
+- [x] Verification retries only when the failed output names a known-flaky
+      test, records `attempts`/`flaky` and still fails a consistent failure.
+- [x] Harness and profile validation run test-data setup before verification
+      and cleanup after it; cleanup failure fails closed before publish.
+- [x] Profile editor fields round-trip the flaky policy and test-data hooks.
+
+Flaky matching is a plain, case-sensitive substring against the captured
+(truncated) verification output. Entries should be test files or unique test
+names, not generic words; a broad entry can over-retry, and a failure whose
+output does not include the entry is not retried. A consistent failure still
+fails the run.
+
+Files: `backend/src/validators/repoProfiles.js`,
+`backend/src/services/RepoProfileService.js`,
+`agent/.../harness/RepoProfile.java`, `VerificationRunner.java`,
+`VerificationResult.java`, `HarnessTicketProcessor.java`,
+`ProfileValidationProcessor.java`,
+`frontend/src/components/RepoProfileEditor.vue`, plus tests.
+
 ## Per-file changes
 
 | File | Action | Change |
@@ -104,7 +127,7 @@ One row per requirement from `01`. A requirement with no row is not done.
 | FR5 | Backend/Agent/Frontend | `repoProfileService.test.js`, `repoProfileValidationService.test.js`, `RepoProfileTest.java`, `SandboxConfigTest.java`, `DockerSandboxRunnerTest.java`, `ProfileValidationProcessorTest.java`, `RepoProfileEditor.vue` | Service schema validation including PASS/PWD keys, literal userinfo/query/path credentials (including generated-password-shaped 32+ hex values in query/path/fragment), short client password flags (`mysql/mariadb -p`, `redis-cli -a`, `REDISCLI_AUTH`), healthcheck/command credentials, encoded placeholders, newlines/NUL and reserved env names; legacy rows are scrubbed at read time for members/read-only views while the owner's current draft and write responses stay raw; Docker lifecycle with health wait, generated credentials, internal network, tracked-name cleanup, fail-closed removal, log bounds and `NET_RAW` drop; generated passwords registered for redaction; dry-run results redacted at the agent and backend and hidden from members; dry-run destroy failures are reported as failed; host mode fails closed; editor can edit/save services | backend/agent/frontend suites |
 | FR6 | Agent | `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java`, `WorkspaceManagerTest.java` | Model session and setup/verify share the `max_round_minutes` cap; clone has a bounded timeout; failure stops publish | `cd agent && mvn -Dtest=HarnessTicketProcessorTest,ProfileValidationProcessorTest,WorkspaceManagerTest test` |
 | FR7 | Backend/Agent | `repoProfileService.test.js`, `RepoProfileTest.java` | Non-secret env accepted; secret-like key/value rejected | both |
-| FR8 | Backend | `repoProfileService.test.js` | Non-empty `flaky_tests` is rejected until slice 3 (never silently ignored) | `cd backend && npx jest repoProfileService --runInBand` |
+| FR8 | Backend/Agent/Frontend | `repoProfileFlaky.test.js`, `RepoProfileTest.java`, `VerificationRunnerTest.java`, `HarnessTicketProcessorTest.java`, `ProfileValidationProcessorTest.java`, `WorkspaceManagerTest.java`, `repoProfileEditor.test.ts` | Schema accepts `flaky_tests`/`flaky_retries`/`test_data`; retries only when failed output names a flaky test; a consistent failure still fails; test-data cleanup runs on setup failure/cleanup-only and fails closed on command failure or content/tree changes; attempts/flaky are recorded; the editor round-trips the fields | backend Jest, targeted `mvn -Dtest=...`, `vitest run src/__tests__/repoProfileEditor.test.ts` |
 | FR9 | Backend/Agent | `repoProfileValidationService.test.js`, `ProfileValidationProcessorTest.java` | Queue/claim/finish; success/failure result; profile-budget stale reap (>60-minute regression); activation requires the successful exact `profile_hash`; dry runs run after ticket work | both |
 | FR10 | Agent | `HarnessTicketProcessorTest.java` | Missing/failed profile fetch warns and keeps autodetection; a profile for another repo is rejected before run start | `cd agent && mvn -Dtest=HarnessTicketProcessorTest test` |
 | D27 | Backend/Agent | `repoProfileService.test.js`, `SandboxConfigTest.java` | CA bundle shape validated; host must be allowlisted; `sni-only` mismatch fails closed | both |
@@ -135,3 +158,4 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-17 | fourth review fixes | Backend 146 suites / 1844 tests; agent 758 tests / 10 skipped; frontend 63 files / 583 tests; real-Postgres integration 8 tests; real-Docker service smoke test | Pass. Client names are matched case-insensitively in both backend and agent while the password flag remains case-sensitive (`MYSQL -P 3306` is a port, `MYSQL -psecret` is a password). `AUTH`/`AUTHORIZATION` are part of the shared secret-key rule and are rejected in profile/service env and scrubbed on read. Quoted `$ENV` references such as `mysql -p "$MYSQL_PWD"` are preserved by the agent log redactor; literal quoted values are still redacted. |
 | 2026-11-17 | rebased onto `f6e9464` (#166) | Backend 147 suites / 1874 tests; agent 804 tests / 10 skipped; frontend 64 files / 587 tests; real-Postgres integration 8 tests; real-Docker service smoke test | Pass after rebasing onto fg-42. `AUTH_MODE`/`AUTH_TYPE`-style keys are no longer treated as credentials; exact `AUTH`/`AUTHORIZATION`/`BASIC_AUTH` remain covered. The secret-redactor merge with fg-42 keeps high-entropy detection plus the repo-profile short-flag/key rules. |
 | 2026-11-22 | `867b9f7` (#167) | fg-39 slices 2/5 | Merged; FR3 (D7), FR4 (D9) and FR8 (D6) remain open, so the suite stays `in_progress`. |
+| 2026-11-24 | `83baf48` (PR #225) | Backend 162 suites / 1875 tests; agent 1007 tests / 10 skipped; frontend 70 files / 600 tests + typecheck/lint | Slice 3: `flaky_tests`/`flaky_retries`/`test_data` schema and agent validation; retries only when failed output names a known-flaky test and records attempts/flaky; test-data setup/cleanup phases with fail-closed cleanup (including setup failure/cleanup-only and a temporary-index tree fingerprint so cleanup cannot publish a tree that differs from the verified one; the test covers already-dirty files, untracked non-ignored files, ignored test data and assume-unchanged flags); editor round-trip. FR8/D6 in review; close on merge. FR3/FR4 remain. |

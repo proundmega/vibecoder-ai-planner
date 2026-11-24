@@ -183,7 +183,7 @@ function connectionUrlIssue(url, passwordEnv) {
 const TOP_LEVEL = new Set([
   'schema_version', 'repo_url', 'base_branch', 'languages', 'image',
   'setup', 'verify', 'caches', 'env', 'timeouts', 'max_round_minutes',
-  'services', 'flaky_tests', 'egress',
+  'services', 'flaky_tests', 'flaky_retries', 'test_data', 'egress',
 ]);
 
 function envIssue(env, options = {}) {
@@ -329,7 +329,22 @@ const profileSchema = Joi.object({
   }).default({ setup_minutes: 15, verify_minutes: 20 }),
   max_round_minutes: Joi.number().integer().min(1).max(240).default(45),
   services: Joi.array().items(serviceSchema).max(5).default([]),
-  flaky_tests: Joi.array().items(Joi.string().max(500)).default([]),
+  flaky_tests: Joi.array()
+    .items(Joi.string().trim().min(1).max(500).pattern(COMMAND))
+    .unique()
+    .max(20)
+    .default([]),
+  flaky_retries: Joi.number().integer().min(0).max(2).default(2),
+  test_data: Joi.object({
+    setup: Joi.array()
+      .items(Joi.string().trim().min(1).max(1000).pattern(COMMAND))
+      .max(20)
+      .default([]),
+    cleanup: Joi.array()
+      .items(Joi.string().trim().min(1).max(1000).pattern(COMMAND))
+      .max(20)
+      .default([]),
+  }).unknown(false).default({ setup: [], cleanup: [] }),
   egress: Joi.object({
     tls_mode: Joi.string().valid('terminate').default('terminate'),
     origin_ca_hosts: Joi.array().items(Joi.string().max(253)).min(1).max(16),
@@ -356,9 +371,6 @@ function validateRepoProfile(value) {
   for (const key of Object.keys(validated)) {
     if (!TOP_LEVEL.has(key)) issues.push(`unknown profile field: ${key}`);
   }
-  if (Array.isArray(validated.flaky_tests) && validated.flaky_tests.length > 0) {
-    issues.push('profile flaky_tests are not implemented until fg-39 slice 3');
-  }
   if (Array.isArray(validated.caches) && validated.caches.length > 0) {
     issues.push('profile caches are not implemented until D9/fg-44');
   }
@@ -368,6 +380,12 @@ function validateRepoProfile(value) {
     (validated[field] || []).forEach((command, index) => {
       const issue = commandIssue(command);
       if (issue) issues.push(`${field}[${index}] ${issue}`);
+    });
+  }
+  for (const field of ['setup', 'cleanup']) {
+    ((validated.test_data && validated.test_data[field]) || []).forEach((command, index) => {
+      const issue = commandIssue(command);
+      if (issue) issues.push(`test_data.${field}[${index}] ${issue}`);
     });
   }
 

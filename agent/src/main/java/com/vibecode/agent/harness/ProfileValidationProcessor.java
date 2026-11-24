@@ -183,18 +183,32 @@ public class ProfileValidationProcessor {
             boolean succeeded = runPhase(
                 workspace, sandbox, "setup", profile.setup(),
                 phaseTimeout(profile.timeouts().setupMinutes(), deadline),
-                environment, commands);
+                environment, commands, VerificationRunner.FlakyPolicy.none());
+            boolean cleanupConfigured = !profile.testData().cleanup().isEmpty();
+            if (succeeded && !profile.testData().setup().isEmpty()) {
+                succeeded = runPhase(
+                    workspace, sandbox, "test_data_setup", profile.testData().setup(),
+                    phaseTimeout(profile.timeouts().setupMinutes(), deadline),
+                    environment, commands, VerificationRunner.FlakyPolicy.none());
+            }
             if (succeeded) {
                 succeeded = runPhase(
                     workspace, sandbox, "verify", profile.verify(),
                     phaseTimeout(profile.timeouts().verifyMinutes(), deadline),
-                    environment, commands);
+                    environment, commands, flakyPolicy(profile));
             } else {
                 commands.add(Map.of(
                     "phase", "verify",
                     "skipped", true,
-                    "reason", "setup failed"
+                    "reason", "setup or test-data setup failed"
                 ));
+            }
+            if (cleanupConfigured) {
+                boolean cleanupOk = runPhase(
+                    workspace, sandbox, "test_data_cleanup", profile.testData().cleanup(),
+                    phaseTimeout(profile.timeouts().verifyMinutes(), deadline),
+                    environment, commands, VerificationRunner.FlakyPolicy.none());
+                succeeded = succeeded && cleanupOk;
             }
 
             Map<String, Object> result = new LinkedHashMap<>();
@@ -256,7 +270,8 @@ public class ProfileValidationProcessor {
         List<String> commands,
         Duration timeout,
         Map<String, String> environment,
-        List<Map<String, Object>> results
+        List<Map<String, Object>> results,
+        VerificationRunner.FlakyPolicy flakyPolicy
     ) {
         if (commands == null || commands.isEmpty()) {
             return true;
@@ -269,13 +284,20 @@ public class ProfileValidationProcessor {
             return false;
         }
         long started = System.nanoTime();
+        VerificationRunner.FlakyPolicy policy = flakyPolicy == null
+            ? VerificationRunner.FlakyPolicy.none()
+            : flakyPolicy;
         List<VerificationResult> phaseResults;
         if (sandbox != null) {
-            phaseResults = verificationRunner.run(
-                sandboxRunner, sandbox, commands, timeout);
+            phaseResults = policy.enabled()
+                ? verificationRunner.run(sandboxRunner, sandbox, commands, timeout, policy)
+                : verificationRunner.run(sandboxRunner, sandbox, commands, timeout);
         } else {
-            phaseResults = verificationRunner.run(
-                workspace.getRepoDir(), commands, timeout, environment);
+            phaseResults = policy.enabled()
+                ? verificationRunner.run(
+                    workspace.getRepoDir(), commands, timeout, environment, policy)
+                : verificationRunner.run(
+                    workspace.getRepoDir(), commands, timeout, environment);
         }
         long durationMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
         boolean passed = true;
@@ -285,12 +307,21 @@ public class ProfileValidationProcessor {
             entry.put("command", RedactionRegistry.redact(result.command()));
             entry.put("exitCode", result.exitCode());
             entry.put("timedOut", result.timedOut());
+            entry.put("attempts", result.attempts());
+            entry.put("flaky", result.flaky());
             entry.put("output", RedactionRegistry.redact(result.output()));
             entry.put("durationMs", durationMs);
             results.add(entry);
             passed = passed && result.passed();
         }
         return passed;
+    }
+
+    private static VerificationRunner.FlakyPolicy flakyPolicy(RepoProfile profile) {
+        if (profile == null) {
+            return VerificationRunner.FlakyPolicy.none();
+        }
+        return new VerificationRunner.FlakyPolicy(profile.flakyTests(), profile.flakyRetries());
     }
 
     private void reportFailed(

@@ -232,7 +232,7 @@ These are an operational split of `fg-57` Phase 1/2/4; see
 
 | Slice | Work | FRs | Files | Depends on |
 |---|---|---|---|---|
-| `fg-39a` | FR8/slice 3 flaky-test retry policy + test-data hooks + tests | FR8 | 4–6 | `FLOW-0` |
+| `fg-39a` | FR8/slice 3 flaky-test retry policy + test-data hooks + tests | FR8 | 18–22 (manual; split for worker flow) | `FLOW-0` |
 | `fg-39b` | FR3/slice 4a prebuilt per-stack images + pinned toolchains + tests | FR3 | 6–8 | `fg-39a` |
 | `fg-39c` | FR4/slice 4b persistent cache quota/watchdog/GC + tests | FR4 | 6–8 | `fg-39b` |
 | `fg-39d` | D11 real-Docker/real-repo profile e2e (optional) | D11 | 4–6 | `fg-39c` |
@@ -240,6 +240,11 @@ These are an operational split of `fg-57` Phase 1/2/4; see
 
 Lane C is `fg-39` only. `fg-48`/`fg-49`/`fg-50` remain blocked by `fg-31`/`fg-47`
 and are not part of this flow test.
+
+The manual `fg-39a` landed as 20 files / 692 lines, above the 8-file worker cap.
+Before running it through a worker, split it into `fg-39a1` (backend/agent
+schema + verifier policy) and `fg-39a2` (harness/profile-validation wiring,
+editor and tests), or raise the cap deliberately.
 
 ## Waves
 

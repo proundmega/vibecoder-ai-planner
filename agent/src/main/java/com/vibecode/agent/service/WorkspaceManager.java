@@ -518,6 +518,35 @@ public class WorkspaceManager {
     }
 
     /**
+     * Content/tree fingerprint of the worktree built through a temporary index.
+     *
+     * <p>This is the same shape {@link #stageFreshDiff()} publishes: read the
+     * pinned base, {@code add -A} and {@code write-tree}. A porcelain status
+     * string cannot detect a cleanup that changes the content of an already
+     * dirty file, and it ignores untracked files that publishing would stage.
+     * The temporary index also ignores the agent-controlled index flags
+     * (assume-unchanged/skip-worktree). Ignored test data is not added, which
+     * matches what publishing would exclude.</p>
+     */
+    public String worktreeTreeId() throws IOException {
+        if (repoDir == null || !Files.exists(repoDir)) {
+            return "";
+        }
+        hardenGitRepository();
+        String base = baseCommitOrHead();
+        Path index = Files.createTempFile("vibecode-worktree-tree-", ".idx");
+        Files.deleteIfExists(index);
+        try {
+            String indexEnv = index.toString();
+            runGitAt(repoDir, Map.of("GIT_INDEX_FILE", indexEnv), "read-tree", base);
+            runGitAt(repoDir, Map.of("GIT_INDEX_FILE", indexEnv), "add", "-A");
+            return runGitAt(repoDir, Map.of("GIT_INDEX_FILE", indexEnv), "write-tree").trim();
+        } finally {
+            Files.deleteIfExists(index);
+        }
+    }
+
+    /**
      * Build a supervisor-owned index from the pinned base commit (falling back
      * to HEAD only when no base commit was pinned), apply the worktree on top
      * of it, and return a diff computed from index blobs.

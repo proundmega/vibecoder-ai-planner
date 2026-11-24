@@ -267,7 +267,7 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/looks like a credential/);
     });
 
-    it('rejects unknown fields and unimplemented caches/flaky tests', async () => {
+    it('rejects unknown fields and unimplemented caches', async () => {
       await expect(
         RepoProfileService.create(1, validProfile({ wat: true }), owner())
       ).rejects.toThrow(/unknown profile field/);
@@ -275,10 +275,6 @@ describe('RepoProfileService', () => {
       await expect(
         RepoProfileService.create(1, validProfile({ caches: ['npm'] }), owner())
       ).rejects.toThrow(/D9\/fg-44/);
-
-      await expect(
-        RepoProfileService.create(1, validProfile({ flaky_tests: ['test/flaky.js'] }), owner())
-      ).rejects.toThrow(/slice 3/);
     });
 
     it('accepts a valid service container definition', async () => {

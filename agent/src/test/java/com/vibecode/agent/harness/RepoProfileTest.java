@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -85,12 +86,52 @@ class RepoProfileTest {
     }
 
     @Test
-    void rejectsUnknownFieldsAndUnimplementedFlakyTests() {
+    void rejectsUnknownFields() {
         assertThrows(Exception.class, () -> parse("""
             {"schema_version":1,"verify":["npm test"],"unknown_field":true}
             """));
+    }
+
+    @Test
+    void parsesFlakyPolicyAndTestDataHooks() throws Exception {
+        RepoProfile profile = parse("""
+            {
+              "schema_version":1,
+              "verify":["npm test"],
+              "flaky_tests":["test/known-flake.test.js","e2e/timing.spec.js"],
+              "flaky_retries":1,
+              "test_data":{
+                "setup":["npm run seed"],
+                "cleanup":["npm run seed:reset"]
+              }
+            }
+            """);
+
+        assertEquals(List.of("test/known-flake.test.js", "e2e/timing.spec.js"),
+            profile.flakyTests());
+        assertEquals(1, profile.flakyRetries());
+        assertEquals(List.of("npm run seed"), profile.testData().setup());
+        assertEquals(List.of("npm run seed:reset"), profile.testData().cleanup());
+    }
+
+    @Test
+    void rejectsInvalidFlakyAndTestDataEntries() {
         assertThrows(IllegalArgumentException.class, () -> parse("""
-            {"schema_version":1,"verify":["npm test"],"flaky_tests":["test/flake.js"]}
+            {"schema_version":1,"verify":["npm test"],"flaky_retries":3}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"flaky_tests":[""]}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"flaky_tests":["bad\\nname"]}
+            """));
+        assertThrows(IllegalArgumentException.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"test_data":{
+              "setup":["DB_PASSWORD=hunter2 npm run seed"],"cleanup":[]}}
+            """));
+        assertThrows(Exception.class, () -> parse("""
+            {"schema_version":1,"verify":["npm test"],"test_data":{
+              "setup":[],"cleanup":[],"unknown":["x"]}}
             """));
     }
 

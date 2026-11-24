@@ -51,6 +51,10 @@ const image = ref('')
 const languagesText = ref('')
 const setupText = ref('')
 const verifyText = ref('')
+const flakyTestsText = ref('')
+const flakyRetries = ref(2)
+const testDataSetupText = ref('')
+const testDataCleanupText = ref('')
 const envRows = ref<EnvRow[]>([])
 const services = ref<ServiceRow[]>([])
 const viewingVersion = ref<RepoProfileRow | null>(null)
@@ -153,6 +157,10 @@ function populate(row: RepoProfileRow | null) {
   languagesText.value = (profile?.languages || []).join(', ')
   setupText.value = (profile?.setup || []).join('\n')
   verifyText.value = (profile?.verify || []).join('\n')
+  flakyTestsText.value = (profile?.flaky_tests || []).join('\n')
+  flakyRetries.value = profile?.flaky_retries ?? 2
+  testDataSetupText.value = (profile?.test_data?.setup || []).join('\n')
+  testDataCleanupText.value = (profile?.test_data?.cleanup || []).join('\n')
   envRows.value = toEnvRows(profile?.env)
   services.value = (profile?.services || []).map(toServiceRow)
   setupMinutes.value = profile?.timeouts?.setup_minutes || 15
@@ -196,7 +204,12 @@ function buildProfile(): RepoProfile {
         start_period_seconds: Number(service.startPeriod) || 0,
       },
     })),
-    flaky_tests: [],
+    flaky_tests: splitLines(flakyTestsText.value),
+    flaky_retries: Math.max(0, Math.min(2, Math.trunc(Number(flakyRetries.value) || 0))),
+    test_data: {
+      setup: splitLines(testDataSetupText.value),
+      cleanup: splitLines(testDataCleanupText.value),
+    },
   }
   if (egressText.value.trim()) {
     profile.egress = JSON.parse(egressText.value)
@@ -458,6 +471,22 @@ onBeforeUnmount(() => {
           </label>
           <label>Verify commands (one per line)
             <textarea v-model="verifyText" rows="4" placeholder="npm test" />
+          </label>
+        </div>
+        <div class="grid two">
+          <label>Known-flaky tests (one per line)
+            <textarea v-model="flakyTestsText" rows="3" placeholder="test/known-flake.test.js" />
+          </label>
+          <label>Flaky retries (0-2)
+            <input v-model.number="flakyRetries" type="number" min="0" max="2" />
+          </label>
+        </div>
+        <div class="grid two">
+          <label>Test-data setup (one per line)
+            <textarea v-model="testDataSetupText" rows="3" placeholder="npm run seed" />
+          </label>
+          <label>Test-data cleanup (one per line)
+            <textarea v-model="testDataCleanupText" rows="3" placeholder="npm run seed:reset" />
           </label>
         </div>
         <div class="grid three">
