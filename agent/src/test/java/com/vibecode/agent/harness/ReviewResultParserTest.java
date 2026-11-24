@@ -116,8 +116,8 @@ class ReviewResultParserTest {
             ```json
             {"verdict": "approve", "summary": "ok", "findings": []}
             """, CHANGED_FILES));
-        // Two fenced blocks.
-        assertMessage("exactly one JSON object", () -> parser.parse("""
+        // Two fenced blocks: the second block becomes trailing content.
+        assertRejected(() -> parser.parse("""
             ```json
             {"verdict": "approve", "summary": "ok", "findings": []}
             ```
@@ -125,6 +125,33 @@ class ReviewResultParserTest {
             {"verdict": "request_changes", "summary": "no", "findings": []}
             ```
             """, CHANGED_FILES));
+    }
+
+    @Test
+    void acceptsCodeFencesInsideJsonStrings() {
+        // A bare finding message may contain a markdown code block.
+        ReviewResultParser.Result bareFinding = parser.parse("""
+            {"verdict": "comment", "summary": "ok", "findings": [
+              {"severity": "info", "message": "Use ```js\\nconst x = 1;\\n``` here"}]}
+            """, CHANGED_FILES);
+        assertEquals(1, bareFinding.findings().size());
+        assertTrue(bareFinding.findings().get(0).message().contains("```js"));
+
+        // The same object inside one fenced block.
+        ReviewResultParser.Result fencedFinding = parser.parse("""
+            ```json
+            {"verdict": "comment", "summary": "ok", "findings": [
+              {"severity": "info", "message": "Use ```js\\nconst x = 1;\\n``` here"}]}
+            ```
+            """, CHANGED_FILES);
+        assertEquals(1, fencedFinding.findings().size());
+        assertTrue(fencedFinding.findings().get(0).message().contains("```js"));
+
+        // A bare summary may contain a fence marker.
+        ReviewResultParser.Result summary = parser.parse("""
+            {"verdict": "comment", "summary": "Use ``` to fence code", "findings": []}
+            """, CHANGED_FILES);
+        assertEquals("Use ``` to fence code", summary.summary());
     }
 
     @Test

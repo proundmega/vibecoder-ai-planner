@@ -102,16 +102,10 @@ public final class ReviewResultParser {
                 throw invalid("fenced review output is missing its closing fence");
             }
             body = body.substring(0, body.length() - 3).trim();
-            if (body.contains("```")) {
-                throw invalid("review output must contain exactly one JSON object");
-            }
             if (!body.startsWith("{")) {
                 throw invalid("review output must be a JSON object");
             }
             return body;
-        }
-        if (text.contains("```")) {
-            throw invalid("review output must not mix fences and bare JSON");
         }
         if (!text.startsWith("{")) {
             throw invalid("review output must be a JSON object");

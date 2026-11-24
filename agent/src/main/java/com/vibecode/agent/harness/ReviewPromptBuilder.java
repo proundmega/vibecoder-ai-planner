@@ -34,7 +34,7 @@ public final class ReviewPromptBuilder {
     static final int MAX_PROMPT_CHARS = 220_000;
 
     private static final Pattern UNTRUSTED_TAG = Pattern.compile(
-        "<\\s*/?\\s*untrusted-content\\s*>",
+        "<\\s*/?\\s*untrusted-content(?:\\s[^>]*)?\\s*/?>",
         Pattern.CASE_INSENSITIVE
     );
 
@@ -171,12 +171,16 @@ public final class ReviewPromptBuilder {
         prompt.append("Do not include a `verification` field; if one is emitted it is ignored. ");
         prompt.append("Malformed output is rejected and cannot approve the change.\n");
 
-        if (prompt.length() > MAX_PROMPT_CHARS) {
+        enforcePromptBudget(prompt.length());
+        return prompt.toString();
+    }
+
+    static void enforcePromptBudget(int length) {
+        if (length > MAX_PROMPT_CHARS) {
             throw new IllegalStateException(
                 "review prompt exceeds " + MAX_PROMPT_CHARS + " characters"
             );
         }
-        return prompt.toString();
     }
 
     private static void appendAcceptanceCriteria(StringBuilder prompt, List<String> criteria) {
