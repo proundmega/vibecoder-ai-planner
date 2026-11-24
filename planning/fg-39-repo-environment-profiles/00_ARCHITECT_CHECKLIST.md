@@ -35,13 +35,13 @@ environment failures, not coding failures.
 | 1 | Versioned profile schema/API, GitHub-manifest stack detection, profile-driven base branch/setup/verify/env/timeouts, digest-pinned image override, dry-run validation queue + agent worker, activation only after an exact-content successful dry run, fg-34/D27 profile origin-CA plumbing | done (#161) |
 | 2 | Service containers (Postgres/Redis) with health checks, ephemeral data and connection env | done (#167) |
 | 3 | Flaky-test retry policy, test-data hooks and known-failure semantics | done (#225, `e2b94f1`) |
-| 4a | Prebuilt per-stack images, pinned toolchains and stack-image detection (`fg-39b`) | in review |
+| 4a | Prebuilt per-stack images, pinned toolchains and stack-image detection (`fg-39b`) | in review (#232) |
 | 4b | Persistent dependency caches: quota/watchdog/GC, lockfile-keyed generations and sanitized cache writes (`fg-39c`) | planned |
 | 5 | Project settings profile editor | done (#167) |
 
 Slices 1, 2, 3 and 5 are implemented; slice 4a (prebuilt stack images and
-detection) is in review, and `caches` still fails closed until slice 4b rather
-than accepting configuration the runtime does not execute.
+detection) is in review as PR #232, and `caches` still fails closed until slice
+4b rather than accepting configuration the runtime does not execute.
 
 ## Status evidence
 
@@ -66,7 +66,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D4 | Profile/setup telemetry | fg-41 | Observability | DONE/fg-41-harness-observability | open |
 | D5 | Service containers and health checks (slice 2) | fg-39 FR5 | Infrastructure | fg-39 slice 2 | merged (#167) |
 | D6 | Flaky-test retry policy and test-data hooks (slice 3) | fg-39 FR8 | Reliability | fg-39 slice 3 | done (#225, `e2b94f1`) |
-| D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4a) | fg-39 FR3 | Infrastructure | fg-39 slice 4a | in review |
+| D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4a) | fg-39 FR3 | Infrastructure | fg-39 slice 4a | in review (#232) |
 | D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | merged (#167) |
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4b | open |
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | open |
