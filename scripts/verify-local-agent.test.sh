@@ -39,7 +39,7 @@ expect_layers() {
     local description="$1" layers="$2"
     local out
     if out="$(run_plan)"; then
-        if grep -Fq "layers: $layers" <<<"$out"; then
+        if grep -Fxq "layers: $layers" <<<"$out"; then
             pass "$description"
         else
             fail "$description (got: $out)"
@@ -148,6 +148,14 @@ make backend/src/__tests__/staged.test.js
 git -C "$TMP" add backend/src/staged.js backend/src/__tests__/staged.test.js
 expect_layers "staged changes are detected" backend
 
+make backend/src/staged-mixed.js
+git -C "$TMP" add backend/src/staged-mixed.js
+git -C "$TMP" commit -q -m "add staged mixed production"
+printf 'changed\n' > "$TMP/backend/src/staged-mixed.js"
+git -C "$TMP" add backend/src/staged-mixed.js
+make backend/src/__tests__/staged-mixed.test.js
+expect_layers "staged production modifications do not hide untracked tests" backend
+
 make .nvmrc
 expect_layers ".nvmrc runs all layers without requiring a test" "backend frontend agent"
 
@@ -165,6 +173,15 @@ git -C "$TMP" add backend/src/__tests__/renamed-away.test.js
 git -C "$TMP" commit -q -m "add test to rename"
 git -C "$TMP" mv backend/src/__tests__/renamed-away.test.js backend/src/renamed-away.js
 expect_fail "a test renamed to a non-test is not evidence" 1 "requires a changed/new backend test"
+
+# A test renamed away and re-created at the old path is still evidence.
+make backend/src/__tests__/recreated.test.js
+git -C "$TMP" add backend/src/__tests__/recreated.test.js
+git -C "$TMP" commit -q -m "add test to rename and recreate"
+git -C "$TMP" mv backend/src/__tests__/recreated.test.js backend/src/recreated.js
+make backend/src/__tests__/recreated.test.js
+make backend/src/app.js
+expect_layers "a re-created test at a renamed path is still evidence" backend
 
 # A deleted test is not evidence.
 make backend/src/__tests__/deleted.test.js
