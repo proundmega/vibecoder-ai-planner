@@ -155,6 +155,38 @@ describe('GitHubAppAuthService app mode (fg-35 FR3/FR8/FR10)', () => {
     expect(JSON.stringify(log.info.mock.calls)).not.toContain('ghs_test_token');
   });
 
+  it('ignores an active non-GitHub repository when minting an installation token', async () => {
+    const db = {
+      query: jest.fn(async (sql) => {
+        if (sql.includes('FROM project_github_installations')) {
+          return {
+            rows: [{
+              project_id: 1,
+              installation_id: 42,
+              repo_allowlist: [],
+              disabled_at: null,
+            }],
+          };
+        }
+        if (sql.includes('FROM project_repos')) {
+          const scoped = sql.includes("provider = 'github'");
+          return {
+            rows: scoped
+              ? [{ repo_url: REPO_URL, access_token_encrypted: 'encrypted-github' }]
+              : [{ repo_url: 'group/repo', access_token_encrypted: 'encrypted-forgejo' }],
+          };
+        }
+        return { rows: [] };
+      }),
+    };
+    const { service } = makeService({ db });
+
+    const result = await service.mintToken(1, { operation: 'clone' });
+
+    expect(result.repoUrl).toBe(REPO_URL);
+    expect(result.repo).toBe('acme/widgets');
+  });
+
   it('reuses the cached token until shortly before expiry', async () => {
     const { service, request, advance } = makeService();
 
@@ -448,6 +480,33 @@ describe('GitHubAppAuthService PAT fallback (fg-35 FR9)', () => {
       'github_app_token_issued',
       expect.objectContaining({ mode: 'pat', operation: 'clone' })
     );
+  });
+
+  it('ignores an active non-GitHub repository when minting a PAT', async () => {
+    process.env.ALLOW_PAT = 'true';
+    const db = {
+      query: jest.fn(async (sql) => {
+        if (sql.includes('FROM project_github_installations')) {
+          return { rows: [] };
+        }
+        if (sql.includes('FROM project_repos')) {
+          const scoped = sql.includes("provider = 'github'");
+          return {
+            rows: scoped
+              ? [{ repo_url: REPO_URL, access_token_encrypted: 'encrypted-github' }]
+              : [{ repo_url: 'group/repo', access_token_encrypted: 'encrypted-forgejo' }],
+          };
+        }
+        return { rows: [] };
+      }),
+    };
+    const { service } = makeService({ db });
+
+    const result = await service.mintToken(1, { operation: 'clone' });
+
+    expect(result.repoUrl).toBe(REPO_URL);
+    expect(decrypt).toHaveBeenCalledWith('encrypted-github');
+    expect(decrypt).not.toHaveBeenCalledWith('encrypted-forgejo');
   });
 
   it('honours a disabled project in PAT mode', async () => {

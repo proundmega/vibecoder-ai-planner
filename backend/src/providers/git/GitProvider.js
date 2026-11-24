@@ -14,6 +14,7 @@ function capabilities(id, label, options = {}) {
   const {
     review = true,
     installations = false,
+    requiresBase = false,
     reviewName = 'pull request',
     authModes = ['pat'],
   } = options;
@@ -22,6 +23,7 @@ function capabilities(id, label, options = {}) {
     label,
     supportsReviewRequests: review,
     supportsInstallations: installations,
+    requiresBaseUrl: requiresBase,
     reviewRequestName: reviewName,
     authModes: Object.freeze(authModes),
   });
@@ -29,10 +31,18 @@ function capabilities(id, label, options = {}) {
 
 const PROVIDERS = Object.freeze({
   github: capabilities('github', 'GitHub', { installations: true, authModes: ['app', 'pat'] }),
-  forgejo: capabilities('forgejo', 'Forgejo', { authModes: ['pat', 'project_token'] }),
-  gitea: capabilities('gitea', 'Gitea', { authModes: ['pat', 'project_token'] }),
-  gitlab: capabilities('gitlab', 'GitLab', { reviewName: 'merge request', authModes: ['pat', 'project_token'] }),
-  local: capabilities('local', 'Local bare repository', { review: false, reviewName: 'branch', authModes: ['ssh', 'none'] }),
+  forgejo: capabilities('forgejo', 'Forgejo', { requiresBase: true, authModes: ['pat', 'project_token'] }),
+  gitea: capabilities('gitea', 'Gitea', { requiresBase: true, authModes: ['pat', 'project_token'] }),
+  gitlab: capabilities('gitlab', 'GitLab', {
+    requiresBase: true,
+    reviewName: 'merge request',
+    authModes: ['pat', 'project_token'],
+  }),
+  local: capabilities('local', 'Local bare repository', {
+    review: false,
+    reviewName: 'branch',
+    authModes: ['ssh', 'none'],
+  }),
 });
 
 const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDERS));

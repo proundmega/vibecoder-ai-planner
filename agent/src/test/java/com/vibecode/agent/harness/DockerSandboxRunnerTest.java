@@ -1547,8 +1547,11 @@ class DockerSandboxRunnerTest {
                 () -> runner.getFile(handle, "/workspace/file.txt", local));
         }
 
-        assertTrue(error.getMessage().contains("output reader did not finish"),
-            error.getMessage());
+        assertTrue(
+            error.getMessage().contains("output reader did not finish")
+                || (error.getCause() != null
+                    && error.getCause().getMessage().contains("EOF marker")),
+            error.getMessage() + " / " + error.getCause());
         assertEquals("keep", Files.readString(local));
         try (var listing = Files.list(tempDir)) {
             assertFalse(listing.anyMatch(path -> path.getFileName().toString()

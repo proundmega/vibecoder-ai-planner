@@ -159,8 +159,8 @@ describe('GitHubService', () => {
       const result = await GitHubService.disconnectProject(1);
 
       expect(pool.query).toHaveBeenCalledWith(
-        'UPDATE project_repos SET is_active = FALSE, updated_at = NOW() WHERE project_id = $1',
-        [1]
+        expect.stringContaining('WHERE project_id = $1 AND provider = $2'),
+        [1, 'github']
       );
       expect(result.success).toBe(true);
     });
@@ -202,6 +202,47 @@ describe('GitHubService', () => {
       const result = await GitHubService.getProjectRepo(1);
 
       expect(result).toBeNull();
+    });
+
+    it('scopes repo and agent lookups to GitHub when another provider is active', async () => {
+      Project.findById.mockResolvedValue({ id: 1, ownerId: 100 });
+      const rows = [
+        {
+          id: 2,
+          project_id: 1,
+          provider: 'forgejo',
+          repo_url: 'https://git.example.com/group/repo',
+          access_token_encrypted: 'enc:forgejo',
+          auth_mode: 'pat',
+        },
+        {
+          id: 1,
+          project_id: 1,
+          provider: 'github',
+          repo_url: 'https://github.com/owner/repo',
+          access_token_encrypted: 'enc:github',
+          auth_mode: 'app',
+        },
+      ];
+      pool.query.mockImplementation(async (sql, params) => {
+        if (!sql.includes('project_repos')) return { rows: [] };
+        const provider = params?.[1];
+        return {
+          rows: rows.filter(row => !provider || row.provider === provider).slice(0, 1),
+        };
+      });
+      jest.spyOn(GitHubAppAuthService, 'getAuthMode').mockReturnValue('app');
+
+      const repo = await GitHubService.getProjectRepo(1);
+      expect(repo.provider).toBe('github');
+      expect(repo.repoUrl).toBe('https://github.com/owner/repo');
+
+      const agentRepo = await GitHubService.getProjectRepoForAgent(1);
+      expect(agentRepo).toEqual({
+        repoUrl: 'https://github.com/owner/repo',
+        accessToken: null,
+        authMode: 'app',
+      });
     });
   });
 

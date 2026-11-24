@@ -58,6 +58,12 @@ async function createBranch(req, res, next) {
       projectId = ticket.projectId;
     }
 
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can create a branch'
+    );
+
     const result = await GitHubService.createTicketBranch(projectId, ticketId);
     res.status(201).json({ success: true, data: result });
   } catch (error) {
@@ -78,6 +84,12 @@ async function createPR(req, res, next) {
       projectId = ticket.projectId;
     }
 
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can create a pull request'
+    );
+
     const result = await GitHubService.createTicketPR(projectId, ticketId, description);
     res.status(201).json({ success: true, data: result });
   } catch (error) {
@@ -96,6 +108,12 @@ async function deleteBranch(req, res, next) {
       if (!ticket) throw new NotFoundError('Ticket not found');
       projectId = ticket.projectId;
     }
+
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can delete a branch'
+    );
 
     const result = await GitHubService.deleteTicketBranch(projectId, ticketId);
     res.json({ success: true, data: result });

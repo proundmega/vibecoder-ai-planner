@@ -330,7 +330,8 @@ class GitHubAppAuthService {
     const result = await this.db.query(
       `SELECT repo_url, access_token_encrypted
          FROM project_repos
-        WHERE project_id = $1 AND is_active = TRUE`,
+        WHERE project_id = $1 AND provider = 'github' AND is_active = TRUE
+        ORDER BY created_at DESC LIMIT 1`,
       [projectId]
     );
     if (result.rows.length === 0) {
@@ -378,7 +379,8 @@ class GitHubAppAuthService {
     const result = await this.db.query(
       `SELECT repo_url
          FROM project_repos
-        WHERE project_id = $1 AND is_active = TRUE`,
+        WHERE project_id = $1 AND provider = 'github' AND is_active = TRUE
+        ORDER BY created_at DESC LIMIT 1`,
       [projectId]
     );
     if (result.rows.length === 0) {

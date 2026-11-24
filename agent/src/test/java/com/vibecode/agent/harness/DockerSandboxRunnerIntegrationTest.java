@@ -510,6 +510,13 @@ class DockerSandboxRunnerIntegrationTest {
         List<String> networks = new ArrayList<>();
 
         try {
+            // Create the live agent first: another build may run its pool
+            // sweep concurrently, and it treats a pool owner as live only
+            // while this label exists. Creating the managed container/network
+            // before the agent would leave a window where the other sweep can
+            // reap them.
+            String liveAgent = createAgentContainer(image, liveOwner);
+            containers.add(liveAgent);
             String staleContainer = createManagedContainer(image, staleOwner);
             containers.add(staleContainer);
             String staleNetwork = createManagedNetwork(staleOwner);
@@ -520,8 +527,6 @@ class DockerSandboxRunnerIntegrationTest {
             networks.add(liveNetwork);
             String numericContainer = createManagedContainer(image, numericOwner);
             containers.add(numericContainer);
-            String liveAgent = createAgentContainer(image, liveOwner);
-            containers.add(liveAgent);
 
             String daemonId = dockerCommand("info", "--format", "{{.ID}}").trim();
             SandboxConfig config = integrationConfig(image, Map.of(

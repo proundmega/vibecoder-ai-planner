@@ -633,6 +633,7 @@ class HarnessRunService {
                   'status', f.status,
                   'error', f.error,
                   'prUrl', f.pr_url,
+                  'headSha', f.head_sha,
                   'ticketId', f.ticket_id)
          FROM finished f
          CROSS JOIN recipients
@@ -832,12 +833,13 @@ class HarnessRunService {
    * statement that flips the marker can proceed.
    *
    * Only the latest run for a ticket may touch it. Older runs are marked
-   * reconciled (and promoted to succeeded when they recorded a PR) but never
-   * release a ticket for a newer run or overwrite a newer ticket PR.
+   * reconciled (and promoted to succeeded when they recorded publish evidence)
+   * but never release a ticket for a newer run or overwrite a newer ticket PR.
    *
-   * - A run with a stored PR URL is adopted: a missing ticket PR is filled,
-   *   an existing different PR is kept, and in_progress/backlog tickets move
-   *   to review. Done tickets are never changed.
+   * - A run with a stored PR URL or head SHA is adopted: a missing ticket PR
+   *   is filled, an existing different PR is kept, and in_progress/backlog
+   *   tickets move to review. A branch-only run leaves `pr_url` NULL. Done
+   *   tickets are never changed.
    * - A failed run with no PR or head evidence releases the ticket only when it
    *   is in_progress with no PR and no newer run exists.
    * - A dead_letter run is a manual-recovery state: it is never auto-released,
@@ -872,13 +874,19 @@ class HarnessRunService {
          SET reconciled_at = NOW(),
              status = CASE
                WHEN status IN ('failed', 'dead_letter', 'budget_exceeded')
-                 AND NULLIF(BTRIM(pr_url), '') IS NOT NULL
+                 AND (
+                   NULLIF(BTRIM(pr_url), '') IS NOT NULL
+                   OR NULLIF(BTRIM(head_sha), '') IS NOT NULL
+                 )
                THEN 'succeeded'
                ELSE status
              END,
              finished_at = CASE
                WHEN status IN ('failed', 'dead_letter', 'budget_exceeded')
-                 AND NULLIF(BTRIM(pr_url), '') IS NOT NULL
+                 AND (
+                   NULLIF(BTRIM(pr_url), '') IS NOT NULL
+                   OR NULLIF(BTRIM(head_sha), '') IS NOT NULL
+                 )
                THEN COALESCE(finished_at, NOW())
                ELSE finished_at
              END
@@ -892,13 +900,19 @@ class HarnessRunService {
          SET reconciled_at = NOW(),
              status = CASE
                WHEN old.status IN ('failed', 'dead_letter', 'budget_exceeded')
-                 AND NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
+                 AND (
+                   NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
+                   OR NULLIF(BTRIM(old.head_sha), '') IS NOT NULL
+                 )
                THEN 'succeeded'
                ELSE old.status
              END,
              finished_at = CASE
                WHEN old.status IN ('failed', 'dead_letter', 'budget_exceeded')
-                 AND NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
+                 AND (
+                   NULLIF(BTRIM(old.pr_url), '') IS NOT NULL
+                   OR NULLIF(BTRIM(old.head_sha), '') IS NOT NULL
+                 )
                THEN COALESCE(old.finished_at, NOW())
                ELSE old.finished_at
              END
@@ -924,7 +938,7 @@ class HarnessRunService {
          FROM run, marked
          WHERE marked.id = run.id
            AND run.is_latest
-           AND run.pr_url IS NOT NULL
+           AND (run.pr_url IS NOT NULL OR run.head_sha IS NOT NULL)
            AND t.id = run.ticket_id
            AND t.status <> 'done'
            AND NOT EXISTS (
@@ -970,7 +984,7 @@ class HarnessRunService {
               (marked.id IS NOT NULL) AS marked,
               (
                 marked.id IS NOT NULL
-                AND run.pr_url IS NOT NULL
+                AND (run.pr_url IS NOT NULL OR run.head_sha IS NOT NULL)
                 AND run.status IN ('failed', 'dead_letter', 'budget_exceeded')
               ) AS promoted,
               (adopted.id IS NOT NULL) AS adopted,
@@ -1251,10 +1265,11 @@ class HarnessRunService {
    * lease stolen after expiry) are reaped once their heartbeat is stale. The
    * partial unique index prevents a second live run for the same ticket.
    *
-   * Runs with a stored PR URL are marked `succeeded`, not failed, so reaping
-   * never disagrees with publish evidence. Returns every reaped row, including
-   * whether this call failed the run. Ticket changes belong in `reconcileRun`,
-   * which re-checks the run/ticket/PR guards after this statement.
+   * Runs with a stored PR URL or head SHA are marked `succeeded`, not failed,
+   * so reaping never disagrees with publish evidence. Returns every reaped
+   * row, including whether this call failed the run. Ticket changes belong in
+   * `reconcileRun`, which re-checks the run/ticket/PR guards after this
+   * statement.
    */
   async reapExpiredLeases(limit = 50, orphanAfterSeconds = DEFAULT_ORPHAN_AFTER_SECONDS) {
     const parsedLimit = Number(limit);
@@ -1291,12 +1306,14 @@ class HarnessRunService {
          UPDATE harness_runs r
          SET status = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'
+               WHEN NULLIF(BTRIM(r.head_sha), '') IS NOT NULL THEN 'succeeded'
                ELSE 'failed'
              END,
              budget_reserved_usd = 0,
              finished_at = NOW(),
              error = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error
+               WHEN NULLIF(BTRIM(r.head_sha), '') IS NOT NULL THEN r.error
                ELSE COALESCE(r.error, 'lease expired without heartbeat')
              END
          FROM deleted d
@@ -1318,6 +1335,7 @@ class HarnessRunService {
          UPDATE harness_runs r
          SET status = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN 'succeeded'
+               WHEN NULLIF(BTRIM(r.head_sha), '') IS NOT NULL THEN 'succeeded'
                ELSE 'failed'
              END,
              budget_reserved_usd = 0,
@@ -1325,6 +1343,7 @@ class HarnessRunService {
              waiting_since = NULL,
              error = CASE
                WHEN NULLIF(BTRIM(r.pr_url), '') IS NOT NULL THEN r.error
+               WHEN NULLIF(BTRIM(r.head_sha), '') IS NOT NULL THEN r.error
                ELSE COALESCE(r.error, 'run has no lease and heartbeat is stale')
              END
          FROM orphaned o

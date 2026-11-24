@@ -34,11 +34,13 @@ describe('Git provider contract', () => {
       supportsReviewRequests: true,
       supportsInstallations: false,
       reviewRequestName: 'merge request',
+      requiresBaseUrl: true,
     });
     expect(getCapabilities('local')).toMatchObject({
       supportsReviewRequests: false,
       supportsInstallations: false,
       reviewRequestName: 'branch',
+      requiresBaseUrl: false,
     });
   });
 
