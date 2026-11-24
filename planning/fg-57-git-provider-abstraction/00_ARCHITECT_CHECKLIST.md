@@ -87,6 +87,7 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D9 | Enforce local/self-hosted model providers for private code (Git residency is not model residency) | fg-42 | Privacy | fg-42 / follow-up | open |
 | D10 | Webhook-driven review state and merge events | self | Integration | follow-up | open |
 | D11 | Consolidate the private-host checks in `providers/generic`, `ProviderRegistryService` and `providers/git` | review | Security | follow-up | open |
+| D12 | Pin or revalidate the resolved base URL address at connect time (DNS rebinding) | review | Security | fg-57b / follow-up | open |
 
 ## Decisions needed from the user
 

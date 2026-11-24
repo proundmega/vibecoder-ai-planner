@@ -56,24 +56,50 @@ function normalizeHostname(hostname) {
 }
 
 /**
+ * Expand an IPv6 literal to eight hextets. Handles compressed (`::`),
+ * fully expanded and IPv4-tail forms; returns null for malformed input.
+ */
+function expandIPv6(host) {
+  if (host.indexOf('::') !== host.lastIndexOf('::')) return null;
+  const toHextets = (part) => {
+    if (!part) return [];
+    const values = part.split(':');
+    const last = values[values.length - 1];
+    if (last && net.isIPv4(last)) {
+      values.pop();
+      const [a, b, c, d] = last.split('.').map(Number);
+      values.push(((a << 8) | b).toString(16), ((c << 8) | d).toString(16));
+    }
+    return values;
+  };
+  const [head, tail] = host.split('::');
+  const headParts = toHextets(head);
+  const tailParts = toHextets(tail);
+  const missing = 8 - headParts.length - tailParts.length;
+  if (missing < 0 || (host.includes('::') ? missing < 1 : missing !== 0)) return null;
+  const parts = [...headParts, ...Array(missing).fill('0'), ...tailParts];
+  const values = parts.map(part => (/^[0-9a-f]{1,4}$/.test(part) ? Number.parseInt(part, 16) : NaN));
+  return values.length === 8 && values.every(value => Number.isInteger(value)) ? values : null;
+}
+
+/**
  * Node normalises IPv4-mapped literals such as ::ffff:127.0.0.1 to
  * ::ffff:7f00:1 before it reaches us, so decode the hex form back to IPv4.
+ * Fully expanded forms (0:0:0:0:0:ffff:7f00:1) and the deprecated
+ * IPv4-compatible ::/96 form (::127.0.0.1) are handled too.
  */
-function ipv4FromMapped(host) {
-  if (!host.startsWith('::ffff:')) return null;
-  const tail = host.slice('::ffff:'.length);
-  if (net.isIPv4(tail)) return tail;
-  const groups = tail.split(':');
-  if (groups.length !== 2) return null;
-  const high = Number.parseInt(groups[0], 16);
-  const low = Number.parseInt(groups[1], 16);
-  if (!Number.isInteger(high) || !Number.isInteger(low)) return null;
-  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.');
+function ipv4FromEmbedded(host) {
+  const hextets = expandIPv6(host);
+  if (!hextets) return null;
+  const mapped = hextets.slice(0, 5).every(value => value === 0) && hextets[5] === 0xffff;
+  const compatible = hextets.slice(0, 6).every(value => value === 0);
+  if (!mapped && !compatible) return null;
+  return [hextets[6] >> 8, hextets[6] & 0xff, hextets[7] >> 8, hextets[7] & 0xff].join('.');
 }
 
 function isPrivateAddress(address) {
-  const mapped = ipv4FromMapped(String(address).toLowerCase());
-  const value = mapped || address;
+  const embedded = ipv4FromEmbedded(String(address).toLowerCase());
+  const value = embedded || address;
   if (net.isIPv4(value)) {
     const [a, b] = value.split('.').map(Number);
     return a === 0 || a === 10 || a === 127
@@ -105,7 +131,9 @@ function isPrivateHostname(hostname) {
  * Validate a self-hosted provider base URL. Private hosts stay blocked unless
  * the existing host policy (`ALLOW_PRIVATE_HOSTS=1`) allows them. Hostnames are
  * resolved and rejected when any address is private; a failed lookup rejects
- * (fail closed) instead of silently allowing the host.
+ * (fail closed) instead of silently allowing the host. Validation is a
+ * point-in-time check; fg-57 D12 tracks pinning/revalidating the address at
+ * connect time for DNS rebinding.
  */
 async function assertSafeBaseUrl(raw, {
   allowPrivateHosts = process.env.ALLOW_PRIVATE_HOSTS === '1',

@@ -16,6 +16,7 @@ const {
   getCapabilities,
   normalizeProviderId,
   assertSafeBaseUrl,
+  isPrivateHostname,
   createRegistry,
 } = require('../providers/git/GitProvider');
 const git = require('../providers/git');
@@ -85,6 +86,8 @@ describe('Git provider contract', () => {
       'http://[::ffff:127.0.0.1]',
       'http://[::ffff:169.254.169.254]',
       'http://[::ffff:a00:1]',
+      'http://[::127.0.0.1]',
+      'http://[::10.0.0.1]',
     ])('rejects private literal %s', async (url) => {
       await expect(safeBaseUrl(url)).rejects.toThrow('not allowed by the host policy');
     });
@@ -94,11 +97,28 @@ describe('Git provider contract', () => {
       ['http://localtest.me', '127.0.0.1'],
       ['http://metadata.example.com', '169.254.169.254'],
       ['http://private.example.com', '10.0.0.1'],
+      ['http://mapped.example.com', '0:0:0:0:0:ffff:7f00:1'],
+      ['http://mapped-metadata.example.com', '0:0:0:0:0:ffff:a9fe:a9fe'],
+      ['http://mapped-v4tail.example.com', '0:0:0:0:0:ffff:127.0.0.1'],
     ])('rejects %s when it resolves to %s', async (url, address) => {
-      const lookup = jest.fn().mockResolvedValue([{ address, family: 4 }]);
+      const lookup = jest.fn().mockResolvedValue([
+        { address, family: address.includes(':') ? 6 : 4 },
+      ]);
       await expect(assertSafeBaseUrl(url, { lookup }))
         .rejects.toThrow('not allowed by the host policy');
       expect(lookup).toHaveBeenCalled();
+    });
+
+    it('allows a public IPv6 address and detects expanded mapped literals', async () => {
+      const lookup = jest.fn().mockResolvedValue([{ address: '2001:db8::1', family: 6 }]);
+
+      await expect(assertSafeBaseUrl('https://ipv6.example.com', { lookup }))
+        .resolves.toBe('https://ipv6.example.com');
+      expect(isPrivateHostname('0:0:0:0:0:ffff:7f00:1')).toBe(true);
+      expect(isPrivateHostname('0:0:0:0:0:ffff:a9fe:a9fe')).toBe(true);
+      expect(isPrivateHostname('::7f00:1')).toBe(true);
+      expect(isPrivateHostname('::a00:1')).toBe(true);
+      expect(isPrivateHostname('2001:db8::1')).toBe(false);
     });
 
     it('fails closed when the host cannot be resolved', async () => {
