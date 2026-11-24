@@ -76,6 +76,15 @@ class BoundedTarFileReaderTest {
     }
 
     @Test
+    void rejectsAnArchiveWithoutTheEofMarker() {
+        byte[] body = tarBody("data".getBytes(StandardCharsets.US_ASCII), (byte) '0', "file");
+
+        IOException error = assertThrows(IOException.class,
+            () -> BoundedTarFileReader.read(new ByteArrayInputStream(body), 1024, 4096));
+        assertTrue(error.getMessage().contains("EOF marker"));
+    }
+
+    @Test
     void rejectsTruncatedContent() {
         byte[] tar = Arrays.copyOf(header(10, (byte) '0', "ca.crt"), 512 + 4);
 

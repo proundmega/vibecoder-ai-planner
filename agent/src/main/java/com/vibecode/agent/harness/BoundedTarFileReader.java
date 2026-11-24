@@ -63,7 +63,7 @@ final class BoundedTarFileReader {
         while (true) {
             int read = readFully(counting, header);
             if (read == 0) {
-                break;
+                throw new IOException("tar stream ended before the EOF marker");
             }
             if (read != BLOCK) {
                 throw new IOException("truncated tar header");
