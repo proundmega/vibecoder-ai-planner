@@ -94,3 +94,8 @@
 - **Merge**: `04081bf`
 - **Date**: 2026-11-23
 - **Description**: Supervisor idle/max refresh, inode watermarks, periodic runtime/legacy/temp sweep into `/repos/orphans/`, weekly dangling-image prune, periodic budget and complete `storage.*` events.
+
+## bt-60: Durable Harness End-to-End Tests
+- **PR**: #198 (Phase A), #207 (Phase B backend drills); staging rerun: `proundmega/planner-test` #24
+- **Date**: 2026-11-24
+- **Description**: Full durable-harness e2e: real backend HTTP/Postgres, agent contract/processor drills, disposable staging happy path and crash/restart, lease-loss and health-gate drills. Run `98d6f814` on merged `master` opened PR #24 with the full checkpoint sequence and no lease. Finish/key-expiry, CI e2e and the OpenCode Go session-header/checkpoint-step findings remain deferred.

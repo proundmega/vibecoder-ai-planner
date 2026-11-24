@@ -119,12 +119,25 @@ explicit PAT mode and the HTTP/1.1 health gate). The final #220 PAT narrowing
 (`787a941`) is **not** part of this recorded evidence; the post-#220 rerun on
 merged `master` covers it and replaces the pre-merge evidence.
 
+### Formal master rerun (2026-11-24)
+
+The agent and API were rebuilt from merged `master` at `110aa97`. A new ticket
+13 (ticket ID in the disposable project) ran as
+`98d6f814-903d-4a24-8973-32d30706f237`: health gate passed, checkpoints
+`cloned -> session_ready -> prompting -> verifying -> publishing -> done`,
+verification `node --check script.js` passed, no lease remained, and PR #24
+(`head_sha=4b80530`) was opened on `planner-test`. The same staging deviations
+remain: OpenCode Go behind the session-header proxy (D13), PAT local mode and a
+native supervisor with the direct Docker socket. The `sandbox_ready` /
+`sandbox_bridge_ready` checkpoint warnings (D14) still occur.
+
 | Ticket | Run | Result | PR |
 |---|---|---|---|
 | 1 - append marker to `script.js` | `1af4a751-0bef-4428-a888-7579bbf7d7fd` | `succeeded`, `done`, `head_sha=bd64fb9`; stored checkpoints `cloned -> session_ready -> prompting -> verifying -> publishing -> done`; no lease left | #20 |
 | 2 - lease-loss drill | `b9b2682b` then `74216219` | lease deleted during the first run; no PR/branch, ticket recovered; retry succeeded | #21 |
 | 3 - health-gate validation | `d23b7862` | gate passed after the HTTP/1.1 fix; `succeeded`, `done` | #22 |
 | 4 - crash/restart drill | `b889e1fb` then `5a80e787` | child killed mid-run; startup recovery failed the stale run with `Agent restarted before the run finished; restarting cleanly`, no publish; clean retry succeeded | #23 |
+| 13 - master rerun | `98d6f814` | built from `master` `110aa97`; health gate passed; full checkpoint sequence; `node --check` passed; no lease | #24 |
 
 Deviations from the procedure above:
 

@@ -24,7 +24,7 @@ PR-ready notification or a question. Work this order; it is the canonical queue.
 | 2 | **fg-45** — ticket quality gates | Merged (#199) | Definition of Ready, acceptance criteria, assumptions/risk. Exit: tickets are specific enough for an unattended run. |
 | 3 | **fg-43** — Docker agent deployment | Merged (#197) | One supervisor per host, supervisor container limits; per-child cgroups are D6. Exit: a node sized and deployed in one command. |
 | 4 | **fg-44** — agent storage lifecycle | Merged (#209 foundation, #212 supervisor lifecycle) | Runtime-scoped workspaces, cleanup, watermarks. Exit: unattended runs do not fill the host. |
-| 5 | **bt-60** — durable-harness e2e | In progress — Phase A #198; Phase B drills #207; staging executed 2026-11-23 (PRs #20-#23, pre-merge #220); formal rerun after #220 | Run the disposable staging path and failure drills. Exit: one clean end-to-end run with evidence. |
+| 5 | **bt-60** — durable-harness e2e | Done — Phase A #198; Phase B drills #207; master staging rerun (run `98d6f814`, PR #24); D7/D8/D13/D14 deferred | Run the disposable staging path and failure drills. Exit: one clean end-to-end run with evidence. |
 | 6 | **fg-31** — automatic review harness | Plan merged (#103) | Optional. Only if you stop reviewing PRs yourself. |
 | 7 | **fg-36** — merge lifecycle | Planned | Optional. Only if the agent should update/merge branches. |
 | 8 | **fg-37** — agent evaluation harness | Planned | Later: evaluation. |
@@ -138,7 +138,7 @@ are pilot work.
 | ~~bt-53~~ | `bt-53-backfill-redis-integration-tests` | bp-53 | ~~Redis integration tests~~ ✅ Covered in bp-53 PR |
 | ~~bt-56~~ | `bt-56-backfill-design-system-tests` | bp-56 | ~~Design system tests~~ ✅ Done (this session) |
 | ~~bt-57~~ | `bt-57-backfill-typescript-migration-tests` | bp-57 | ~~TypeScript migration tests~~ ✅ Done (this session) |
-| **bt-60** | `bt-60-durable-harness-e2e-tests` | fg-33 | **In progress — Phase A merged (#198)** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). Phase A (16 fixture/lifecycle cases, real app + real Postgres) is merged as `19cfc33`; the Phase B backend drills (crash adoption, stale-run release, idempotent publish/reconcile, dead-letter/release) are merged as `c0ff5c0` (#207). The real staging run executed on 2026-11-23 against a disposable local stack and `planner-test` (runs `1af4a751`/`74216219`/`d23b7862`/`5a80e787`, PRs #20-#23) using the pre-merge #220 agent build; finish-unavailable and key-expiry remain. A rerun on merged `master` after #220 is the only formality. No production code; never use a product ticket. |
+| **bt-60** | `DONE/bt-60-durable-harness-e2e-tests` | fg-33 | **Done — Phase A merged (#198)** — Full durable-harness e2e: real backend HTTP + Postgres, agent contract/processor gap check, and a disposable staging run (real OpenCode/GitHub/PR). Phase A is `19cfc33`; the Phase B backend drills are `c0ff5c0` (#207). The 2026-11-23 staging (`1af4a751`/`74216219`/`d23b7862`/`5a80e787`, PRs #20-#23) and the 2026-11-24 master rerun (`98d6f814`, PR #24) pass. Deferred: finish/key-expiry (D7), CI e2e (D8), OpenCode Go session header (D13), checkpoint-step warnings (D14). No production code; never use a product ticket. |
 
 ## Feature Gaps (fg-*)
 
@@ -262,7 +262,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 - bp-68, bp-69, bp-70 are **completed** (PRs #44, #46, #47).
 - pa-01 is **completed** (this session — permission system was already implemented, only remaining frontend role checks were cleaned up).
 - bt-53, bt-56, bt-57 are **completed** (test backfills for corresponding bp-* suites).
-- **bt-60** is **in progress** — full durable-harness e2e. Phase A (backend HTTP/Postgres e2e) merged as `19cfc33` (#198); Phase B backend drills (crash/reaper/idempotent-publish/dead-letter) are merged as `c0ff5c0` (#207); the disposable staging path ran on 2026-11-23 (PRs #20-#23) using the pre-merge #220 build. Finish-unavailable/key-expiry remain, and a rerun on merged `master` after #220 is the formality. See `planning/bt-60-durable-harness-e2e-tests/`.
+- **bt-60** is **done** — full durable-harness e2e. Phase A merged as `19cfc33` (#198); Phase B backend drills as `c0ff5c0` (#207); staging ran on 2026-11-23 (PRs #20-#23) and the formal master rerun on 2026-11-24 (`98d6f814`, PR #24). Finish-unavailable/key-expiry, CI e2e, the OpenCode Go session header and checkpoint-step warnings remain deferred. See `planning/DONE/bt-60-durable-harness-e2e-tests/`.
 - bt-53/56/57 are test backfills for their bp-* suites; **bt-60** is a forward end-to-end validation for fg-33.
 - fg-01 through fg-07 are **completed** (this session).
 - fg-08 through fg-12 were implemented (merged into a single commit) but have no separate planning directory.
