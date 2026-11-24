@@ -1,9 +1,12 @@
 package com.vibecode.agent.harness;
 
+import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -13,20 +16,22 @@ import java.util.Set;
 /**
  * Parses the reviewer's structured output (fg-31b, FR4).
  *
- * <p>Validation is strict and fails closed: an unknown verdict, a missing or
- * blank required field, a malformed finding, or a {@code critical}/{@code
- * warning} finding outside the diff is rejected. A model-supplied
- * {@code verification} field is ignored; verification belongs to the
- * supervisor.</p>
+ * <p>Validation is strict and fails closed: extra content after the JSON
+ * object, an unknown verdict, a missing or blank required field, a malformed
+ * finding, or a {@code critical}/{@code warning} finding outside the diff is
+ * rejected. A model-supplied {@code verification} field is ignored;
+ * verification belongs to the supervisor.</p>
  */
 public final class ReviewResultParser {
 
     static final Set<String> VERDICTS = Set.of("approve", "request_changes", "comment");
     static final Set<String> SEVERITIES = Set.of("critical", "warning", "info");
     static final int MAX_TEXT_CHARS = 8_000;
+    static final int MAX_LIST_ITEM_CHARS = 2_000;
     static final int MAX_LIST_ITEMS = 200;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
     public Result parse(String raw) {
         return parse(raw, List.of());
@@ -42,7 +47,11 @@ public final class ReviewResultParser {
         }
 
         String summary = requiredText(root, "summary", "summary", MAX_TEXT_CHARS);
-        List<Finding> findings = parseFindings(root.get("findings"), diffFiles);
+        JsonNode findingsNode = root.get("findings");
+        if (findingsNode == null || findingsNode.isNull()) {
+            throw invalid("findings is required");
+        }
+        List<Finding> findings = parseFindings(findingsNode, diffFiles);
         List<String> residualRisks = parseStringArray(root.get("residual_risks"), "residual_risks");
         List<String> humanQuestions = parseStringArray(
             root.get("human_questions"),
@@ -54,16 +63,28 @@ public final class ReviewResultParser {
 
     private JsonNode readObject(String raw) {
         String json = extractJson(raw);
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(json);
+        try (JsonParser parser = objectMapper.getFactory().createParser(json)) {
+            JsonNode root = objectMapper.readTree(parser);
+            if (hasTrailingContent(parser)) {
+                throw invalid("review output contains trailing content");
+            }
+            if (root == null || !root.isObject()) {
+                throw invalid("review output must be a JSON object");
+            }
+            return root;
         } catch (JsonProcessingException error) {
             throw new InvalidReviewException("review output is not valid JSON", error);
+        } catch (IOException error) {
+            throw new InvalidReviewException("review output could not be read", error);
         }
-        if (root == null || !root.isObject()) {
-            throw invalid("review output must be a JSON object");
+    }
+
+    private static boolean hasTrailingContent(JsonParser parser) {
+        try {
+            return parser.nextToken() != null;
+        } catch (IOException error) {
+            return true;
         }
-        return root;
     }
 
     private static String extractJson(String raw) {
@@ -76,10 +97,21 @@ public final class ReviewResultParser {
             if (firstNewline < 0) {
                 throw invalid("fenced review output has no body");
             }
-            text = text.substring(firstNewline + 1).trim();
-            if (text.endsWith("```")) {
-                text = text.substring(0, text.length() - 3).trim();
+            String body = text.substring(firstNewline + 1).trim();
+            if (!body.endsWith("```")) {
+                throw invalid("fenced review output is missing its closing fence");
             }
+            body = body.substring(0, body.length() - 3).trim();
+            if (body.contains("```")) {
+                throw invalid("review output must contain exactly one JSON object");
+            }
+            if (!body.startsWith("{")) {
+                throw invalid("review output must be a JSON object");
+            }
+            return body;
+        }
+        if (text.contains("```")) {
+            throw invalid("review output must not mix fences and bare JSON");
         }
         if (!text.startsWith("{")) {
             throw invalid("review output must be a JSON object");
@@ -88,9 +120,6 @@ public final class ReviewResultParser {
     }
 
     private List<Finding> parseFindings(JsonNode node, Set<String> diffFiles) {
-        if (node == null || node.isNull()) {
-            return List.of();
-        }
         if (!node.isArray()) {
             throw invalid("findings must be an array");
         }
@@ -111,7 +140,7 @@ public final class ReviewResultParser {
                 throw invalid(label + ".severity must be one of: critical, warning, info");
             }
             String message = requiredText(item, "message", label + ".message", MAX_TEXT_CHARS);
-            String file = optionalText(item.get("file"), label + ".file", 1_024);
+            String rawFile = optionalText(item.get("file"), label + ".file", 1_024);
             Integer line = optionalLine(item.get("line"), label + ".line");
             String suggestion = optionalText(
                 item.get("suggestion"),
@@ -119,14 +148,22 @@ public final class ReviewResultParser {
                 MAX_TEXT_CHARS
             );
 
+            String matchedFile = rawFile == null ? null : matchedDiffPath(rawFile, diffFiles);
             if (!"info".equals(severity)) {
-                if (file == null) {
+                if (rawFile == null) {
                     throw invalid(label + ".file is required unless severity is info");
                 }
-                if (!diffFiles.contains(file)) {
-                    throw invalid(label + ".file is outside the diff: " + file);
+                if (matchedFile == null) {
+                    throw invalid(label + ".file is outside the diff: " + rawFile);
+                }
+                if (line == null) {
+                    throw invalid(label + ".line is required unless severity is info");
                 }
             }
+            String file = matchedFile != null
+                ? matchedFile
+                : (rawFile == null ? null : canonicalPath(rawFile));
+
             findings.add(new Finding(severity, file, line, message, suggestion));
         }
         return findings;
@@ -145,13 +182,18 @@ public final class ReviewResultParser {
         List<String> values = new ArrayList<>();
         for (int index = 0; index < node.size(); index++) {
             JsonNode item = node.get(index);
+            String label = field + "[" + index + "]";
             if (item == null || !item.isTextual()) {
-                throw invalid(field + "[" + index + "] must be a string");
+                throw invalid(label + " must be a string");
             }
             String value = item.asText().trim();
-            if (!value.isEmpty()) {
-                values.add(value);
+            if (value.isEmpty()) {
+                continue;
             }
+            if (value.length() > MAX_LIST_ITEM_CHARS) {
+                throw invalid(label + " exceeds " + MAX_LIST_ITEM_CHARS + " characters");
+            }
+            values.add(value);
         }
         return values;
     }
@@ -203,6 +245,32 @@ public final class ReviewResultParser {
             throw invalid(label + " exceeds " + max + " characters");
         }
         return value;
+    }
+
+    private static String matchedDiffPath(String file, Set<String> diffFiles) {
+        String target = comparablePath(file);
+        for (String changed : diffFiles) {
+            if (comparablePath(changed).equals(target)) {
+                return canonicalPath(changed);
+            }
+        }
+        return null;
+    }
+
+    private static String comparablePath(String path) {
+        String value = canonicalPath(path);
+        if (value.startsWith("a/") || value.startsWith("b/")) {
+            value = value.substring(2);
+        }
+        return value;
+    }
+
+    private static String canonicalPath(String path) {
+        String value = path.replace('\\', '/');
+        while (value.startsWith("./")) {
+            value = value.substring(2);
+        }
+        return value.replaceAll("/{2,}", "/");
     }
 
     private static InvalidReviewException invalid(String message) {

@@ -3,6 +3,7 @@ package com.vibecode.agent.harness;
 import com.vibecode.agent.model.Ticket;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Builds the prompt for a read-only review session (fg-31b, FR2).
@@ -12,12 +13,30 @@ import java.util.List;
  * findings. Ticket/PR/planning content is delimited as untrusted data because
  * it can carry prompt injection. Verification is supervisor-owned and is never
  * requested from the model.</p>
+ *
+ * <p>Every untrusted section has a size budget, and planning plus repository
+ * documents share one budget, so a prompt cannot grow without bound.</p>
  */
 public final class ReviewPromptBuilder {
 
+    static final int MAX_TITLE_CHARS = 1_000;
+    static final int MAX_DESCRIPTION_CHARS = 10_000;
+    static final int MAX_ACCEPTANCE_CHARS = 10_000;
+    static final int MAX_CRITERION_CHARS = 2_000;
     static final int MAX_DOC_CHARS = 40_000;
-    static final int MAX_TOTAL_DOC_CHARS = 120_000;
-    static final int MAX_DIFF_CHARS = 120_000;
+    static final int MAX_TOTAL_DOC_CHARS = 60_000;
+    static final int MAX_DIFF_CHARS = 60_000;
+    static final int MAX_PREVIOUS_CHARS = 10_000;
+    static final int MAX_PREVIOUS_MESSAGE_CHARS = 2_000;
+    static final int MAX_FILE_LIST_CHARS = 10_000;
+    static final int MAX_FILE_PATH_CHARS = 500;
+    static final int MAX_METADATA_CHARS = 1_000;
+    static final int MAX_PROMPT_CHARS = 220_000;
+
+    private static final Pattern UNTRUSTED_TAG = Pattern.compile(
+        "<\\s*/?\\s*untrusted-content\\s*>",
+        Pattern.CASE_INSENSITIVE
+    );
 
     public String build(Request request) {
         if (request == null) {
@@ -54,46 +73,55 @@ public final class ReviewPromptBuilder {
         prompt.append("## Ticket (untrusted data)\n\n");
         prompt.append("<untrusted-content source=\"ticket\">\n");
         prompt.append("ID: ").append(ticket.getId()).append('\n');
-        prompt.append("Title: ").append(escapeUntrusted(ticket.getTitle())).append('\n');
-        prompt.append("Status: ").append(escapeUntrusted(ticket.getStatus())).append('\n');
-        prompt.append("Phase: ").append(escapeUntrusted(request.phase())).append('\n');
-        prompt.append("Priority: ").append(escapeUntrusted(ticket.getPriority())).append('\n');
-        prompt.append("Description:\n").append(escapeUntrusted(ticket.getDescription())).append('\n');
+        prompt.append("Title: ").append(escapeUntrusted(
+            truncate(ticket.getTitle(), MAX_TITLE_CHARS, " [truncated]")
+        )).append('\n');
+        prompt.append("Status: ").append(escapeUntrusted(
+            truncate(ticket.getStatus(), MAX_METADATA_CHARS, "")
+        )).append('\n');
+        prompt.append("Phase: ").append(escapeUntrusted(
+            truncate(request.phase(), MAX_METADATA_CHARS, "")
+        )).append('\n');
+        prompt.append("Priority: ").append(escapeUntrusted(
+            truncate(ticket.getPriority(), MAX_METADATA_CHARS, "")
+        )).append('\n');
+        prompt.append("Description:\n").append(escapeUntrusted(
+            truncate(ticket.getDescription(), MAX_DESCRIPTION_CHARS, "\n[truncated]")
+        )).append('\n');
         prompt.append("</untrusted-content>\n\n");
 
-        if (!request.acceptanceCriteria().isEmpty()) {
-            prompt.append("## Acceptance criteria (untrusted data)\n\n");
-            prompt.append("<untrusted-content source=\"acceptance-criteria\">\n");
-            for (String criterion : request.acceptanceCriteria()) {
-                prompt.append("- ").append(escapeUntrusted(criterion)).append('\n');
-            }
-            prompt.append("</untrusted-content>\n\n");
-        }
+        appendAcceptanceCriteria(prompt, request.acceptanceCriteria());
 
-        appendDocuments(prompt, "Planning documents", "planning", request.planningDocs());
+        int[] documentBudget = { MAX_TOTAL_DOC_CHARS };
+        appendDocuments(prompt, "Planning documents", "planning", request.planningDocs(), documentBudget);
         appendDocuments(
             prompt,
             "Repository instructions",
             "repository",
-            request.repositoryInstructions()
+            request.repositoryInstructions(),
+            documentBudget
         );
 
         prompt.append("## Pull request metadata (untrusted data)\n\n");
         prompt.append("<untrusted-content source=\"pull-request\">\n");
         if (pullRequest != null) {
-            prompt.append("Number: ").append(escapeUntrusted(pullRequest.number())).append('\n');
-            prompt.append("URL: ").append(escapeUntrusted(pullRequest.url())).append('\n');
-            prompt.append("Base ref: ").append(escapeUntrusted(pullRequest.baseRef())).append('\n');
-            prompt.append("Head ref: ").append(escapeUntrusted(pullRequest.headRef())).append('\n');
-            prompt.append("Head SHA: ").append(escapeUntrusted(pullRequest.headSha())).append('\n');
+            prompt.append("Number: ").append(escapeUntrusted(
+                truncate(pullRequest.number(), MAX_METADATA_CHARS, "")
+            )).append('\n');
+            prompt.append("URL: ").append(escapeUntrusted(
+                truncate(pullRequest.url(), MAX_METADATA_CHARS, "")
+            )).append('\n');
+            prompt.append("Base ref: ").append(escapeUntrusted(
+                truncate(pullRequest.baseRef(), MAX_METADATA_CHARS, "")
+            )).append('\n');
+            prompt.append("Head ref: ").append(escapeUntrusted(
+                truncate(pullRequest.headRef(), MAX_METADATA_CHARS, "")
+            )).append('\n');
+            prompt.append("Head SHA: ").append(escapeUntrusted(
+                truncate(pullRequest.headSha(), MAX_METADATA_CHARS, "")
+            )).append('\n');
             prompt.append("Changed files:\n");
-            for (ChangedFile file : pullRequest.files()) {
-                prompt.append("- ").append(escapeUntrusted(file.path()));
-                if (file.status() != null && !file.status().isBlank()) {
-                    prompt.append(" (").append(escapeUntrusted(file.status())).append(')');
-                }
-                prompt.append('\n');
-            }
+            appendChangedFiles(prompt, pullRequest.files());
         } else {
             prompt.append("No pull request metadata was provided.\n");
         }
@@ -101,32 +129,15 @@ public final class ReviewPromptBuilder {
 
         prompt.append("## Pull request diff (untrusted data)\n\n");
         prompt.append("<untrusted-content source=\"pull-request-diff\">\n");
-        String diff = pullRequest == null || pullRequest.diff() == null
-            ? ""
-            : pullRequest.diff();
-        if (diff.length() > MAX_DIFF_CHARS) {
-            diff = diff.substring(0, MAX_DIFF_CHARS) + "\n[diff truncated]\n";
-        }
-        prompt.append(escapeUntrusted(diff)).append('\n');
+        String diff = pullRequest == null ? null : pullRequest.diff();
+        prompt.append(escapeUntrusted(
+            truncate(diff, MAX_DIFF_CHARS, "\n[diff truncated]\n")
+        )).append('\n');
         prompt.append("</untrusted-content>\n\n");
 
         prompt.append("## Previous review round\n\n");
         prompt.append("Round: ").append(Math.max(request.round(), 0)).append('\n');
-        if (request.previousFindings().isEmpty()) {
-            prompt.append("No previous findings.\n\n");
-        } else {
-            prompt.append("Check whether these earlier findings were addressed:\n");
-            prompt.append("<untrusted-content source=\"previous-findings\">\n");
-            for (PreviousFinding finding : request.previousFindings()) {
-                prompt.append("- [").append(escapeUntrusted(finding.severity())).append("] ");
-                prompt.append(escapeUntrusted(finding.file()));
-                if (finding.line() != null) {
-                    prompt.append(':').append(finding.line());
-                }
-                prompt.append(" - ").append(escapeUntrusted(finding.message())).append('\n');
-            }
-            prompt.append("</untrusted-content>\n\n");
-        }
+        appendPreviousFindings(prompt, request.previousFindings());
 
         prompt.append("## Review checklist\n\n");
         prompt.append("- Correctness and completeness against the ticket and acceptance criteria.\n");
@@ -135,8 +146,8 @@ public final class ReviewPromptBuilder {
         prompt.append("- Error handling, data consistency and concurrency.\n");
         prompt.append("- Style and conventions from the repository instructions.\n");
         prompt.append("- Only report findings supported by the diff or repository content.\n");
-        prompt.append("- `critical` and `warning` findings must reference a changed file; ");
-        prompt.append("`info` may be general.\n");
+        prompt.append("- `critical` and `warning` findings must reference a changed file and ");
+        prompt.append("line; `info` may be general.\n");
         prompt.append("- `approve` requires zero `critical` findings and passing supervisor ");
         prompt.append("verification; the supervisor makes the final approval decision.\n\n");
 
@@ -160,49 +171,144 @@ public final class ReviewPromptBuilder {
         prompt.append("Do not include a `verification` field; if one is emitted it is ignored. ");
         prompt.append("Malformed output is rejected and cannot approve the change.\n");
 
+        if (prompt.length() > MAX_PROMPT_CHARS) {
+            throw new IllegalStateException(
+                "review prompt exceeds " + MAX_PROMPT_CHARS + " characters"
+            );
+        }
         return prompt.toString();
+    }
+
+    private static void appendAcceptanceCriteria(StringBuilder prompt, List<String> criteria) {
+        if (criteria.isEmpty()) {
+            return;
+        }
+        prompt.append("## Acceptance criteria (untrusted data)\n\n");
+        prompt.append("<untrusted-content source=\"acceptance-criteria\">\n");
+        int budget = MAX_ACCEPTANCE_CHARS;
+        for (String criterion : criteria) {
+            if (budget <= 0) {
+                prompt.append("[remaining criteria omitted: prompt budget exhausted]\n");
+                break;
+            }
+            int perCriterion = Math.min(MAX_CRITERION_CHARS, budget);
+            String value = truncate(criterion, perCriterion, "\n[truncated]");
+            prompt.append("- ").append(escapeUntrusted(value)).append('\n');
+            budget -= Math.min(length(criterion), perCriterion);
+        }
+        prompt.append("</untrusted-content>\n\n");
+    }
+
+    private static void appendChangedFiles(StringBuilder prompt, List<ChangedFile> files) {
+        int budget = MAX_FILE_LIST_CHARS;
+        for (ChangedFile file : files) {
+            if (budget <= 0) {
+                prompt.append("[remaining files omitted: prompt budget exhausted]\n");
+                break;
+            }
+            String path = truncate(file.path(), MAX_FILE_PATH_CHARS, "[truncated]");
+            String status = truncate(file.status(), 100, "");
+            prompt.append("- ").append(escapeUntrusted(path));
+            if (!status.isBlank()) {
+                prompt.append(" (").append(escapeUntrusted(status)).append(')');
+            }
+            prompt.append('\n');
+            budget -= Math.min(length(file.path()), MAX_FILE_PATH_CHARS) + status.length();
+        }
+    }
+
+    private static void appendPreviousFindings(
+        StringBuilder prompt,
+        List<PreviousFinding> findings
+    ) {
+        if (findings.isEmpty()) {
+            prompt.append("No previous findings.\n\n");
+            return;
+        }
+        prompt.append("Check whether these earlier findings were addressed:\n");
+        prompt.append("<untrusted-content source=\"previous-findings\">\n");
+        int budget = MAX_PREVIOUS_CHARS;
+        for (PreviousFinding finding : findings) {
+            if (budget <= 0) {
+                prompt.append("[remaining findings omitted: prompt budget exhausted]\n");
+                break;
+            }
+            String message = truncate(
+                finding.message(),
+                MAX_PREVIOUS_MESSAGE_CHARS,
+                "\n[truncated]"
+            );
+            prompt.append("- [").append(escapeUntrusted(
+                truncate(finding.severity(), 64, "")
+            )).append("] ");
+            prompt.append(escapeUntrusted(truncate(finding.file(), MAX_FILE_PATH_CHARS, "")));
+            if (finding.line() != null) {
+                prompt.append(':').append(finding.line());
+            }
+            prompt.append(" - ").append(escapeUntrusted(message)).append('\n');
+            budget -= Math.min(length(finding.message()), MAX_PREVIOUS_MESSAGE_CHARS);
+        }
+        prompt.append("</untrusted-content>\n\n");
     }
 
     private static void appendDocuments(
         StringBuilder prompt,
         String title,
         String source,
-        List<String> documents
+        List<String> documents,
+        int[] sharedBudget
     ) {
         if (documents == null || documents.isEmpty()) {
             return;
         }
         prompt.append("## ").append(title).append(" (untrusted data)\n\n");
         prompt.append("<untrusted-content source=\"").append(source).append("\">\n");
-        int totalChars = 0;
+        if (sharedBudget[0] <= 0) {
+            prompt.append("[omitted: prompt budget exhausted]\n");
+            prompt.append("</untrusted-content>\n\n");
+            return;
+        }
         for (String document : documents) {
-            if (document == null) {
-                continue;
-            }
-            if (totalChars >= MAX_TOTAL_DOC_CHARS) {
-                prompt.append("[remaining documents omitted: prompt budget exhausted]\n\n");
+            if (sharedBudget[0] <= 0) {
+                prompt.append("[remaining documents omitted: prompt budget exhausted]\n");
                 break;
             }
-            int remaining = MAX_TOTAL_DOC_CHARS - totalChars;
-            int perDocument = Math.min(MAX_DOC_CHARS, remaining);
-            String value = document.length() > perDocument
-                ? document.substring(0, perDocument) + "\n[truncated]"
-                : document;
+            int perDocument = Math.min(MAX_DOC_CHARS, sharedBudget[0]);
+            int consumed = Math.min(length(document), perDocument);
+            String value = truncate(document, perDocument, "\n[truncated]");
             prompt.append(escapeUntrusted(value)).append("\n\n");
-            totalChars += value.length();
+            sharedBudget[0] -= consumed;
         }
         prompt.append("</untrusted-content>\n\n");
     }
 
+    private static int length(String value) {
+        return value == null ? 0 : value.length();
+    }
+
+    private static String truncate(String value, int max, String marker) {
+        if (value == null) {
+            return "";
+        }
+        if (value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, max) + marker;
+    }
+
     /**
-     * Delimits untrusted content. This is not a hard boundary, but escaping the
-     * closing tag prevents the content from ending the block early.
+     * Delimits untrusted content. This is not a hard boundary, but escaping any
+     * {@code untrusted-content} tag (either case, optional whitespace) stops
+     * the content from ending the block early.
      */
     private static String escapeUntrusted(String value) {
         if (value == null) {
             return "";
         }
-        return value.replace("</untrusted-content>", "&lt;/untrusted-content&gt;");
+        return UNTRUSTED_TAG.matcher(value).replaceAll(match -> {
+            String tag = match.group();
+            return "&lt;" + tag.substring(1, tag.length() - 1) + "&gt;";
+        });
     }
 
     public record Request(
