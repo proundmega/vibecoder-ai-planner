@@ -38,7 +38,9 @@ Before production code:
 ## File operations — Phase 1
 
 1. **CREATE** `backend/src/providers/git/GitProvider.js`
-   - Provider ids, capability flags, `parseRepoUrl`, `assertSafeBaseUrl`.
+   - Provider ids, instance capabilities, `assertSafeBaseUrl` and the registry.
+     Repository parsing stays provider-specific; the GitHub adapter delegates to
+     the existing parser. `assertSafeBaseUrl` is async (DNS) and must be awaited.
 2. **CREATE** `backend/src/providers/git/local.js`
    - Local/SSH clone URL, deploy-key validation, branch-only review result.
 3. **CREATE** `backend/src/services/GitProjectService.js`

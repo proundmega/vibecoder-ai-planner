@@ -48,23 +48,34 @@
 Backend and agent share the same conceptual interface:
 
 ```text
-GitProvider
+GitProvider (instance; the factory receives the credential)
   id                      github | forgejo | gitea | gitlab | local
-  supportsReviewRequests  boolean
-  supportsInstallations   boolean
+  capabilities            { supportsReviewRequests, supportsInstallations,
+                            reviewRequestName, authModes }
   parseRepoUrl(url)
-  validateRepoAccess(credential, url)
-  getDefaultBranch(credential, url)
-  getCloneUrl(credential, url)
-  createBranch(...)
-  pushBranch(...)
-  createReviewRequest(...) -> { id, url, number } | null
-  listBranches(...)
-  deleteBranch(...)
+  validateRepoAccess(url, credential = this.credential)
+  validateCredential(credential = this.credential)
+  getDefaultBranch(url)
+  getCloneUrl(url)
+  getFileContent(repo, path, ref)
+  createBranch(repo, ticketId, ticketTitle)
+  deleteBranch(repo, branchName)
+  listBranches(repo)
+  createReviewRequest(repo, ticketId, ticketTitle, branchName, description)
+                          -> { id, url, number } | null
+  listReviewRequests(repo)
+  getReviewDiff(repo, reviewNumber)
 ```
 
-Capability flags keep GitHub App installations and Forgejo/GitLab tokens out of
-the same code path without branching in every caller.
+Credentials are supplied to the provider factory and carried by the instance;
+callers do not pass a token to every method. The backend does not push
+branches — the agent's `GitService` owns clone/push — so `pushBranch` is
+intentionally absent. This instance shape, implemented by `fg-57a`, is
+canonical for `fg-57b` onward.
+
+Capability flags on the instance keep GitHub App installations and
+Forgejo/GitLab tokens out of the same code path without branching in every
+caller.
 
 ### Data model
 
