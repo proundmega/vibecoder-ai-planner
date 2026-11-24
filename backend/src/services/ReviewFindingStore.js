@@ -10,6 +10,7 @@ const { ValidationError } = require('../errors/HttpError');
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SEVERITIES = Object.freeze(['critical', 'warning', 'info']);
 
 function uuid(value, field) {
   if (typeof value !== 'string' || !UUID_RE.test(value)) {
@@ -55,9 +56,15 @@ function normaliseFinding(finding, index) {
   if (finding == null || typeof finding !== 'object' || Array.isArray(finding)) {
     throw new ValidationError(`findings[${index}] must be an object`);
   }
+  const severity = requiredText(finding.severity, `findings[${index}].severity`, 64);
+  if (!SEVERITIES.includes(severity)) {
+    throw new ValidationError(
+      `findings[${index}].severity must be one of: ${SEVERITIES.join(', ')}`
+    );
+  }
   return {
     findingKey: requiredText(finding.findingKey, `findings[${index}].findingKey`, 255),
-    severity: requiredText(finding.severity, `findings[${index}].severity`, 64),
+    severity,
     file: optionalText(finding.file, `findings[${index}].file`, 1024),
     line: optionalLine(finding.line),
     message: requiredText(finding.message, `findings[${index}].message`),
@@ -70,7 +77,17 @@ function normaliseFindings(findings) {
   if (!Array.isArray(findings)) {
     throw new ValidationError('findings must be an array');
   }
-  return findings.map(normaliseFinding);
+  const seen = new Set();
+  return findings.map((finding, index) => {
+    const normalised = normaliseFinding(finding, index);
+    if (seen.has(normalised.findingKey)) {
+      throw new ValidationError(
+        `findings[${index}].findingKey duplicates '${normalised.findingKey}'`
+      );
+    }
+    seen.add(normalised.findingKey);
+    return normalised;
+  });
 }
 
 async function replaceForAttempt(attemptId, findings = []) {
@@ -114,6 +131,7 @@ async function listForAttempt(attemptId) {
 }
 
 module.exports = {
+  SEVERITIES,
   replaceForAttempt,
   listForAttempt,
 };

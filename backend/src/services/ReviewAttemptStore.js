@@ -1,5 +1,5 @@
 const { pool } = require('../db');
-const { ValidationError } = require('../errors/HttpError');
+const { ValidationError, ConflictError } = require('../errors/HttpError');
 
 /**
  * fg-31a: persistence for harness review attempts.
@@ -35,8 +35,8 @@ function reviewedSha(value) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new ValidationError('reviewedSha is required');
   }
-  if (!/^[0-9a-f]{7,64}$/i.test(value.trim())) {
-    throw new ValidationError('reviewedSha must be a hexadecimal SHA');
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(value.trim())) {
+    throw new ValidationError('reviewedSha must be a 40- or 64-character hexadecimal SHA');
   }
   return value.trim().toLowerCase();
 }
@@ -133,27 +133,42 @@ async function complete(id, {
   const output = optionalNonNegativeInt(tokensOut, 'tokensOut');
   const duration = optionalNonNegativeInt(durationMs, 'durationMs');
 
-  const { rows } = await pool.query(
-    `UPDATE ticket_review_attempts
-        SET status = 'completed',
-            verdict = $2,
-            verification = $3,
-            github_review_id = COALESCE($4, github_review_id),
-            tokens_in = $5,
-            tokens_out = $6,
-            duration_ms = $7,
-            failure_reason = NULL,
-            completed_at = NOW()
-      WHERE id = $1 AND status IN ('started', 'failed')
-      RETURNING *`,
-    [attemptId, result, verification, reviewId, input, output, duration]
-  );
-  return rows[0] || null;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE ticket_review_attempts
+          SET status = 'completed',
+              verdict = $2,
+              verification = $3,
+              github_review_id = COALESCE($4, github_review_id),
+              tokens_in = $5,
+              tokens_out = $6,
+              duration_ms = $7,
+              failure_reason = NULL,
+              completed_at = NOW()
+        WHERE id = $1 AND status IN ('started', 'failed')
+        RETURNING *`,
+      [attemptId, result, verification, reviewId, input, output, duration]
+    );
+    return rows[0] || null;
+  } catch (error) {
+    if (error.code !== '23505') throw error;
+    const duplicate = await findById(attemptId);
+    if (!duplicate) {
+      throw new ConflictError('A completed review already exists for this ticket and SHA');
+    }
+    await fail(attemptId, 'duplicate completed review');
+    const existing = await findCompleted(duplicate.ticket_id, duplicate.reviewed_sha);
+    if (existing) return existing;
+    throw new ConflictError('A completed review already exists for this ticket and SHA');
+  }
 }
 
-async function fail(id, reason = null) {
+async function fail(id, reason) {
   const attemptId = uuid(id, 'id');
-  const failure = reason == null ? null : optionalText(String(reason), 'reason', 2000);
+  const failure = optionalText(reason, 'reason', 2000);
+  if (!failure) {
+    throw new ValidationError('reason is required');
+  }
   const { rows } = await pool.query(
     `UPDATE ticket_review_attempts
         SET status = 'failed',
