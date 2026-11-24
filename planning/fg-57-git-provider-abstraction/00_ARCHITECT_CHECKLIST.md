@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-22"
-updated: "2026-11-22"
+updated: "2026-11-23"
 pr: null
 branch: null
 depends_on: ["fg-35", "fg-54"]
@@ -86,6 +86,7 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D8 | Provider picker, connection status and MR/PR links in the UI | self | UX | fg-57 | open |
 | D9 | Enforce local/self-hosted model providers for private code (Git residency is not model residency) | fg-42 | Privacy | fg-42 / follow-up | open |
 | D10 | Webhook-driven review state and merge events | self | Integration | follow-up | open |
+| D11 | Consolidate the private-host checks in `providers/generic`, `ProviderRegistryService` and `providers/git` | review | Security | follow-up | open |
 
 ## Decisions needed from the user
 

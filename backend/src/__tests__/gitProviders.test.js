@@ -49,17 +49,24 @@ describe('Git provider contract', () => {
 
   describe('assertSafeBaseUrl', () => {
     const saved = process.env.ALLOW_PRIVATE_HOSTS;
+    const publicLookup = jest.fn().mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
+    const safeBaseUrl = (url, options = {}) => assertSafeBaseUrl(url, { lookup: publicLookup, ...options });
+
+    beforeEach(() => {
+      delete process.env.ALLOW_PRIVATE_HOSTS;
+      publicLookup.mockClear();
+    });
 
     afterEach(() => {
       if (saved === undefined) delete process.env.ALLOW_PRIVATE_HOSTS;
       else process.env.ALLOW_PRIVATE_HOSTS = saved;
     });
 
-    it('normalises absolute URLs', () => {
-      expect(assertSafeBaseUrl(' https://git.example.com/gitea/ '))
-        .toBe('https://git.example.com/gitea');
-      expect(assertSafeBaseUrl('http://git.example.com')).toBe('http://git.example.com');
-      expect(assertSafeBaseUrl('https://fcgit.example.com')).toBe('https://fcgit.example.com');
+    it('normalises absolute URLs', async () => {
+      await expect(safeBaseUrl(' https://git.example.com/gitea/ '))
+        .resolves.toBe('https://git.example.com/gitea');
+      await expect(safeBaseUrl('http://git.example.com')).resolves.toBe('http://git.example.com');
+      await expect(safeBaseUrl('https://fcgit.example.com')).resolves.toBe('https://fcgit.example.com');
     });
 
     it.each([
@@ -67,17 +74,50 @@ describe('Git provider contract', () => {
       ['ftp://git.example.com', 'http or https'],
       ['https://user:pass@git.example.com', 'must not embed credentials'],
       ['https://git.example.com?x=1', 'must not include a query or fragment'],
-    ])('rejects %s', (url, message) => {
-      expect(() => assertSafeBaseUrl(url)).toThrow(message);
+    ])('rejects %s', async (url, message) => {
+      await expect(safeBaseUrl(url)).rejects.toThrow(message);
     });
 
-    it('rejects private hosts unless the host policy allows them', () => {
-      delete process.env.ALLOW_PRIVATE_HOSTS;
-      for (const host of ['localhost', '127.0.0.1', '10.1.2.3', '172.20.0.5', '192.168.1.2', '[::1]']) {
-        expect(() => assertSafeBaseUrl(`http://${host}`)).toThrow('not allowed by the host policy');
-      }
+    it.each([
+      'http://localhost.',
+      'http://foo.localhost.',
+      'http://metadata.google.internal.',
+      'http://[::ffff:127.0.0.1]',
+      'http://[::ffff:169.254.169.254]',
+      'http://[::ffff:a00:1]',
+    ])('rejects private literal %s', async (url) => {
+      await expect(safeBaseUrl(url)).rejects.toThrow('not allowed by the host policy');
+    });
+
+    it.each([
+      ['http://127.0.0.1.nip.io', '127.0.0.1'],
+      ['http://localtest.me', '127.0.0.1'],
+      ['http://metadata.example.com', '169.254.169.254'],
+      ['http://private.example.com', '10.0.0.1'],
+    ])('rejects %s when it resolves to %s', async (url, address) => {
+      const lookup = jest.fn().mockResolvedValue([{ address, family: 4 }]);
+      await expect(assertSafeBaseUrl(url, { lookup }))
+        .rejects.toThrow('not allowed by the host policy');
+      expect(lookup).toHaveBeenCalled();
+    });
+
+    it('fails closed when the host cannot be resolved', async () => {
+      const lookup = jest.fn().mockRejectedValue(new Error('ENOTFOUND'));
+      await expect(assertSafeBaseUrl('https://git.example.com', { lookup }))
+        .rejects.toThrow('could not be resolved');
+
+      lookup.mockResolvedValueOnce([]);
+      await expect(assertSafeBaseUrl('https://empty.example.com', { lookup }))
+        .rejects.toThrow('could not be resolved');
+    });
+
+    it('allows private hosts when the host policy enables them', async () => {
       process.env.ALLOW_PRIVATE_HOSTS = '1';
-      expect(assertSafeBaseUrl('http://127.0.0.1:3000')).toBe('http://127.0.0.1:3000');
+      const lookup = jest.fn();
+
+      await expect(assertSafeBaseUrl('http://127.0.0.1:3000', { lookup }))
+        .resolves.toBe('http://127.0.0.1:3000');
+      expect(lookup).not.toHaveBeenCalled();
     });
   });
 
@@ -136,5 +176,42 @@ describe('GitHub provider adapter', () => {
     await expect(provider.getDefaultBranch('owner/repo')).resolves.toBe('main');
     expect(provider.getCloneUrl('owner/repo')).toBe('https://github.com/owner/repo.git');
     expect(GitHubProvider.validateRepoAccess).toHaveBeenCalledWith('token-1', 'owner', 'repo');
+  });
+
+  it('rejects getDefaultBranch when access validation fails', async () => {
+    GitHubProvider.validateRepoAccess.mockResolvedValueOnce({ accessible: false, error: 'nope' });
+    const provider = git.registry.get('github', 'token-1');
+
+    await expect(provider.getDefaultBranch('owner/repo')).rejects.toThrow('Repository is not accessible');
+  });
+
+  it('forwards branch, review and file operations to GitHub', async () => {
+    const inner = {
+      getFileContent: jest.fn().mockResolvedValue('contents'),
+      createBranch: jest.fn().mockResolvedValue('branch'),
+      deleteBranch: jest.fn().mockResolvedValue(undefined),
+      listBranches: jest.fn().mockResolvedValue(['branch']),
+      createPR: jest.fn().mockResolvedValue({ url: 'pr' }),
+      listPRs: jest.fn().mockResolvedValue([{ url: 'pr' }]),
+      getPRDiff: jest.fn().mockResolvedValue({ files: [] }),
+    };
+    GitHubProvider.mockImplementationOnce(() => inner);
+    const provider = git.registry.get('github', 'token-1');
+    const repo = { repoUrl: 'owner/repo' };
+
+    await expect(provider.getFileContent(repo, 'a.md', 'main')).resolves.toBe('contents');
+    expect(inner.getFileContent).toHaveBeenCalledWith(repo, 'a.md', 'main');
+    await expect(provider.createBranch(repo, 1, 'Title')).resolves.toBe('branch');
+    expect(inner.createBranch).toHaveBeenCalledWith(repo, 1, 'Title');
+    await expect(provider.deleteBranch(repo, 'branch')).resolves.toBeUndefined();
+    expect(inner.deleteBranch).toHaveBeenCalledWith(repo, 'branch');
+    await expect(provider.listBranches(repo)).resolves.toEqual(['branch']);
+    expect(inner.listBranches).toHaveBeenCalledWith(repo);
+    await expect(provider.createReviewRequest(repo, 1, 'Title', 'branch', 'desc')).resolves.toEqual({ url: 'pr' });
+    expect(inner.createPR).toHaveBeenCalledWith(repo, 1, 'Title', 'branch', 'desc');
+    await expect(provider.listReviewRequests(repo)).resolves.toEqual([{ url: 'pr' }]);
+    expect(inner.listPRs).toHaveBeenCalledWith(repo);
+    await expect(provider.getReviewDiff(repo, 7)).resolves.toEqual({ files: [] });
+    expect(inner.getPRDiff).toHaveBeenCalledWith(repo, 7);
   });
 });

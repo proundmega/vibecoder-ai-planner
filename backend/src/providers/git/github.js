@@ -1,5 +1,6 @@
 const { GitHubProvider } = require('../github');
 const { getCapabilities } = require('./GitProvider');
+const { ValidationError } = require('../../errors/HttpError');
 
 /**
  * GitHub implementation of the provider-neutral contract.
@@ -30,6 +31,9 @@ class GitHubGitProvider {
 
   async getDefaultBranch(repoUrl) {
     const validation = await this.validateRepoAccess(repoUrl);
+    if (!validation || validation.accessible === false || !validation.defaultBranch) {
+      throw new ValidationError('Repository is not accessible');
+    }
     return validation.defaultBranch;
   }
 
