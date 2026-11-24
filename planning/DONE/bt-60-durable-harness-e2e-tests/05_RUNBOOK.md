@@ -212,10 +212,15 @@ provider key still require operator revocation (`00` D15).
 
 ### Executed cleanup (2026-11-24)
 
-At the start of this follow-up the staging `vibecode` database already
-reported zero rows; the checks below verify that state. The PRs, branches,
-local credentials and staging-only runtime resources were removed in this
-follow-up.
+The `vibecode` database was already empty when this follow-up started. The
+Postgres log shows a backend integration-test run against the same
+`localhost:5432/vibecode` URL at 04:15-04:17Z; the integration setup
+(`backend/src/__tests__/integration/setup.js:49`) runs `DROP SCHEMA public
+CASCADE` when `INTEGRATION_TESTS=1`, so that run can reset the shared
+database. The launching session is unidentified.
+The reset also removed the disposable GTD staging project 2 (`gtd-staging`);
+GTD PR #19 in `proundmega/gtd` remains open. The checks below verify the
+resulting state and the follow-up removals.
 
 - Closed PRs #20-#24 on `proundmega/planner-test` and deleted their
   `vibecode/ticket-*` branches.
@@ -223,14 +228,19 @@ follow-up.
   `tickets=0`, `harness_runs=0`, `harness_checkpoints=0`, `harness_leases=0`,
   `agent_nodes=0`, `agent_runtimes=0`, `provider_credentials=0`,
   `project_repos=0`, `users=0`.
-- Removed the staged node credential and workspace copies, stopped the staging
-  API/proxy, and removed the staging-only Redis container and `:bt60` sandbox
-  images. The shared local Postgres container remains for the integration-test
-  database; the staging database is empty.
-- The provider credential and project repo token were stored only in the
-  deleted rows; the stored ciphertext is gone. The GitHub PAT was used in local
-  mode and the provider key is disposable; revoke both at GitHub/the provider
-  (`00` D15). Non-local runs require a repo-scoped GitHub App installation.
+- Removed `pr207-pg` with its anonymous volume. The staging directory
+  `/tmp/opencode/bt60-staging` (including `provider.env`,
+  `provider-values.json`, `mint.json` and `enrollment-token.txt`) is gone; a
+  sweep of `/tmp` and the OpenCode storage found no `oc_s*` or
+  `CREDENTIAL_NAME=bt60` copies. The staging API/proxy, Redis container and
+  `:bt60` images are gone.
+- `bt60-staging-pg` is retained as the shared local integration database and
+  holds no staging rows. Do not treat it as disposable staging storage.
+- The provider credential and project repo token were stored in the deleted
+  rows; the plaintext staging copies are gone. Revoke the disposable PAT at
+  GitHub and the provider key at the provider (`00` D15); D15 does not cover a
+  local plaintext copy. Non-local runs require a repo-scoped GitHub App
+  installation.
 
 ## Do not
 
@@ -238,6 +248,8 @@ follow-up.
 - Reuse a long-lived GitHub token or an uncapped provider key.
 - Use the local-mode PAT outside the disposable local stack; it is documented
   as D15 and must be revoked after staging.
+- Keep a plaintext provider key, enrollment token or provider values file after
+  staging; sanitize or delete them before recording cleanup.
 - Run an untrusted repo without the Docker sandbox and the D14 gate.
 - Treat the egress allowlist as a hard host boundary while D16 is open.
 - Expect the agent to ask questions until `fg-55` lands; Phase 1 denies

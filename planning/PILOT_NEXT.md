@@ -11,7 +11,9 @@ fg-43, fg-44 (foundation #209 plus fg-58 #212), fg-45, fg-55 and fg-56 (#203)
 are merged; fg-57's Git provider plan is merged (#206) with implementation
 post-pilot; bt-60 Phase A, the Phase B backend drills (#207) and the master
 staging rerun (`98d6f814`, PR #24) are done, and the staging rows/PRs were
-cleaned up and verified on 2026-11-24. The next pilot step is the first real
+cleaned up and verified on 2026-11-24 (the reset coincided with an integration-test
+run against the shared `vibecode` URL and also removed the disposable GTD
+staging project 2). The next pilot step is the first real
 end-to-end run; there is no external credential blocker. The disposable PAT
 and provider key must still be revoked (D15).
 
@@ -21,7 +23,7 @@ and provider key must still be revoked (D15).
 |---|---|---|---|
 | 1 | Close the paperwork ✅ (2026-11-22) | Merge #204/#205, then rebase/merge #203 (fg-56); fg-56 closeout; bulk-move done suites to `planning/DONE/` (fg-50); prune merged branches | The queue and roadmap say merged; fg-43 D7 is done via fg-56; no stale “in review” rows for merged work |
 | 2 | fg-44 storage lifecycle ✅ (2026-11-23) | Implement the `04` contract: runtime-scoped workspaces, sandbox-first cleanup, idle/max lifetime, 70/80/85/90/95 watermarks, `host-storage.sh`, orphan/image reaper, storage events | The fg-44/fg-58 matrices are green (#209/#212); a terminal run leaves no workspace; cleanup and watermark events are observed |
-| 3 | bt-60 Phase B staging ✅ (2026-11-24) | Disposable local project/repo/node/runtime and provider key; real OpenCode/GitHub happy path; crash/restart, lease-loss and health-gate drills | Evidence recorded in the bt-60 runbook (PRs #20-#23 plus the master rerun PR #24); staging rows/PRs cleaned up and verified 2026-11-24; credential revocation is D15 |
+| 3 | bt-60 Phase B staging ✅ (2026-11-24) | Disposable local project/repo/node/runtime and provider key; real OpenCode/GitHub happy path; crash/restart, lease-loss and health-gate drills | Evidence recorded in the bt-60 runbook (PRs #20-#23 plus the master rerun PR #24); staging rows/PRs cleaned up and verified 2026-11-24; the reset removed the disposable GTD staging project 2 as collateral; credential revocation is D15 |
 | 4 | First real pilot run | fg-54 runbook: mint → enroll → declare → sandbox → build → question loop → PR → review → merge | One clean end-to-end run with evidence; the question is answered and resumed; readiness warnings are visible |
 | 5 | Post-pilot | fg-46 observability; fg-57 Git provider implementation; optional fg-31/fg-36; fg-51/fg-52; deferred follow-ups | Choose the next autonomy tier; no orphaned workspaces; private/self-hosted Git path available |
 

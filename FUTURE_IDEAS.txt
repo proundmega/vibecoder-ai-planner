@@ -38,7 +38,7 @@ duplicating its scope.
 
 ### Harness staging findings (bt-60, 2026-11-23)
 
-Canonical owner: `planning/DONE/bt-60-durable-harness-e2e-tests/00_ARCHITECT_CHECKLIST.md` D13/D14.
+Canonical owner: `planning/DONE/bt-60-durable-harness-e2e-tests/00_ARCHITECT_CHECKLIST.md` D13/D14/D15.
 
 | Ref | Item | Evidence | Proposed direction | Priority | State |
 |---|---|---|---|---|---|
