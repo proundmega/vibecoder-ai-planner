@@ -167,8 +167,8 @@ This includes newly added test files. `git diff -- test` alone would not.
    `master` and close/archive bt-60. This is not a worker code ticket and is
    not repeated in a lane.
 3. Create the Planner Flow project, worker grant and project-scoped credential.
-4. Create and merge `FLOW-0`: extend `scripts/verify-local.sh` with the
-   `--agent` mode and prove it on a no-op change.
+4. ~~Create and merge `FLOW-0`~~: merged as #226. `scripts/verify-local.sh
+   --agent` is the harness gate and was proven on a no-op change.
 5. Create the slice tickets below with their `depends_on` edges before starting
    a worker. Do not start a lane on a whole suite.
 
@@ -185,8 +185,8 @@ worker to discover.
 |---|---|---|---|
 | `FLOW-0` | Extend `scripts/verify-local.sh` with `--agent`: install missing deps, run changed layers, detect changed/new tests under all three test trees | 2–3 | — |
 
-`FLOW-0` is a prerequisite ticket, not a suite. Do not start Plan A until it is
-merged and proven on a no-op change.
+`FLOW-0` is a prerequisite ticket, not a suite. It is merged as #226 and proven
+on a no-op change; Lane A Wave 1 (`fg-31a`) is unblocked.
 
 ### Lane A — review and merge
 
