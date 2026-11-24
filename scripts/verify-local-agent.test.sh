@@ -151,6 +151,14 @@ expect_layers "staged changes are detected" backend
 make .nvmrc
 expect_layers ".nvmrc runs all layers without requiring a test" "backend frontend agent"
 
+# A tracked modification must not hide an untracked test.
+make README.md
+git -C "$TMP" add README.md
+git -C "$TMP" commit -q -m "add readme"
+printf 'changed\n' > "$TMP/README.md"
+make backend/src/__tests__/mixed.test.js
+expect_layers "tracked modifications do not hide untracked tests" backend
+
 # A test renamed to a non-test is not evidence.
 make backend/src/__tests__/renamed-away.test.js
 git -C "$TMP" add backend/src/__tests__/renamed-away.test.js
