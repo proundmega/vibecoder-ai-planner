@@ -93,8 +93,13 @@ step() {
 
 changed_paths() {
   {
-    git -C "$ROOT" diff --name-only --diff-filter=ACMRD
-    git -C "$ROOT" diff --cached --name-only --diff-filter=ACMRD
+    {
+      git -C "$ROOT" diff --name-status -M
+      git -C "$ROOT" diff --cached --name-status -M
+    } | while IFS=$'\t' read -r _status first second; do
+      [ -n "$first" ] && printf '%s\n' "$first"
+      [ -n "${second:-}" ] && printf '%s\n' "$second"
+    done
     git -C "$ROOT" ls-files --others --exclude-standard
   } | sed '/^[[:space:]]*$/d' | sort -u
 }
@@ -128,11 +133,12 @@ run_agent_mode() {
     [ -n "$path" ] && deleted["$path"]=1
   done < <(deleted_paths)
 
-  local backend=0 frontend=0 agent=0 scripts=0 planning=0 shared=0
+  local backend=0 frontend=0 agent=0 scripts=0 planning=0 shared=0 toolchain=0
   local backend_test=0 frontend_test=0 agent_test=0 scripts_test=0
   for path in "${changed[@]}"; do
     case "$path" in
       planning/*) planning=1 ;;
+      .nvmrc) toolchain=1 ;;
       docs/*|*.md|README*|AGENTS.md|FUTURE_IDEAS.txt|PENDING.txt|tickets.txt|DREAM*|.gitignore|LICENSE) ;;
       backend/*) backend=1 ;;
       frontend/*) frontend=1 ;;
@@ -173,9 +179,9 @@ run_agent_mode() {
   fi
 
   local -a layers=()
-  if [ "$backend" -eq 1 ] || [ "$shared" -eq 1 ]; then layers+=(backend); fi
-  if [ "$frontend" -eq 1 ] || [ "$shared" -eq 1 ]; then layers+=(frontend); fi
-  if [ "$agent" -eq 1 ] || [ "$shared" -eq 1 ]; then layers+=(agent); fi
+  if [ "$backend" -eq 1 ] || [ "$shared" -eq 1 ] || [ "$toolchain" -eq 1 ]; then layers+=(backend); fi
+  if [ "$frontend" -eq 1 ] || [ "$shared" -eq 1 ] || [ "$toolchain" -eq 1 ]; then layers+=(frontend); fi
+  if [ "$agent" -eq 1 ] || [ "$shared" -eq 1 ] || [ "$toolchain" -eq 1 ]; then layers+=(agent); fi
   if [ "$scripts" -eq 1 ]; then layers+=(scripts); fi
   if [ "$planning" -eq 1 ]; then layers+=(planning); fi
 
@@ -234,7 +240,7 @@ run_agent_mode() {
     esac
   done
 
-  if [ "$backend" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$shared" -eq 1 ]; then
+  if [ "$backend" -eq 1 ] || [ "$frontend" -eq 1 ] || [ "$shared" -eq 1 ] || [ "$toolchain" -eq 1 ]; then
     ensure_npm_deps frontend vitest
     (cd "$ROOT/frontend" && ./node_modules/.bin/vitest --run src/__tests__/api-contract.test.ts)
   fi

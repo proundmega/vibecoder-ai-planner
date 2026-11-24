@@ -127,6 +127,30 @@ expect_fail "docs-only agent changes fail" 1 "found no runnable layer"
 make README.md
 expect_fail "README-only changes fail" 1 "found no runnable layer"
 
+make backend/src/renamed.js
+git -C "$TMP" add backend/src/renamed.js
+git -C "$TMP" commit -q -m "add rename source"
+mkdir -p "$TMP/frontend/src"
+git -C "$TMP" mv backend/src/renamed.js frontend/src/renamed.js
+make backend/src/__tests__/renamed.test.js
+make frontend/src/__tests__/renamed.test.ts
+expect_layers "cross-layer renames classify both paths" "backend frontend"
+
+make backend/src/__tests__/tracked.test.js
+git -C "$TMP" add backend/src/__tests__/tracked.test.js
+git -C "$TMP" commit -q -m "add tracked test"
+printf 'changed\n' > "$TMP/backend/src/__tests__/tracked.test.js"
+make backend/src/tracked.js
+expect_layers "tracked modified tests are detected" backend
+
+make backend/src/staged.js
+make backend/src/__tests__/staged.test.js
+git -C "$TMP" add backend/src/staged.js backend/src/__tests__/staged.test.js
+expect_layers "staged changes are detected" backend
+
+make .nvmrc
+expect_layers ".nvmrc runs all layers without requiring a test" "backend frontend agent"
+
 # A deleted test is not evidence.
 make backend/src/__tests__/deleted.test.js
 git -C "$TMP" add backend/src/__tests__/deleted.test.js
