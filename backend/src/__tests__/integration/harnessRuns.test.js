@@ -492,6 +492,70 @@ describe('HarnessRunService — PostgreSQL integration', () => {
     expect(ticket.rows[0].pr_url).toBe('https://github.com/o/r/pull/9');
   });
 
+  test('terminal-run reconciliation adopts a branch-only run into review', async () => {
+    const run = await start({ branch: 'harness/branch-only' });
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, { headSha: 'branch123' });
+    await HarnessRunService.finishRun(run.id, { status: 'succeeded', headSha: 'branch123' });
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+    expect(reconciled.released).toBe(false);
+    expect(reconciled.promoted).toBe(false);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBeNull();
+  });
+
+  test('adopts a failed run that only recorded a head sha and promotes it', async () => {
+    const run = await start({ branch: 'harness/branch-only-failed' });
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, { headSha: 'branch456' });
+    await HarnessRunService.finishRun(run.id, { status: 'failed' });
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+    expect(reconciled.promoted).toBe(true);
+    expect((await HarnessRunService.getRun(run.id)).status).toBe('succeeded');
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBeNull();
+  });
+
+  test('a reaped branch-only run is succeeded and adopted without a PR', async () => {
+    const run = await start({ branch: 'harness/reap-branch-only' });
+    await HarnessRunService.claimLease({
+      ticketId, runId: run.id, runtimeId, ttlSeconds: 1,
+    });
+    await HarnessRunService.recordPublish(run.id, { runtimeId }, { headSha: 'branch789' });
+    await pool.query(
+      "UPDATE harness_leases SET expires_at = NOW() - INTERVAL '1 second' WHERE ticket_id = $1",
+      [ticketId]
+    );
+
+    const reaped = await HarnessRunService.reapExpiredLeases(50, 900);
+    const row = reaped.find((item) => item.run_id === run.id);
+    expect(row).toBeDefined();
+    expect(row.run_failed).toBe(false);
+    expect((await HarnessRunService.getRun(run.id)).status).toBe('succeeded');
+
+    const reconciled = await HarnessRunService.reconcileRun(run.id);
+    expect(reconciled.adopted).toBe(true);
+
+    const ticket = await pool.query(
+      'SELECT status, pr_url FROM tickets WHERE id = $1',
+      [ticketId]
+    );
+    expect(ticket.rows[0].status).toBe('review');
+    expect(ticket.rows[0].pr_url).toBeNull();
+  });
+
   test('terminal-run reconciliation never moves a done ticket back to review', async () => {
     const run = await start({ branch: 'harness/done-ticket' });
     await HarnessRunService.recordPublish(run.id, { runtimeId }, {

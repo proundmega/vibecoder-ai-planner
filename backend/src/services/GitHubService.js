@@ -1,304 +1,68 @@
-const Project = require('../models/project');
-const Ticket = require('../models/ticket');
-const User = require('../models/user');
-const { pool } = require('../db');
-const PermissionService = require('../services/PermissionService');
-const gitProviders = require('../providers/git');
-const GitHubAppAuthService = require('./GitHubAppAuthService');
-const { encrypt, decrypt } = require('../utils/crypto');
-const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
-const logger = require('../utils/logger');
+const GitProjectService = require('./GitProjectService');
 
+/**
+ * GitHub compatibility facade over `GitProjectService`.
+ *
+ * The existing `/api/v1/github` routes and callers keep these method names and
+ * response shapes; provider-neutral callers use `GitProjectService` directly.
+ */
 class GitHubService {
   async connectProject(projectId, repoUrl, accessToken, userId) {
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
-
-    const user = await User.find(userId);
-    const isAdmin = await PermissionService.hasPermission(user?.role || 'user', 'PROJECT_MANAGE_MEMBERS');
-    if (!isAdmin && String(project.ownerId) !== String(userId)) {
-      throw new ForbiddenError('Only project owner or admin can connect a repository');
-    }
-
-    const provider = gitProviders.registry.get('github', accessToken);
-    const validation = await provider.validateRepoAccess(repoUrl);
-
-    if (!validation.accessible) {
-      throw new ValidationError(`Cannot access repository: ${validation.error}`);
-    }
-
-    const encryptedToken = accessToken ? encrypt(accessToken) : null;
-
-    
-    const result = await pool.query(
-      `INSERT INTO project_repos (project_id, provider, repo_url, access_token_encrypted, default_branch, is_active)
-       VALUES ($1, 'github', $2, $3, $4, TRUE)
-       ON CONFLICT (project_id, provider) DO UPDATE
-       SET repo_url = $2, access_token_encrypted = $3, default_branch = $4, is_active = TRUE, updated_at = NOW()
-       RETURNING *`,
-      [projectId, repoUrl, encryptedToken, validation.defaultBranch]
-    );
-
-    return this._formatRepoResult(result.rows[0]);
+    return GitProjectService.connect(projectId, {
+      provider: 'github',
+      repoUrl,
+      token: accessToken,
+    }, userId);
   }
 
   async disconnectProject(projectId) {
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
-
-    
-    await pool.query(
-      'UPDATE project_repos SET is_active = FALSE, updated_at = NOW() WHERE project_id = $1',
-      [projectId]
-    );
-
-    return { success: true };
+    return GitProjectService.disconnect(projectId);
   }
 
   async getProjectRepo(projectId) {
-    const project = await Project.findById(projectId);
-    if (!project) throw new NotFoundError('Project not found');
-
-    
-    const result = await pool.query(
-      'SELECT * FROM project_repos WHERE project_id = $1 AND is_active = TRUE',
-      [projectId]
-    );
-
-    if (result.rows.length === 0) return null;
-
-    return this._formatRepoResult(result.rows[0]);
+    return GitProjectService.getRepo(projectId);
   }
 
   async getProjectRepoForAgent(projectId) {
-    const result = await pool.query(
-      'SELECT * FROM project_repos WHERE project_id = $1 AND is_active = TRUE',
-      [projectId]
-    );
-
-    if (result.rows.length === 0) return null;
-
-    const row = result.rows[0];
-    const mode = GitHubAppAuthService.getAuthMode();
-    if (mode === 'app') {
-      // App mode never returns a stored PAT; agents request a scoped token from
-      // POST /github/:projectId/token instead.
-      return { repoUrl: row.repo_url, accessToken: null, authMode: 'app' };
-    }
-    if (!GitHubAppAuthService.isPatAllowed()) {
-      throw new ForbiddenError(
-        'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
-      );
-    }
-    await GitHubAppAuthService.assertProjectEnabled(projectId);
-    if (!row.access_token_encrypted) {
-      return { repoUrl: row.repo_url, accessToken: null, authMode: 'pat' };
-    }
-    return {
-      repoUrl: row.repo_url,
-      accessToken: decrypt(row.access_token_encrypted),
-      authMode: 'pat',
-    };
-  }
-
-  /**
-   * Run a backend GitHub operation with one retry on a 401. App mode drops the
-   * cached token and mints a fresh one; PAT mode simply rethrows.
-   */
-  async _withProvider(projectId, operation) {
-    let provider = await this._createProvider(projectId);
-    try {
-      return await operation(provider);
-    } catch (error) {
-      if (GitHubAppAuthService.getAuthMode() !== 'app' || !this._isAuthError(error)) {
-        throw error;
-      }
-      GitHubAppAuthService.clearCacheForProject(projectId);
-      provider = await this._createProvider(projectId);
-      return operation(provider);
-    }
-  }
-
-  _isAuthError(error) {
-    const message = String(error && error.message ? error.message : error);
-    return /authentication failed|bad credentials|invalid or expired token|\b401\b/i
-      .test(message);
-  }
-
-  /**
-   * Build a GitHub provider for backend-initiated operations. App mode mints a
-   * repo-scoped installation token; PAT mode requires the explicit fallback
-   * flag and uses the stored PAT.
-   */
-  async _createProvider(projectId) {
-    if (GitHubAppAuthService.getAuthMode() === 'app') {
-      const token = await GitHubAppAuthService.mintToken(projectId, {
-        operation: 'backend',
-      });
-      return gitProviders.registry.get('github', token.token);
-    }
-    if (!GitHubAppAuthService.isPatAllowed()) {
-      throw new ForbiddenError(
-        'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
-      );
-    }
-    await GitHubAppAuthService.assertProjectEnabled(projectId);
-    const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-    return gitProviders.registry.get('github', decrypt(repo.accessTokenEncrypted));
-  }
-
-  /**
-   * Read one repository file through the project's GitHub credential.
-   * Used by repo-profile stack detection (fg-39). Missing files surface as a
-   * GitHub 404 so the caller can treat them as absent.
-   */
-  async readRepoFile(projectId, path, ref = null) {
-    const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-    return this._withProvider(
-      projectId,
-      (provider) => provider.getFileContent(repo, path, ref)
-    );
+    return GitProjectService.getAgentCredential(projectId);
   }
 
   async getProjectRepos(projectId) {
-    
-    const result = await pool.query(
-      'SELECT * FROM project_repos WHERE project_id = $1 AND is_active = TRUE ORDER BY created_at DESC',
-      [projectId]
-    );
+    return GitProjectService.getRepos(projectId);
+  }
 
-    return result.rows.map(row => this._formatRepoResult(row));
+  async readRepoFile(projectId, path, ref = null) {
+    return GitProjectService.readFile(projectId, path, ref);
   }
 
   async createTicketBranch(projectId, ticketId) {
     const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-    if (String(ticket.projectId) !== String(projectId)) {
-      throw new ValidationError('Ticket does not belong to this project');
-    }
-
-    const branchName = await this._withProvider(
-      projectId,
-      (provider) => provider.createBranch(repo, ticket.id, ticket.title)
-    );
-
-    
-    await pool.query(
-      'UPDATE tickets SET branch_name = $1, updated_at = NOW() WHERE id = $2',
-      [branchName, ticketId]
-    );
-
-    return { branchName, ticketId };
+    return GitProjectService.createBranch(projectId, ticketId, { repo });
   }
 
   async createTicketPR(projectId, ticketId, description) {
     const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-    if (String(ticket.projectId) !== String(projectId)) {
-      throw new ValidationError('Ticket does not belong to this project');
-    }
-    if (!ticket.branchName) {
-      throw new ValidationError('No branch created for this ticket yet');
-    }
-
-    const pr = await this._withProvider(
-      projectId,
-      (provider) => provider.createReviewRequest(
-        repo, ticket.id, ticket.title, ticket.branchName,
-        description || ticket.description
-      )
-    );
-
-    
-    await pool.query(
-      'UPDATE tickets SET pr_url = $1, pr_state = $2, updated_at = NOW() WHERE id = $3',
-      [pr.url, pr.state, ticketId]
-    );
-
-    return { ...pr, ticketId };
+    return GitProjectService.createReviewRequest(projectId, ticketId, description, { repo });
   }
 
   async deleteTicketBranch(projectId, ticketId) {
     const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-    if (!ticket.branchName) return { success: true, message: 'No branch to delete' };
-
-    try {
-      await this._withProvider(
-        projectId,
-        (provider) => provider.deleteBranch(repo, ticket.branchName)
-      );
-    } catch (error) {
-      logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
-    }
-
-    
-    await pool.query(
-      'UPDATE tickets SET branch_name = NULL, pr_url = NULL, pr_state = NULL, updated_at = NOW() WHERE id = $1',
-      [ticketId]
-    );
-
-    return { success: true };
+    return GitProjectService.deleteBranch(projectId, ticketId, { repo });
   }
 
   async listTicketBranches(projectId) {
     const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-
-    return this._withProvider(projectId, (provider) => provider.listBranches(repo));
+    return GitProjectService.listBranches(projectId, { repo });
   }
 
   async listTicketPRs(projectId) {
     const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-
-    return this._withProvider(projectId, (provider) => provider.listReviewRequests(repo));
+    return GitProjectService.listReviewRequests(projectId, { repo });
   }
 
   async getPRDiff(projectId, ticketId) {
     const repo = await this.getProjectRepo(projectId);
-    if (!repo) throw new ValidationError('No repository connected to this project');
-
-    const ticket = await Ticket.findById(ticketId);
-    if (!ticket) throw new NotFoundError('Ticket not found');
-    if (!ticket.prUrl) throw new ValidationError('No PR linked to this ticket');
-
-    const prNumber = this._extractPRNumber(ticket.prUrl);
-    return this._withProvider(
-      projectId,
-      (provider) => provider.getReviewDiff(repo, prNumber)
-    );
-  }
-
-  _extractPRNumber(prUrl) {
-    const match = prUrl.match(/\/pull\/(\d+)$/);
-    if (!match) throw new ValidationError(`Invalid PR URL: ${prUrl}`);
-    return parseInt(match[1], 10);
-  }
-
-  _formatRepoResult(row) {
-    return {
-      id: row.id,
-      projectId: row.project_id,
-      provider: row.provider,
-      repoUrl: row.repo_url,
-      accessTokenEncrypted: row.access_token_encrypted,
-      defaultBranch: row.default_branch,
-      isActive: row.is_active,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+    return GitProjectService.getReviewDiff(projectId, ticketId, { repo });
   }
 }
 

@@ -1,0 +1,395 @@
+const Project = require('../models/project');
+const Ticket = require('../models/ticket');
+const User = require('../models/user');
+const { pool } = require('../db');
+const PermissionService = require('./PermissionService');
+const GitHubAppAuthService = require('./GitHubAppAuthService');
+const { encrypt, decrypt } = require('../utils/crypto');
+const { NotFoundError, ForbiddenError, ValidationError } = require('../errors/HttpError');
+const logger = require('../utils/logger');
+const gitProviders = require('../providers/git');
+
+/**
+ * Provider-neutral repository connection and publish service.
+ *
+ * `GitHubService` remains the compatibility facade for the existing `/github`
+ * routes; this service owns validation, credential storage and provider
+ * operations for every registered Git provider.
+ */
+class GitProjectService {
+  async connect(projectId, input = {}, userId) {
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const user = await User.find(userId);
+    const isAdmin = await PermissionService.hasPermission(
+      user?.role || 'user', 'PROJECT_MANAGE_MEMBERS');
+    if (!isAdmin && String(project.ownerId) !== String(userId)) {
+      throw new ForbiddenError('Only project owner or admin can connect a repository');
+    }
+
+    const providerId = gitProviders.normalizeProviderId(input.provider || 'github');
+    const capabilities = gitProviders.getCapabilities(providerId);
+    const authMode = input.authMode
+      || (providerId === 'github' ? GitHubAppAuthService.getAuthMode() : 'pat');
+    if (!capabilities.authModes.includes(authMode)) {
+      throw new ValidationError(`Unsupported auth mode for ${providerId}: ${authMode}`);
+    }
+
+    const token = typeof input.token === 'string' && input.token.trim()
+      ? input.token.trim()
+      : null;
+    const sshKey = typeof input.sshKey === 'string' && input.sshKey.trim()
+      ? input.sshKey.trim()
+      : null;
+    if (['pat', 'project_token'].includes(authMode) && !token) {
+      throw new ValidationError(`A token is required for ${authMode} authentication`);
+    }
+    if (authMode === 'ssh' && !sshKey) {
+      throw new ValidationError('An SSH key is required for ssh authentication');
+    }
+
+    const baseUrl = input.baseUrl ? await gitProviders.assertSafeBaseUrl(input.baseUrl) : null;
+    const provider = gitProviders.registry.get(providerId, token || sshKey);
+    try {
+      provider.parseRepoUrl(input.repoUrl);
+    } catch (error) {
+      throw new ValidationError(error.message);
+    }
+    const validation = await provider.validateRepoAccess(input.repoUrl, token || sshKey);
+    if (!validation.accessible) {
+      throw new ValidationError(`Cannot access repository: ${validation.error}`);
+    }
+
+    const result = await pool.query(
+      `INSERT INTO project_repos
+         (project_id, provider, repo_url, access_token_encrypted, default_branch, is_active,
+          provider_base_url, provider_project_id, auth_mode, ssh_key_encrypted)
+       VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7, $8, $9)
+       ON CONFLICT (project_id, provider) DO UPDATE
+       SET repo_url = EXCLUDED.repo_url,
+           access_token_encrypted = EXCLUDED.access_token_encrypted,
+           default_branch = EXCLUDED.default_branch,
+           provider_base_url = EXCLUDED.provider_base_url,
+           provider_project_id = EXCLUDED.provider_project_id,
+           auth_mode = EXCLUDED.auth_mode,
+           ssh_key_encrypted = EXCLUDED.ssh_key_encrypted,
+           is_active = TRUE,
+           updated_at = NOW()
+       RETURNING *`,
+      [
+        projectId,
+        providerId,
+        input.repoUrl,
+        token ? encrypt(token) : null,
+        validation.defaultBranch || input.defaultBranch || 'main',
+        baseUrl,
+        input.providerProjectId || null,
+        authMode,
+        sshKey ? encrypt(sshKey) : null,
+      ]
+    );
+
+    return this._formatRepoResult(result.rows[0]);
+  }
+
+  async disconnect(projectId) {
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    await pool.query(
+      'UPDATE project_repos SET is_active = FALSE, updated_at = NOW() WHERE project_id = $1',
+      [projectId]
+    );
+
+    return { success: true };
+  }
+
+  async getRepo(projectId) {
+    const project = await Project.findById(projectId);
+    if (!project) throw new NotFoundError('Project not found');
+
+    const row = await this._getRepoRow(projectId);
+    return row ? this._formatRepoResult(row) : null;
+  }
+
+  /**
+   * Return the credential an agent needs for the active repository. GitHub App
+   * mode deliberately returns no stored PAT: the agent requests a scoped token
+   * from the existing token route instead.
+   */
+  async getAgentCredential(projectId) {
+    const row = await this._getRepoRow(projectId);
+    if (!row) return null;
+
+    const providerId = row.provider || 'github';
+    if (providerId === 'github') {
+      const mode = GitHubAppAuthService.getAuthMode();
+      if (mode === 'app') {
+        return { repoUrl: row.repo_url, accessToken: null, authMode: 'app' };
+      }
+      if (!GitHubAppAuthService.isPatAllowed()) {
+        throw new ForbiddenError(
+          'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
+        );
+      }
+      await GitHubAppAuthService.assertProjectEnabled(projectId);
+      return {
+        repoUrl: row.repo_url,
+        accessToken: row.access_token_encrypted ? decrypt(row.access_token_encrypted) : null,
+        authMode: 'pat',
+      };
+    }
+
+    const authMode = row.auth_mode || 'pat';
+    return {
+      provider: providerId,
+      repoUrl: row.repo_url,
+      providerBaseUrl: row.provider_base_url || null,
+      providerProjectId: row.provider_project_id || null,
+      accessToken: authMode === 'ssh'
+        ? null
+        : (row.access_token_encrypted ? decrypt(row.access_token_encrypted) : null),
+      sshKey: authMode === 'ssh' && row.ssh_key_encrypted
+        ? decrypt(row.ssh_key_encrypted)
+        : null,
+      authMode,
+    };
+  }
+
+  async getRepos(projectId) {
+    const result = await pool.query(
+      `SELECT * FROM project_repos
+       WHERE project_id = $1 AND is_active = TRUE
+       ORDER BY created_at DESC`,
+      [projectId]
+    );
+
+    return result.rows.map(row => this._formatRepoResult(row));
+  }
+
+  async readFile(projectId, path, ref = null) {
+    const repo = await this._requireRepo(projectId);
+    return this._withProvider(
+      projectId,
+      (provider) => provider.getFileContent(repo, path, ref),
+      { repo }
+    );
+  }
+
+  async createBranch(projectId, ticketId, { repo = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo);
+    const ticket = await this._ticketForProject(ticketId, projectId);
+
+    const branchName = await this._withProvider(
+      projectId,
+      (provider) => provider.createBranch(connected, ticket.id, ticket.title),
+      { repo: connected }
+    );
+
+    await pool.query(
+      'UPDATE tickets SET branch_name = $1, updated_at = NOW() WHERE id = $2',
+      [branchName, ticketId]
+    );
+
+    return { branchName, ticketId };
+  }
+
+  async createReviewRequest(projectId, ticketId, description, { repo = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo);
+    const ticket = await this._ticketForProject(ticketId, projectId);
+    if (!ticket.branchName) {
+      throw new ValidationError('No branch created for this ticket yet');
+    }
+
+    const review = await this._withProvider(
+      projectId,
+      (provider) => provider.createReviewRequest(
+        connected, ticket.id, ticket.title, ticket.branchName,
+        description || ticket.description
+      ),
+      { repo: connected }
+    );
+
+    if (!review) {
+      // Branch-only providers (local bare/SSH) publish branch + SHA; the agent
+      // records the SHA and the ticket still moves to review through reconcile.
+      return { ticketId, branchName: ticket.branchName };
+    }
+
+    await pool.query(
+      'UPDATE tickets SET pr_url = $1, pr_state = $2, updated_at = NOW() WHERE id = $3',
+      [review.url, review.state, ticketId]
+    );
+
+    return { ...review, ticketId };
+  }
+
+  async deleteBranch(projectId, ticketId, { repo = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo);
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new NotFoundError('Ticket not found');
+    if (!ticket.branchName) return { success: true, message: 'No branch to delete' };
+
+    try {
+      await this._withProvider(
+        projectId,
+        (provider) => provider.deleteBranch(connected, ticket.branchName),
+        { repo: connected }
+      );
+    } catch (error) {
+      logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
+    }
+
+    await pool.query(
+      'UPDATE tickets SET branch_name = NULL, pr_url = NULL, pr_state = NULL, updated_at = NOW() WHERE id = $1',
+      [ticketId]
+    );
+
+    return { success: true };
+  }
+
+  async listBranches(projectId, { repo = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo);
+    return this._withProvider(
+      projectId,
+      (provider) => provider.listBranches(connected),
+      { repo: connected }
+    );
+  }
+
+  async listReviewRequests(projectId, { repo = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo);
+    return this._withProvider(
+      projectId,
+      (provider) => provider.listReviewRequests(connected),
+      { repo: connected }
+    );
+  }
+
+  async getReviewDiff(projectId, ticketId, { repo = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo);
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new NotFoundError('Ticket not found');
+    if (!ticket.prUrl) throw new ValidationError('No PR linked to this ticket');
+
+    const reviewNumber = this._extractReviewNumber(ticket.prUrl);
+    return this._withProvider(
+      projectId,
+      (provider) => provider.getReviewDiff(connected, reviewNumber),
+      { repo: connected }
+    );
+  }
+
+  async _ticketForProject(ticketId, projectId) {
+    const ticket = await Ticket.findById(ticketId);
+    if (!ticket) throw new NotFoundError('Ticket not found');
+    if (String(ticket.projectId) !== String(projectId)) {
+      throw new ValidationError('Ticket does not belong to this project');
+    }
+    return ticket;
+  }
+
+  async _requireRepo(projectId, repo = null) {
+    const connected = repo || await this.getRepo(projectId);
+    if (!connected) {
+      throw new ValidationError('No repository connected to this project');
+    }
+    return connected;
+  }
+
+  async _getRepoRow(projectId) {
+    const result = await pool.query(
+      `SELECT * FROM project_repos
+       WHERE project_id = $1 AND is_active = TRUE
+       ORDER BY created_at DESC LIMIT 1`,
+      [projectId]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
+   * Build a provider for backend-initiated operations. GitHub App mode mints a
+   * repo-scoped installation token; PAT/self-hosted modes decrypt the stored
+   * credential.
+   */
+  async _createProvider(repo, projectId) {
+    const providerId = repo?.provider || 'github';
+    if (providerId === 'github') {
+      if (GitHubAppAuthService.getAuthMode() === 'app') {
+        const token = await GitHubAppAuthService.mintToken(projectId, {
+          operation: 'backend',
+        });
+        return gitProviders.registry.get('github', token.token);
+      }
+      if (!GitHubAppAuthService.isPatAllowed()) {
+        throw new ForbiddenError(
+          'PAT fallback is disabled; configure a GitHub App or set ALLOW_PAT=true for local development'
+        );
+      }
+      await GitHubAppAuthService.assertProjectEnabled(projectId);
+      const connected = repo || await this.getRepo(projectId);
+      if (!connected) throw new ValidationError('No repository connected to this project');
+      let encrypted = connected.accessTokenEncrypted;
+      if (!encrypted) {
+        const row = await this._getRepoRow(projectId);
+        encrypted = row?.access_token_encrypted || null;
+      }
+      if (!encrypted) {
+        throw new ValidationError('No repository connected to this project');
+      }
+      return gitProviders.registry.get('github', decrypt(encrypted));
+    }
+
+    const row = await this._getRepoRow(projectId);
+    if (!row) throw new ValidationError('No repository connected to this project');
+    const authMode = row.auth_mode || repo?.authMode || 'pat';
+    const encrypted = authMode === 'ssh' ? row.ssh_key_encrypted : row.access_token_encrypted;
+    return gitProviders.registry.get(providerId, encrypted ? decrypt(encrypted) : null);
+  }
+
+  async _withProvider(projectId, operation, { repo = null } = {}) {
+    let provider = await this._createProvider(repo, projectId);
+    try {
+      return await operation(provider);
+    } catch (error) {
+      if (GitHubAppAuthService.getAuthMode() !== 'app' || !this._isAuthError(error)) {
+        throw error;
+      }
+      GitHubAppAuthService.clearCacheForProject(projectId);
+      provider = await this._createProvider(repo, projectId);
+      return operation(provider);
+    }
+  }
+
+  _isAuthError(error) {
+    const message = String(error && error.message ? error.message : error);
+    return /authentication failed|bad credentials|invalid or expired token|\b401\b/i
+      .test(message);
+  }
+
+  _extractReviewNumber(prUrl) {
+    const match = prUrl.match(/\/pull\/(\d+)$/);
+    if (!match) throw new ValidationError(`Invalid PR URL: ${prUrl}`);
+    return parseInt(match[1], 10);
+  }
+
+  _formatRepoResult(row) {
+    return {
+      id: row.id,
+      projectId: row.project_id,
+      provider: row.provider || 'github',
+      repoUrl: row.repo_url,
+      defaultBranch: row.default_branch,
+      isActive: row.is_active,
+      providerBaseUrl: row.provider_base_url || null,
+      providerProjectId: row.provider_project_id || null,
+      authMode: row.auth_mode || null,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+}
+
+module.exports = new GitProjectService();
+module.exports.GitProjectService = GitProjectService;
