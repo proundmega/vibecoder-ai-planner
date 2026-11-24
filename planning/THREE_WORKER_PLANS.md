@@ -382,7 +382,7 @@ the feature added no new tests; its acceptance review is still open.
 
 | Date | Slice | Waived limit | Decision |
 |---|---|---|---|
-| 2026-11-24 | `fg-57b` | 8 files / 400 lines | Operator accepted one PR after review hardening (provider scoping/config, token scoping, controller authorization, docs). Final diff: 20 files, 1334 additions / 292 deletions. |
+| 2026-11-24 | `fg-57b` | 8 files / 400 lines | Operator accepted one PR after review hardening (provider scoping/config, token scoping, controller authorization, docs). Final diff: 21 files, 1341 additions / 294 deletions. |
 
 The limits below still apply to later slices; this row is a one-off operator
 waiver, not a new default.
