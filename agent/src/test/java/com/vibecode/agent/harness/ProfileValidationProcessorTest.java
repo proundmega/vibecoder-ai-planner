@@ -169,6 +169,8 @@ class ProfileValidationProcessorTest {
         assertEquals("test_data_setup", commands.get(1).get("phase"));
         assertEquals("verify", commands.get(2).get("phase"));
         assertEquals("test_data_cleanup", commands.get(3).get("phase"));
+        assertEquals(1, commands.get(0).get("attempts"));
+        assertEquals(false, commands.get(0).get("flaky"));
     }
 
     @Test
@@ -201,6 +203,39 @@ class ProfileValidationProcessorTest {
         List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
         assertEquals(4, commands.size());
         assertEquals("test_data_cleanup", commands.get(3).get("phase"));
+    }
+
+    @Test
+    void cleanupRunsAfterSetupFailure() throws Exception {
+        RepoProfileValidation validation = validation(profileJson("",
+            ",\"test_data\":{\"setup\":[],\"cleanup\":[\"clean-data\"]}"));
+        when(apiService.claimRepoProfileValidation("1")).thenReturn(validation);
+        when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
+            .thenAnswer(invocation -> {
+                List<String> commands = invocation.getArgument(1);
+                if (commands.equals(List.of("npm ci"))) {
+                    return List.of(new VerificationResult("npm ci", 1, "setup failed", false));
+                }
+                return commands.stream()
+                    .map(command -> new VerificationResult(command, 0, "ok", false))
+                    .toList();
+            });
+
+        processor(SandboxConfig.defaults()).pollOnce();
+
+        ArgumentCaptor<Map<String, Object>> result = ArgumentCaptor.forClass(Map.class);
+        verify(apiService).finishRepoProfileValidation(
+            eq("1"),
+            eq("22222222-2222-4222-8222-222222222222"),
+            eq("failed"),
+            result.capture(),
+            anyString()
+        );
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> commands = (List<Map<String, Object>>) result.getValue().get("commands");
+        assertEquals("test_data_cleanup", commands.get(2).get("phase"));
+        assertEquals("verify", commands.get(1).get("phase"));
+        assertEquals(true, commands.get(1).get("skipped"));
     }
 
     @Test

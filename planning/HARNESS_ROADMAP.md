@@ -33,7 +33,7 @@ This index groups the autonomous coding harness work. It links the execution pla
 | fg-36 | `fg-36-merge-lifecycle` | Planned | Base branch, conflicts, CI gate, merge queue, rollback | fg-31, fg-32 |
 | fg-37 | `fg-37-agent-evaluation-harness` | Planned | Golden corpus, grading, metrics, A/B, reviewer calibration | fg-30/31/32 |
 | fg-38 | `DONE/fg-38-harness-budgets-routing` | Merged (#164) | Live budgets, hard stops, quotas, model routing/fallback | fg-30 Phase 1 |
-| fg-39 | `fg-39-repo-environment-profiles` | In progress (slices 1/2/3/5) | Slice 1 merged (#161); services/health checks and the Project Settings profile editor merged (#167); slice 3 adds flaky-test retries and test-data hooks (PR #225, in review); caches/per-stack images (FR3/FR4) remain | fg-34 |
+| fg-39 | `fg-39-repo-environment-profiles` | In progress (slices 1/2/5; slice 3 in review #225) | Slice 1 merged (#161); services/health checks and the Project Settings profile editor merged (#167); slice 3 adds flaky-test retries and test-data hooks (PR #225, in review); caches/per-stack images (FR3/FR4) remain | fg-34 |
 | fg-40 | `fg-40-multi-agent-orchestration` | Planned | Roles, task graph, worktrees, handoffs, integrator | fg-33, fg-36, fg-38, fg-39 |
 | fg-41 | `DONE/fg-41-harness-observability` | Merged (#163) | Event stream, traces, replay, dashboards, audit | fg-33 |
 | fg-42 | `DONE/fg-42-harness-privacy` | Merged (#166) | Classification, redaction, provider policy, retention | fg-34, fg-41 |

@@ -91,6 +91,21 @@ class VerificationRunnerTest {
     }
 
     @Test
+    void zeroRetriesDisablesTheFlakyPolicy() {
+        Assumptions.assumeFalse(windows());
+        String command = "sh -c 'echo known-flake.test.js failed; exit 1'";
+
+        List<VerificationResult> results = new VerificationRunner().run(
+            tempDir, List.of(command), Duration.ofSeconds(20), Map.of(),
+            new VerificationRunner.FlakyPolicy(List.of("known-flake.test.js"), 0));
+
+        assertEquals(1, results.size());
+        assertFalse(results.get(0).passed());
+        assertFalse(results.get(0).flaky());
+        assertEquals(1, results.get(0).attempts());
+    }
+
+    @Test
     void doesNotRetryAFailureThatDoesNotNameAKnownFlakyTest() {
         Assumptions.assumeFalse(windows());
         String command = "sh -c 'echo build failed; exit 1'";

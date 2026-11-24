@@ -205,7 +205,7 @@ function buildProfile(): RepoProfile {
       },
     })),
     flaky_tests: splitLines(flakyTestsText.value),
-    flaky_retries: Math.max(0, Math.min(2, Number(flakyRetries.value) || 0)),
+    flaky_retries: Math.max(0, Math.min(2, Math.trunc(Number(flakyRetries.value) || 0))),
     test_data: {
       setup: splitLines(testDataSetupText.value),
       cleanup: splitLines(testDataCleanupText.value),

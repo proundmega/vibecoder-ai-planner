@@ -518,6 +518,20 @@ public class WorkspaceManager {
     }
 
     /**
+     * Snapshot tracked-file status before and after profile test-data cleanup.
+     * Untracked test data is allowed to appear/disappear; a tracked source file
+     * must not change after verification, or the published tree would differ
+     * from the verified tree.
+     */
+    public String trackedWorktreeStatus() throws IOException {
+        if (repoDir == null || !Files.exists(repoDir)) {
+            return "";
+        }
+        hardenGitRepository();
+        return runGitCommand("status", "--porcelain=v1", "--untracked-files=no");
+    }
+
+    /**
      * Build a supervisor-owned index from the pinned base commit (falling back
      * to HEAD only when no base commit was pinned), apply the worktree on top
      * of it, and return a diff computed from index blobs.

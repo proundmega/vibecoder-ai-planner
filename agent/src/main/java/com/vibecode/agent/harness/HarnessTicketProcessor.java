@@ -1087,7 +1087,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
             }
 
-            boolean testDataSetupRan = false;
+            boolean testDataSetupFailed = false;
+            List<VerificationResult> testDataFailures = List.of();
             if (profile != null && !profile.testData().setup().isEmpty()) {
                 ensureBudgetAllows("before test-data setup");
                 List<VerificationResult> testDataResults = runVerification(
@@ -1095,30 +1096,38 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     remaining(deadline, installTimeout), profileEnv);
                 verification.addAll(testDataResults);
                 emitVerificationResults(testDataResults, "test_data_setup");
-                List<VerificationResult> testDataFailures = failures(testDataResults);
-                if (!testDataFailures.isEmpty()) {
-                    failAndRelease(pickedUp.getId(),
-                        "Test-data setup failed; not publishing.\n\n"
-                            + failureDetails(testDataFailures));
-                    return;
-                }
-                testDataSetupRan = true;
+                testDataFailures = failures(testDataResults);
+                testDataSetupFailed = !testDataFailures.isEmpty();
             }
 
-            currentStep = "verifying";
-            ensureBudgetAllows("before verification");
             Duration verifyTimeout = profile == null
                 ? VERIFICATION_TIMEOUT
                 : Duration.ofMinutes(profile.timeouts().verifyMinutes());
-            List<VerificationResult> verifyResults = runVerification(
-                sandbox, workspace, commands, remaining(deadline, verifyTimeout),
-                profileEnv, flakyPolicy(profile));
-            verification.addAll(verifyResults);
-            emitVerificationResults(verifyResults, "verify");
+            List<VerificationResult> verifyResults = List.of();
+            if (!testDataSetupFailed) {
+                currentStep = "verifying";
+                ensureBudgetAllows("before verification");
+                verifyResults = runVerification(
+                    sandbox, workspace, commands, remaining(deadline, verifyTimeout),
+                    profileEnv, flakyPolicy(profile));
+                verification.addAll(verifyResults);
+                emitVerificationResults(verifyResults, "verify");
+            }
 
+            boolean cleanupConfigured = profile != null
+                && !profile.testData().cleanup().isEmpty();
+            boolean cleanupChangedWorktree = false;
             List<VerificationResult> cleanupFailures = List.of();
-            if (profile != null && testDataSetupRan
-                && !profile.testData().cleanup().isEmpty()) {
+            if (cleanupConfigured) {
+                String before;
+                try {
+                    before = workspace.trackedWorktreeStatus();
+                } catch (IOException e) {
+                    failAndRelease(pickedUp.getId(),
+                        "Could not snapshot the worktree before test-data cleanup; "
+                            + "refusing to publish: " + e.getMessage());
+                    return;
+                }
                 ensureBudgetAllows("before test-data cleanup");
                 List<VerificationResult> cleanupResults = runVerification(
                     sandbox, workspace, profile.testData().cleanup(),
@@ -1126,6 +1135,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 verification.addAll(cleanupResults);
                 emitVerificationResults(cleanupResults, "test_data_cleanup");
                 cleanupFailures = failures(cleanupResults);
+                String after;
+                try {
+                    after = workspace.trackedWorktreeStatus();
+                } catch (IOException e) {
+                    failAndRelease(pickedUp.getId(),
+                        "Could not snapshot the worktree after test-data cleanup; "
+                            + "refusing to publish: " + e.getMessage());
+                    return;
+                }
+                cleanupChangedWorktree = before == null || after == null
+                    || !before.equals(after);
             }
 
             reportUsage(false);
@@ -1136,15 +1156,20 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
 
             List<VerificationResult> verifyFailures = failures(verifyResults);
-            if (!verifyFailures.isEmpty() || !cleanupFailures.isEmpty()) {
-                String details = failureDetails(verifyFailures);
-                if (!cleanupFailures.isEmpty()) {
-                    details = (details.isEmpty() ? "" : details + "\n\n")
-                        + "Test-data cleanup failed; not publishing.\n"
-                        + failureDetails(cleanupFailures);
-                }
+            List<VerificationResult> allFailures = new ArrayList<>(testDataFailures);
+            allFailures.addAll(verifyFailures);
+            allFailures.addAll(cleanupFailures);
+            if (cleanupChangedWorktree) {
+                allFailures.add(new VerificationResult(
+                    "test-data cleanup", 1,
+                    "cleanup changed tracked files; refusing to publish", false));
+            }
+            if (!allFailures.isEmpty()) {
+                String message = testDataSetupFailed
+                    ? "Test-data setup failed; not publishing."
+                    : "Verification failed; not publishing.";
                 failAndRelease(pickedUp.getId(),
-                    "Verification failed; not publishing.\n\n" + details);
+                    message + "\n\n" + failureDetails(allFailures));
                 return;
             }
 

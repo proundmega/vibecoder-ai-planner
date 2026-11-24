@@ -184,13 +184,12 @@ public class ProfileValidationProcessor {
                 workspace, sandbox, "setup", profile.setup(),
                 phaseTimeout(profile.timeouts().setupMinutes(), deadline),
                 environment, commands, VerificationRunner.FlakyPolicy.none());
-            boolean testDataSetupRan = false;
+            boolean cleanupConfigured = !profile.testData().cleanup().isEmpty();
             if (succeeded && !profile.testData().setup().isEmpty()) {
-                testDataSetupRan = runPhase(
+                succeeded = runPhase(
                     workspace, sandbox, "test_data_setup", profile.testData().setup(),
                     phaseTimeout(profile.timeouts().setupMinutes(), deadline),
                     environment, commands, VerificationRunner.FlakyPolicy.none());
-                succeeded = testDataSetupRan;
             }
             if (succeeded) {
                 succeeded = runPhase(
@@ -204,7 +203,7 @@ public class ProfileValidationProcessor {
                     "reason", "setup or test-data setup failed"
                 ));
             }
-            if (testDataSetupRan && !profile.testData().cleanup().isEmpty()) {
+            if (cleanupConfigured) {
                 boolean cleanupOk = runPhase(
                     workspace, sandbox, "test_data_cleanup", profile.testData().cleanup(),
                     phaseTimeout(profile.timeouts().verifyMinutes(), deadline),
