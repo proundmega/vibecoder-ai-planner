@@ -135,6 +135,35 @@ make backend/src/app.js
 rm "$TMP/backend/src/__tests__/deleted.test.js"
 expect_fail "a deleted test does not satisfy the gate" 1 "requires a changed/new backend test"
 
+# Real agent shell-test execution with a fake Maven.
+FAKE_BIN="$(mktemp -d)"
+MVN_LOG="$TMP/mvn.log"
+AGENT_MARKER="$TMP/agent-test-ran"
+printf '#!/usr/bin/env bash\necho "$*" >> "$MVN_LOG"\nexit 0\n' > "$FAKE_BIN/mvn"
+chmod +x "$FAKE_BIN/mvn"
+printf '24\n' > "$TMP/.nvmrc"
+git -C "$TMP" add .nvmrc
+git -C "$TMP" commit -q -m "pin node"
+make agent/scripts/host-storage.test.sh
+printf '#!/usr/bin/env bash\necho ran > "$AGENT_MARKER"\n' > "$TMP/agent/scripts/host-storage.test.sh"
+mkdir -p "$TMP/home"
+if (cd "$TMP" && HOME="$TMP/home" PATH="$FAKE_BIN:$PATH" MVN_LOG="$MVN_LOG" AGENT_MARKER="$AGENT_MARKER" \
+        VERIFY_LOCAL_ROOT="$TMP" bash "$VERIFY" --agent >/dev/null 2>&1) \
+        && [ -f "$AGENT_MARKER" ] && grep -q -- '-B test' "$MVN_LOG"; then
+    pass "changed agent shell tests execute after Maven"
+else
+    fail "changed agent shell tests execute after Maven"
+fi
+rm -rf "$FAKE_BIN"
+reset_fixture
+
+make backend/src/old.js
+git -C "$TMP" add backend/src/old.js
+git -C "$TMP" commit -q -m "add old production file"
+make frontend/src/__tests__/App.test.ts
+rm "$TMP/backend/src/old.js"
+expect_fail "a deleted production file still needs backend evidence" 1 "requires a changed/new backend test"
+
 expect_fail "no changes fails" 1 "found no changed or new files"
 
 if run_plan --quick >/dev/null 2>&1; then

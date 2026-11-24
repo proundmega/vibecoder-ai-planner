@@ -93,9 +93,16 @@ step() {
 
 changed_paths() {
   {
-    git -C "$ROOT" diff --name-only --diff-filter=ACMR
-    git -C "$ROOT" diff --cached --name-only --diff-filter=ACMR
+    git -C "$ROOT" diff --name-only --diff-filter=ACMRD
+    git -C "$ROOT" diff --cached --name-only --diff-filter=ACMRD
     git -C "$ROOT" ls-files --others --exclude-standard
+  } | sed '/^[[:space:]]*$/d' | sort -u
+}
+
+deleted_paths() {
+  {
+    git -C "$ROOT" diff --name-only --diff-filter=D
+    git -C "$ROOT" diff --cached --name-only --diff-filter=D
   } | sed '/^[[:space:]]*$/d' | sort -u
 }
 
@@ -115,9 +122,14 @@ run_agent_mode() {
     return 1
   fi
 
+  local -A deleted=()
+  local path
+  while IFS= read -r path; do
+    [ -n "$path" ] && deleted["$path"]=1
+  done < <(deleted_paths)
+
   local backend=0 frontend=0 agent=0 scripts=0 planning=0 shared=0
   local backend_test=0 frontend_test=0 agent_test=0 scripts_test=0
-  local path
   for path in "${changed[@]}"; do
     case "$path" in
       planning/*) planning=1 ;;
@@ -128,12 +140,14 @@ run_agent_mode() {
       scripts/*) scripts=1 ;;
       *) shared=1 ;;
     esac
-    case "$path" in
-      backend/*.test.js|backend/*.test.ts|backend/*.test.sh) backend_test=1 ;;
-      frontend/*.test.js|frontend/*.test.ts|frontend/*.test.tsx|frontend/*.cy.js|frontend/*.cy.ts|frontend/*.test.sh) frontend_test=1 ;;
-      agent/*Test.java|agent/*.test.sh) agent_test=1 ;;
-      scripts/*.test.sh|*.test.sh) scripts_test=1 ;;
-    esac
+    if [ -z "${deleted[$path]:-}" ]; then
+      case "$path" in
+        backend/*.test.js|backend/*.test.ts|backend/*.test.sh) backend_test=1 ;;
+        frontend/*.test.js|frontend/*.test.ts|frontend/*.test.tsx|frontend/*.cy.js|frontend/*.cy.ts) frontend_test=1 ;;
+        agent/*Test.java|agent/*.test.sh) agent_test=1 ;;
+        scripts/*.test.sh) scripts_test=1 ;;
+      esac
+    fi
   done
 
   if [ "$backend" -eq 1 ] && [ "$backend_test" -eq 0 ]; then
@@ -201,6 +215,11 @@ run_agent_mode() {
           return 3
         fi
         (cd "$ROOT/agent" && mvn -B test)
+        for path in "${changed[@]}"; do
+          case "$path" in
+            agent/*.test.sh) (cd "$ROOT" && bash "$path") ;;
+          esac
+        done
         ;;
       scripts)
         for path in "${changed[@]}"; do
