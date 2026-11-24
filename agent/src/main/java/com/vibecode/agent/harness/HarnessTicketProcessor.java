@@ -1121,10 +1121,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
             if (cleanupConfigured) {
                 String before;
                 try {
-                    before = workspace.trackedWorktreeStatus();
+                    before = workspace.worktreeTreeId();
                 } catch (IOException e) {
                     failAndRelease(pickedUp.getId(),
-                        "Could not snapshot the worktree before test-data cleanup; "
+                        "Could not fingerprint the worktree before test-data cleanup; "
                             + "refusing to publish: " + e.getMessage());
                     return;
                 }
@@ -1137,10 +1137,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 cleanupFailures = failures(cleanupResults);
                 String after;
                 try {
-                    after = workspace.trackedWorktreeStatus();
+                    after = workspace.worktreeTreeId();
                 } catch (IOException e) {
                     failAndRelease(pickedUp.getId(),
-                        "Could not snapshot the worktree after test-data cleanup; "
+                        "Could not fingerprint the worktree after test-data cleanup; "
                             + "refusing to publish: " + e.getMessage());
                     return;
                 }
@@ -1162,7 +1162,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             if (cleanupChangedWorktree) {
                 allFailures.add(new VerificationResult(
                     "test-data cleanup", 1,
-                    "cleanup changed tracked files; refusing to publish", false));
+                    "cleanup changed the worktree tree; refusing to publish an unverified tree", false));
             }
             if (!allFailures.isEmpty()) {
                 String message = testDataSetupFailed

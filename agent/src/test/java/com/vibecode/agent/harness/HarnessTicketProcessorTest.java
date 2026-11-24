@@ -718,7 +718,7 @@ class HarnessTicketProcessorTest {
             .thenReturn(Map.of("id", "run-1"));
         when(apiService.claimHarnessLease(1L, "run-1", 600)).thenReturn(true);
         when(apiService.renewHarnessLease(1L, "run-1", 600)).thenReturn(true);
-        when(workspace.trackedWorktreeStatus()).thenReturn("clean");
+        when(workspace.worktreeTreeId()).thenReturn("clean");
         when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
             .thenAnswer(invocation -> {
                 List<String> commands = invocation.getArgument(1);
@@ -799,7 +799,7 @@ class HarnessTicketProcessorTest {
         String branch = "vibecode/ticket-1-add-filtering";
         RepoProfileSnapshot snapshot = testDataProfile("[]", "[\"clean-data\"]");
         stubRunStart(branch, snapshot);
-        when(workspace.trackedWorktreeStatus()).thenReturn("clean");
+        when(workspace.worktreeTreeId()).thenReturn("clean");
         when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
             .thenAnswer(invocation -> {
                 List<String> commands = invocation.getArgument(1);
@@ -826,7 +826,7 @@ class HarnessTicketProcessorTest {
         String branch = "vibecode/ticket-1-add-filtering";
         RepoProfileSnapshot snapshot = testDataProfile("[\"seed-data\"]", "[\"clean-data\"]");
         stubRunStart(branch, snapshot);
-        when(workspace.trackedWorktreeStatus()).thenReturn("clean");
+        when(workspace.worktreeTreeId()).thenReturn("clean");
         when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
             .thenAnswer(invocation -> {
                 List<String> commands = invocation.getArgument(1);
@@ -854,11 +854,11 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
-    void cleanupThatChangesTrackedFilesStopsPublishing() throws Exception {
+    void cleanupThatChangesTheWorktreeTreeStopsPublishing() throws Exception {
         String branch = "vibecode/ticket-1-add-filtering";
         RepoProfileSnapshot snapshot = testDataProfile("[]", "[\"clean-data\"]");
         stubRunStart(branch, snapshot);
-        when(workspace.trackedWorktreeStatus()).thenReturn("clean", "dirty");
+        when(workspace.worktreeTreeId()).thenReturn("clean", "dirty");
         when(verificationRunner.run(any(Path.class), anyList(), any(Duration.class), anyMap()))
             .thenAnswer(invocation -> {
                 List<String> commands = invocation.getArgument(1);
@@ -874,7 +874,7 @@ class HarnessTicketProcessorTest {
         ArgumentCaptor<String> error = ArgumentCaptor.forClass(String.class);
         verify(apiService).finishHarnessRun(
             eq("run-1"), eq("failed"), error.capture(), isNull(), isNull());
-        assertTrue(error.getValue().contains("tracked"), error.getValue());
+        assertTrue(error.getValue().contains("tree"), error.getValue());
     }
 
     @Test
