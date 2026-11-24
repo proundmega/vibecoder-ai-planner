@@ -365,6 +365,24 @@ describe('GitProjectService', () => {
       expect(result.branchName).toBe('vibecode/ticket-42-title');
     });
 
+    it('reloads the encrypted token when the formatted repo omits it', async () => {
+      const provider = fakeProvider({
+        createBranch: jest.fn().mockResolvedValue('vibecode/ticket-42-title'),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({ rows: [{ access_token_encrypted: 'enc:pat' }] });
+      Ticket.findById.mockResolvedValue({
+        id: 42, projectId: 1, title: 'Title',
+      });
+
+      await GitProjectService.createBranch(1, 42, {
+        repo: { provider: 'github', repoUrl: 'owner/repo' },
+      });
+
+      expect(decrypt).toHaveBeenCalledWith('enc:pat');
+      expect(provider.createBranch).toHaveBeenCalled();
+    });
+
     it('creates a review request and records the PR URL', async () => {
       const provider = fakeProvider({
         createReviewRequest: jest.fn().mockResolvedValue({
