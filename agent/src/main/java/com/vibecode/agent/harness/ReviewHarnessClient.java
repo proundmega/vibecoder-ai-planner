@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Runs one read-only review session (fg-31c, FR1/FR3).
@@ -90,15 +91,28 @@ public final class ReviewHarnessClient implements AutoCloseable {
         String sessionId = harness.createSession(title == null ? "review" : title);
         Transcript transcript = new Transcript();
         CountDownLatch terminal = new CountDownLatch(1);
+        AtomicBoolean errored = new AtomicBoolean();
         harness.subscribe(sessionId, event -> {
             transcript.accept(event);
-            if (event != null && (event.isIdle() || event.isError())) {
+            if (event == null) {
+                return;
+            }
+            if (event.isError()) {
+                errored.set(true);
+                terminal.countDown();
+            } else if (event.isIdle()) {
                 terminal.countDown();
             }
         });
         harness.sendPrompt(sessionId, prompt);
-        if (transcript.text().isBlank()) {
-            awaitTerminal(terminal);
+        // SSE runs on its own thread: the blocking POST can return after an
+        // early partial part but before the final assistant message and idle.
+        boolean terminalSeen = awaitTerminal(terminal);
+        if (!terminalSeen) {
+            throw new IOException("review harness did not report a terminal event");
+        }
+        if (errored.get()) {
+            throw new IOException("review harness reported an error");
         }
         if (!harness.isHealthy()) {
             throw new IOException("review harness is unhealthy after the prompt");
@@ -110,9 +124,9 @@ public final class ReviewHarnessClient implements AutoCloseable {
         return text;
     }
 
-    private void awaitTerminal(CountDownLatch terminal) throws IOException {
+    private boolean awaitTerminal(CountDownLatch terminal) throws IOException {
         try {
-            terminal.await(terminalTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            return terminal.await(terminalTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while waiting for the review", error);
@@ -187,18 +201,17 @@ public final class ReviewHarnessClient implements AutoCloseable {
 
         synchronized String text() {
             String chosen = lastAssistantMessage();
-            if (chosen == null) {
-                if (!userMessages.isEmpty()) {
-                    // Fail closed: a user-only transcript is never the review.
-                    return "";
-                }
-                if (!messageOrder.isEmpty()) {
-                    chosen = messageOrder.get(messageOrder.size() - 1);
-                }
+            if (chosen != null) {
+                // An assistant message wins even when its text is blank: never
+                // fall back to a user message or an unrelated part.
+                return join(chosen);
             }
-            String text = join(chosen);
-            if (!text.isBlank()) {
-                return text;
+            if (!userMessages.isEmpty()) {
+                // Fail closed: a user-only transcript is never the review.
+                return "";
+            }
+            if (!messageOrder.isEmpty()) {
+                return join(messageOrder.get(messageOrder.size() - 1));
             }
             StringBuilder all = new StringBuilder();
             for (String value : partTexts.values()) {

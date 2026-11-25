@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 
@@ -27,7 +28,7 @@ public final class ReviewTicketProcessor {
     private static final Duration DEFAULT_VERIFICATION_TIMEOUT = Duration.ofMinutes(10);
 
     private final ReviewPromptBuilder promptBuilder;
-    private final ReviewResultParser resultParser;
+    private final ResultParser resultParser;
     private final AttemptGate attemptGate;
     private final Verification verification;
     private final HarnessFactory harnessFactory;
@@ -39,8 +40,24 @@ public final class ReviewTicketProcessor {
         Verification verification,
         HarnessFactory harnessFactory
     ) {
+        this(
+            promptBuilder,
+            resultParser == null ? null : resultParser::parse,
+            attemptGate,
+            verification,
+            harnessFactory
+        );
+    }
+
+    ReviewTicketProcessor(
+        ReviewPromptBuilder promptBuilder,
+        ResultParser resultParser,
+        AttemptGate attemptGate,
+        Verification verification,
+        HarnessFactory harnessFactory
+    ) {
         this.promptBuilder = promptBuilder == null ? new ReviewPromptBuilder() : promptBuilder;
-        this.resultParser = resultParser == null ? new ReviewResultParser() : resultParser;
+        this.resultParser = resultParser == null ? new ReviewResultParser()::parse : resultParser;
         this.attemptGate = attemptGate == null ? AttemptGate.none() : attemptGate;
         this.verification = verification;
         this.harnessFactory = harnessFactory;
@@ -130,20 +147,31 @@ public final class ReviewTicketProcessor {
     public static Verification hostVerification(HarnessConfig config, Duration timeout) {
         VerificationRunner runner = new VerificationRunner(config);
         Duration effective = timeout == null ? DEFAULT_VERIFICATION_TIMEOUT : timeout;
-        return workspace -> {
-            long deadline = System.nanoTime() + effective.toNanos();
-            List<VerificationResult> installs = runner.run(
-                workspace,
-                runner.resolveInstallCommands(workspace),
-                remaining(deadline)
-            );
-            List<VerificationResult> commands = runner.run(
-                workspace,
-                runner.resolveCommands(workspace),
-                remaining(deadline)
-            );
-            return new VerificationOutcome(installs, commands);
-        };
+        return workspace -> runHostVerification(runner, workspace, effective);
+    }
+
+    /**
+     * Package-visible seam for tests: run installs and verification commands
+     * under one deadline and keep them separate.
+     */
+    static VerificationOutcome runHostVerification(
+        VerificationRunner runner,
+        Path workspace,
+        Duration timeout
+    ) throws IOException {
+        Duration effective = timeout == null ? DEFAULT_VERIFICATION_TIMEOUT : timeout;
+        long deadline = System.nanoTime() + effective.toNanos();
+        List<VerificationResult> installs = runner.run(
+            workspace,
+            runner.resolveInstallCommands(workspace),
+            remaining(deadline)
+        );
+        List<VerificationResult> commands = runner.run(
+            workspace,
+            runner.resolveCommands(workspace),
+            remaining(deadline)
+        );
+        return new VerificationOutcome(installs, commands);
     }
 
     private static Duration remaining(long deadlineNanos) {
@@ -357,6 +385,11 @@ public final class ReviewTicketProcessor {
     @FunctionalInterface
     public interface Verification {
         VerificationOutcome run(Path workspace) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface ResultParser {
+        ReviewResultParser.Result parse(String raw, Collection<String> changedFiles);
     }
 
     @FunctionalInterface

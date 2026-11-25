@@ -157,6 +157,59 @@ class ReviewHarnessClientTest {
     }
 
     @Test
+    void waitsForTheFinalAnswerAfterAnEarlyPartialPart() throws Exception {
+        FakeHarness harness = new FakeHarness();
+        harness.syncText = "{\"verdict\":\"approve\",\"summary\":\"early\",\"findings\":[]}";
+        harness.asyncText = "{\"verdict\":\"request_changes\",\"summary\":\"final\",\"findings\":[]}";
+        ReviewHarnessClient client = new ReviewHarnessClient(
+            harness, new ReviewPromptBuilder(), Duration.ofSeconds(2));
+
+        String text = client.review(workspace, "review", promptRequest());
+
+        assertTrue(text.contains("\"request_changes\""), text);
+    }
+
+    @Test
+    void failsClosedWhenTheTerminalEventNeverArrives() {
+        FakeHarness harness = new FakeHarness();
+        harness.emitIdle = false;
+        ReviewHarnessClient client = new ReviewHarnessClient(
+            harness, new ReviewPromptBuilder(), Duration.ofMillis(50));
+
+        assertThrows(IOException.class,
+            () -> client.review(workspace, "review", promptRequest()));
+    }
+
+    @Test
+    void failsWhenTheHarnessReportsAnError() throws Exception {
+        FakeHarness harness = new FakeHarness();
+        harness.events.add(event(
+            "{\"type\":\"session.error\",\"properties\":"
+                + "{\"message\":\"provider failed\"}}"));
+
+        assertThrows(IOException.class,
+            () -> new ReviewHarnessClient(harness).review(workspace, "review", promptRequest()));
+    }
+
+    @Test
+    void failsClosedWhenAnAssistantMessageHasNoText() throws Exception {
+        FakeHarness harness = new FakeHarness();
+        harness.events.add(event(
+            "{\"type\":\"message.updated\",\"properties\":"
+                + "{\"info\":{\"id\":\"msg_user\",\"role\":\"user\"}}}"));
+        harness.events.add(event(
+            "{\"type\":\"message.part.updated\",\"properties\":"
+                + "{\"part\":{\"id\":\"u1\",\"messageID\":\"msg_user\","
+                + "\"type\":\"text\",\"text\":\"Please review this.\"}}}"));
+        harness.events.add(event(
+            "{\"type\":\"message.updated\",\"properties\":"
+                + "{\"info\":{\"id\":\"msg_a1\",\"role\":\"assistant\"}}}"));
+
+        assertThrows(IOException.class,
+            () -> new ReviewHarnessClient(harness).review(workspace, "review", promptRequest()));
+    }
+
+    @Test
     void failsClosedOnEmptyOrUnhealthyReview() throws Exception {
         FakeHarness empty = new FakeHarness();
         assertThrows(IOException.class,
@@ -209,7 +262,9 @@ class ReviewHarnessClientTest {
         private Path startedWorkspace;
         private String sessionTitle;
         private String prompt = "";
+        private String syncText;
         private String asyncText;
+        private boolean emitIdle = true;
         private boolean healthy = true;
         private boolean closed;
 
@@ -227,20 +282,27 @@ class ReviewHarnessClientTest {
         @Override
         public void sendPrompt(String sessionId, String prompt) {
             this.prompt = prompt;
+            if (syncText != null) {
+                listener.accept(textEvent("msg_sync", syncText));
+            }
+            for (HarnessEvent event : events) {
+                listener.accept(event);
+            }
             if (asyncText != null) {
                 Thread thread = new Thread(() -> {
                     sleep();
-                    listener.accept(textEvent(asyncText));
-                    listener.accept(idleEvent());
+                    listener.accept(textEvent("msg_async", asyncText));
+                    if (emitIdle) {
+                        listener.accept(idleEvent());
+                    }
                 }, "async-review-fake");
                 thread.setDaemon(true);
                 thread.start();
                 return;
             }
-            for (HarnessEvent event : events) {
-                listener.accept(event);
+            if (emitIdle) {
+                listener.accept(idleEvent());
             }
-            listener.accept(idleEvent());
         }
 
         @Override
@@ -271,12 +333,12 @@ class ReviewHarnessClientTest {
             }
         }
 
-        private static HarnessEvent textEvent(String text) {
+        private static HarnessEvent textEvent(String messageId, String text) {
             ObjectNode payload = MAPPER.createObjectNode();
             payload.put("type", "message.part.updated");
             ObjectNode part = payload.putObject("properties").putObject("part");
-            part.put("id", "p_async");
-            part.put("messageID", "msg_async");
+            part.put("id", "p_" + messageId);
+            part.put("messageID", messageId);
             part.put("type", "text");
             part.put("text", text);
             return HarnessEvent.of("message.part.updated", payload);

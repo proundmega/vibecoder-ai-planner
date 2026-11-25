@@ -8,6 +8,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -126,6 +128,58 @@ class ReviewTicketProcessorTest {
 
         assertEquals(ReviewTicketProcessor.Status.FAILED, outcome.status());
         assertTrue(outcome.reason().contains("invalid review output"));
+    }
+
+    @Test
+    void failsClosedWhenTheParserThrowsAnUnexpectedRuntimeError() {
+        ReviewTicketProcessor processor = new ReviewTicketProcessor(
+            new ReviewPromptBuilder(),
+            (raw, files) -> {
+                throw new NullPointerException("parser bug");
+            },
+            ReviewTicketProcessor.AttemptGate.none(),
+            passingVerification(),
+            () -> new ReviewHarnessClient(new FakeHarness(approveJson())));
+
+        ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
+
+        assertEquals(ReviewTicketProcessor.Status.FAILED, outcome.status());
+        assertTrue(outcome.reason().contains("invalid review output"));
+    }
+
+    @Test
+    void hostVerificationKeepsInstallsSeparateAndSharesOneDeadline() throws Exception {
+        Duration timeout = Duration.ofSeconds(10);
+
+        FakeRunner installOnly = new FakeRunner(
+            List.of(new VerificationResult("npm ci", 0, "ok", false)),
+            List.of());
+        ReviewTicketProcessor.VerificationOutcome installOutcome =
+            ReviewTicketProcessor.runHostVerification(installOnly, workspace, timeout);
+        assertFalse(installOutcome.approved());
+        assertTrue(installOutcome.commands().isEmpty());
+
+        FakeRunner failedInstall = new FakeRunner(
+            List.of(new VerificationResult("npm ci", 1, "install failed", false)),
+            List.of(new VerificationResult("npm test", 0, "ok", false)));
+        assertFalse(ReviewTicketProcessor
+            .runHostVerification(failedInstall, workspace, timeout)
+            .approved());
+
+        FakeRunner passing = new FakeRunner(
+            List.of(new VerificationResult("npm ci", 0, "ok", false)),
+            List.of(new VerificationResult("npm test", 0, "ok", false)));
+        passing.installSleepMs = 100;
+        assertTrue(ReviewTicketProcessor
+            .runHostVerification(passing, workspace, timeout)
+            .approved());
+        assertEquals(2, passing.durations.size());
+        assertTrue(passing.durations.get(0).compareTo(timeout) <= 0);
+        assertTrue(passing.durations.get(1).compareTo(timeout) <= 0);
+        assertTrue(
+            passing.durations.get(1).compareTo(passing.durations.get(0)) < 0,
+            "the verification command must get the remaining deadline: "
+                + passing.durations);
     }
 
     @Test
@@ -310,6 +364,49 @@ class ReviewTicketProcessorTest {
         return "{\"verdict\":\"approve\",\"summary\":\"Looks good.\",\"findings\":[]}";
     }
 
+    private static final class FakeRunner extends VerificationRunner {
+
+        private final List<VerificationResult> installs;
+        private final List<VerificationResult> commands;
+        private final List<Duration> durations = new ArrayList<>();
+        private long installSleepMs;
+
+        private FakeRunner(
+            List<VerificationResult> installs,
+            List<VerificationResult> commands
+        ) {
+            this.installs = installs;
+            this.commands = commands;
+        }
+
+        @Override
+        public List<String> resolveInstallCommands(Path workspace) {
+            return List.of("install");
+        }
+
+        @Override
+        public List<String> resolveCommands(Path workspace) {
+            return List.of("verify");
+        }
+
+        @Override
+        public List<VerificationResult> run(
+            Path workspace,
+            List<String> commands,
+            Duration timeout
+        ) {
+            durations.add(timeout);
+            if (commands.contains("install") && installSleepMs > 0) {
+                try {
+                    Thread.sleep(installSleepMs);
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return commands.contains("install") ? installs : this.commands;
+        }
+    }
+
     private static final class FakeHarness implements HarnessClient {
 
         private final String text;
@@ -344,6 +441,10 @@ class ReviewTicketProcessorTest {
             part.put("type", "text");
             part.put("text", text);
             listener.accept(HarnessEvent.of("message.part.updated", payload));
+            ObjectNode idle = MAPPER.createObjectNode();
+            idle.put("type", "session.idle");
+            idle.putObject("properties").put("sessionID", "ses_test");
+            listener.accept(HarnessEvent.of("session.idle", idle));
         }
 
         @Override
