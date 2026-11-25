@@ -5,6 +5,7 @@ import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
+import com.vibecode.agent.service.GitService;
 import com.vibecode.agent.service.ReadinessException;
 import com.vibecode.agent.service.GitHubTokenSource;
 import com.vibecode.agent.service.TicketWorker;
@@ -67,6 +68,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
     private final ApiService apiService;
     private final ProviderSettings provider;
     private final GitHubService gitHubService;
+    private volatile GitService gitService;
     private final String githubToken;
     private final HarnessConfig harnessConfig;
     private final SandboxConfig sandboxConfig;
@@ -192,6 +194,22 @@ public final class HarnessTicketProcessor implements TicketWorker {
         );
     }
 
+    public HarnessTicketProcessor(
+        AgentConfig config,
+        ApiService apiService,
+        ProviderSettings provider,
+        GitHubService gitHubService,
+        GitHubTokenSource tokenSource,
+        String githubToken,
+        HarnessConfig harnessConfig,
+        GitService gitService
+    ) {
+        this(config, apiService, provider, gitHubService, tokenSource, githubToken, harnessConfig);
+        if (gitService != null) {
+            this.gitService = gitService;
+        }
+    }
+
     HarnessTicketProcessor(
         AgentConfig config,
         ApiService apiService,
@@ -275,6 +293,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.apiService = apiService;
         this.provider = provider;
         this.gitHubService = gitHubService;
+        this.gitService = defaultGitService(config, gitHubService);
         this.githubToken = githubToken;
         this.harnessConfig = harnessConfig;
         this.sandboxConfig = sandboxConfig == null ? SandboxConfig.defaults() : sandboxConfig;
@@ -293,6 +312,32 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
         this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
         this.eventSink = new HttpHarnessEventSink(apiService);
+    }
+
+    private static GitService defaultGitService(AgentConfig config, GitHubService gitHubService) {
+        if (gitHubService == null) {
+            return GitService.branchOnly(
+                config.getRepoProvider(), config.getRepoUrl(), config.getRepoName());
+        }
+        String repoUrl = config.getRepoUrl();
+        if (repoUrl == null || repoUrl.isBlank()) {
+            String owner = config.getRepoOwner();
+            String name = config.getRepoName();
+            if (owner != null && !owner.isBlank() && name != null && !name.isBlank()) {
+                repoUrl = "https://github.com/" + owner + "/" + name + ".git";
+            }
+        }
+        String repoName = config.getRepoName();
+        if (repoName == null || repoName.isBlank()) {
+            repoName = "repo";
+        }
+        return GitService.github(repoUrl, repoName, gitHubService);
+    }
+
+    void setGitService(GitService gitService) {
+        if (gitService != null) {
+            this.gitService = gitService;
+        }
     }
 
     private HarnessConfig activeHarnessConfig() {
@@ -368,7 +413,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
         }
 
         try {
-            WorkspaceManager manager = workspaceFactory.apply(config.getRepoName());
+            WorkspaceManager manager = workspaceFactory.apply(gitService.repoName());
             int removed = manager.pruneStaleWorkspaces(
                 Duration.ofHours(workspaceRetentionHours), protectedPaths);
             removed += manager.pruneStaleTempDirectories(
@@ -480,6 +525,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             prUrl = textValue(payload.get("prUrl"));
         }
         if (prUrl == null && isResumeMode() && headSha != null && branch != null
+            && gitService.supportsReviewRequests() && gitHubService != null
             && ("publishing".equals(step) || "done".equals(step))) {
             try {
                 prUrl = gitHubService.findPullRequestUrl(branch);
@@ -489,15 +535,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
         }
 
-        if (prUrl != null) {
+        boolean branchOnlyEvidence = prUrl == null && headSha != null
+            && ("publishing".equals(step) || "done".equals(step));
+        if (prUrl != null || branchOnlyEvidence) {
             // Persist the run-level evidence too, so a later reaper agrees
             // with the ticket even if this process dies before finish.
             persistPublishEvidence(runId, headSha, prUrl);
             // Restore the ticket before finishing the run. If we crash after
             // this point, the run is still active and the next recovery attempt
             // repeats the idempotent adoption instead of leaving a stranded
-            // in_progress ticket.
-            if (!"done".equals(ticketStatus)
+            // in_progress ticket. Branch-only evidence has no PR URL to restore;
+            // backend reconciliation moves the ticket to review.
+            if (prUrl != null && !"done".equals(ticketStatus)
                 && !restorePublishedTicket(ticketId, ticketStatus, ticketPrUrl, prUrl)) {
                 log.warn("Could not restore ticket {} for published run {}; "
                         + "leaving the run active for retry",
@@ -515,10 +564,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             reconcileRecoveredRun(runId);
             if (ticketId != null) {
-                postMessage(ticketId, "update",
-                    "Recovered a published harness run after an agent restart; PR: " + prUrl);
+                postMessage(ticketId, "update", prUrl != null
+                    ? "Recovered a published harness run after an agent restart; PR: " + prUrl
+                    : "Recovered a branch-only harness run after an agent restart; head "
+                        + headSha + ".");
             }
-            log.info("Adopted published harness run {} (PR {})", runId, prUrl);
+            log.info("Adopted recovered harness run {} (review {}, head {})",
+                runId, prUrl, headSha);
             return true;
         }
 
@@ -923,7 +975,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 }
             }
 
-            workspace = workspaceFactory.apply(config.getRepoName());
+            workspace = workspaceFactory.apply(gitService.repoName());
             workspace.setWorkspaceKey(String.valueOf(pickedUp.getId()));
             activeStorageWorkspace = workspace;
             activeStorageTicketId = pickedUp.getId();
@@ -940,8 +992,12 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             configureRoutingAndBudget(pickedUp, planningDocs);
 
-            String repoUrl = "https://github.com/" + config.getRepoOwner() + "/"
-                + config.getRepoName() + ".git";
+            String repoUrl = gitService.repoUrl();
+            if (repoUrl == null || repoUrl.isBlank()) {
+                failAndRelease(pickedUp.getId(),
+                    "No repository URL is configured for this project.");
+                return;
+            }
             Duration cloneCap = profile == null
                 ? CLONE_TIMEOUT
                 : Duration.ofMinutes(profile.timeouts().setupMinutes());
@@ -1235,25 +1291,28 @@ public final class HarnessTicketProcessor implements TicketWorker {
                         pickedUp, branchName, commitSha, diff, verification)),
                     privacyPolicy
                 ).text();
-                String prUrl = gitHubService.createPullRequest(
-                    publishTitle,
-                    prBody,
-                    branchName,
-                    prBase
-                );
-                publishedPrUrl = prUrl;
-                recordPublishSafely(null, prUrl);
-                emitEvent("pr.opened", Map.of(
-                    "headSha", commitSha,
-                    "prUrl", prUrl == null ? "" : prUrl));
+                String prUrl = null;
+                if (gitService.supportsReviewRequests()) {
+                    prUrl = gitService.createReviewRequest(
+                        publishTitle,
+                        prBody,
+                        branchName,
+                        prBase
+                    );
+                    if (prUrl != null && !prUrl.isBlank()) {
+                        publishedPrUrl = prUrl;
+                        recordPublishSafely(null, prUrl);
+                        emitEvent("pr.opened", Map.of(
+                            "headSha", commitSha,
+                            "prUrl", prUrl));
 
-                // Post-publish bookkeeping must never discard a successful push/PR.
-                if (prUrl != null && !prUrl.isBlank()) {
-                    try {
-                        apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
-                    } catch (IOException | RuntimeException e) {
-                        log.warn("Push/PR succeeded but updating ticket {} PR URL failed: {}",
-                            pickedUp.getId(), e.getMessage());
+                        // Post-publish bookkeeping must never discard a successful push/PR.
+                        try {
+                            apiService.updateTicketPrUrl(pickedUp.getId(), prUrl);
+                        } catch (IOException | RuntimeException e) {
+                            log.warn("Push/PR succeeded but updating ticket {} PR URL failed: {}",
+                                pickedUp.getId(), e.getMessage());
+                        }
                     }
                 }
 

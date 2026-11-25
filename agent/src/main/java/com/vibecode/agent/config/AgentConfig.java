@@ -37,6 +37,10 @@ import java.time.Duration;
  *   GITHUB_AUTH_MODE    - GitHub credential mode: app (default) or pat
  *   ALLOW_PAT           - Must be true to use the PAT fallback in pat mode
  *   GITHUB_TOKEN        - Dev-only PAT fallback (never used in app mode)
+ *   GIT_AUTH_MODE       - Provider-neutral alias for GITHUB_AUTH_MODE
+ *   GIT_TOKEN           - Provider-neutral alias for GITHUB_TOKEN
+ *   GIT_SSH_KEY_FILE    - Optional SSH key path for local/SSH providers
+ *   GIT_SSH_KNOWN_HOSTS - Optional known-hosts path for local/SSH providers
  *   DRY_RUN             - If "true", don't create branches/PRs (default: false)
  *   MAX_TICKETS         - Max tickets to process per cycle (default: 1)
  *   REPO_CLONE_DIR      - Directory to clone repos into (default: /tmp/repos)
@@ -69,6 +73,11 @@ public class AgentConfig {
     private final String repoCloneDir;
     private final String githubToken;
     private final String githubAuthMode;
+    private final String gitSshKeyFile;
+    private final String gitSshKnownHosts;
+    private String repoUrl;
+    private String repoProvider = "github";
+    private String repoAuthMode;
     private final boolean allowPat;
     private final HarnessConfig harnessConfig;
     private final SandboxConfig sandboxConfig;
@@ -105,11 +114,17 @@ public class AgentConfig {
         this.aiApiKey = getEnv("AI_API_KEY", null);
         this.aiEndpointUrl = getEnv("AI_ENDPOINT_URL", "");
         this.aiMaxTokens = getIntEnv("AI_MAX_TOKENS", 4096);
-        this.githubToken = getEnv("GITHUB_TOKEN", null);
-        this.githubAuthMode = getEnv("GITHUB_AUTH_MODE", "app").toLowerCase();
+        // getEnv() treats blank values as unset, so an empty GIT_* alias
+        // falls back to the legacy GitHub variable.
+        this.githubToken = getEnv("GIT_TOKEN", getEnv("GITHUB_TOKEN", null));
+        this.githubAuthMode = getEnv("GIT_AUTH_MODE",
+            getEnv("GITHUB_AUTH_MODE", "app")).toLowerCase();
+        this.gitSshKeyFile = getEnv("GIT_SSH_KEY_FILE", null);
+        this.gitSshKnownHosts = getEnv("GIT_SSH_KNOWN_HOSTS", null);
         if (!"app".equals(this.githubAuthMode) && !"pat".equals(this.githubAuthMode)) {
             throw new IllegalStateException(
-                "GITHUB_AUTH_MODE must be 'app' or 'pat' (got '" + this.githubAuthMode + "')");
+                "GITHUB_AUTH_MODE/GIT_AUTH_MODE must be 'app' or 'pat' (got '"
+                    + this.githubAuthMode + "')");
         }
         this.allowPat = "true".equalsIgnoreCase(getEnv("ALLOW_PAT", "false"));
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
@@ -224,6 +239,39 @@ public class AgentConfig {
     public String getRepoOwner() { return repoOwner; }
     public String getRepoName() { return repoName; }
 
+    /** Canonical repository URL from the backend; falls back to GitHub coordinates. */
+    public String getRepoUrl() {
+        if (repoUrl != null && !repoUrl.isBlank()) return repoUrl;
+        if (hasRepoCoordinates()) {
+            return "https://github.com/" + repoOwner + "/" + repoName + ".git";
+        }
+        return null;
+    }
+
+    public void setRepoUrl(String repoUrl) {
+        this.repoUrl = repoUrl;
+    }
+
+    public String getRepoProvider() { return repoProvider; }
+
+    public void setRepoProvider(String provider) {
+        if (provider != null && !provider.isBlank()) {
+            this.repoProvider = provider.trim().toLowerCase();
+        }
+    }
+
+    public String getRepoAuthMode() {
+        return repoAuthMode != null && !repoAuthMode.isBlank()
+            ? repoAuthMode
+            : githubAuthMode;
+    }
+
+    public void setRepoAuthMode(String authMode) {
+        if (authMode != null && !authMode.isBlank()) {
+            this.repoAuthMode = authMode.trim().toLowerCase();
+        }
+    }
+
     /** Set from the project's configured repository (server wins over env). */
     public void setRepoCoordinates(String owner, String name) {
         // Validate before mutating so a failure leaves env fallback intact.
@@ -290,6 +338,10 @@ public class AgentConfig {
     public String getRepoCloneDir() { return repoCloneDir; }
     public String getGitHubToken() { return githubToken; }
     public String getGitHubAuthMode() { return githubAuthMode; }
+    public String getGitAuthMode() { return githubAuthMode; }
+    public String getGitToken() { return githubToken; }
+    public String getGitSshKeyFile() { return gitSshKeyFile; }
+    public String getGitSshKnownHosts() { return gitSshKnownHosts; }
     public boolean isAllowPat() { return allowPat; }
 
     public HarnessConfig getHarnessConfig() { return harnessConfig; }

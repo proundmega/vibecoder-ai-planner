@@ -6,6 +6,7 @@ import com.vibecode.agent.model.Ticket;
 import com.vibecode.agent.model.TicketMessage;
 import com.vibecode.agent.service.ApiService;
 import com.vibecode.agent.service.GitHubService;
+import com.vibecode.agent.service.GitService;
 import com.vibecode.agent.service.ReadinessException;
 import com.vibecode.agent.service.WorkspaceManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -514,6 +515,35 @@ class HarnessTicketProcessorTest {
         verify(apiService).finishHarnessRun(
             "run-old", "succeeded", null, "abc1234",
             "https://github.com/owner/repo/pull/7");
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+    }
+
+    @Test
+    void resumeModeAdoptsAHeadOnlyPublishingRunWithoutAGitHubLookup() throws Exception {
+        HarnessTicketProcessor resumeProcessor = processorWithResumeMode();
+        resumeProcessor.setGitService(GitService.branchOnly(
+            "local", "ssh://git@git.example.com/group/repo.git", "repo"));
+        when(config.getRuntimeId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "publishing",
+            "ticket_status", "in_progress",
+            "head_sha", "abc1234",
+            "last_checkpoint_payload", Map.of()
+        )));
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234", null))
+            .thenReturn("succeeded");
+
+        assertEquals(1, resumeProcessor.recoverActiveRuns());
+
+        verify(gitHubService, never()).findPullRequestUrl(anyString());
+        verify(apiService).recordHarnessPublish("run-old", "abc1234", null);
+        verify(apiService).finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234", null);
+        verify(apiService).reconcileHarnessRun("run-old");
         verify(apiService, never()).releaseHarnessTicket("run-old");
     }
 
@@ -1100,6 +1130,29 @@ class HarnessTicketProcessorTest {
         verify(apiService).updateTicketStatus(1L, "review");
         verify(harness).close();
         verify(workspace).cleanup("1");
+    }
+
+    @Test
+    void branchOnlyPublishSkipsTheReviewRequestAndMarksReview() throws Exception {
+        processor.setGitService(GitService.branchOnly(
+            "local", "ssh://git@git.example.com/group/repo.git", "repo"));
+
+        processor.processTicket(ticket());
+
+        verify(workspace).cloneRepo(
+            eq("ssh://git@git.example.com/group/repo.git"),
+            eq("vibecode/ticket-1-add-filtering"),
+            isNull(),
+            any(Duration.class));
+        verify(workspace).commitAndPushStaged(
+            "feat: Add filtering", "vibecode/ticket-1-add-filtering");
+        verify(gitHubService, never()).createPullRequest(
+            anyString(), anyString(), anyString(), anyString());
+        verify(apiService, never()).updateTicketPrUrl(anyLong(), anyString());
+        verify(apiService).recordHarnessPublish("run-1", "abc1234", null);
+        verify(apiService).finishHarnessRun(
+            "run-1", "succeeded", null, "abc1234", null);
+        verify(apiService).updateTicketStatus(1L, "review");
     }
 
     @Test
