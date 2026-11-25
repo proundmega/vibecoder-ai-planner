@@ -40,8 +40,8 @@ environment failures, not coding failures.
 | 5 | Project settings profile editor | done (#167) |
 
 All slices are merged, including slice 4b (FR4/D9), which adds persistent
-per-project dependency caches. The remaining follow-ups (D1 and D11-D16) are
-tracked in the deferred register below.
+per-project dependency caches. The remaining follow-ups (D1-D4 and D10-D16)
+are tracked in the deferred register below.
 
 ## Status evidence
 
@@ -53,7 +53,7 @@ tracked in the deferred register below.
 | Slice 4a images | PR #232 (`8a38cb8`); all five stages build; Python/monorepo local-wheel + pytest smoke under the sanitized PATH | ☑ |
 | Slice 4b caches | PR #237 (`607ebf1`); `CachePlanTest`, `SandboxConfigTest`, `RepoProfileService` detection and `repoProfileEditor` cache field; quota/GC and sanitize checks | ☑ |
 | Verification results | `03` → Results | ☑ |
-| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1 and D11-D16 remain open | ☑ |
+| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4 and D10-D16 remain open | ☑ |
 
 ## Deferred register (canonical)
 
