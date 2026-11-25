@@ -15,7 +15,8 @@
 #
 # This is an operator smoke test, not part of CI. It intentionally uses the
 # host Docker daemon and public Maven Central for the first Maven run; the
-# reuse run uses --network none.
+# reuse run uses --network none. Requires bash, Docker and Python 3 (for the
+# local Go module zip).
 #
 # Usage:
 #   scripts/smoke-sandbox-caches.sh [--build]
