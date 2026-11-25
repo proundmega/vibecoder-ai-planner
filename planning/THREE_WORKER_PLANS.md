@@ -238,8 +238,10 @@ These are an operational split of `fg-57` Phase 1/2/4; see
 | `fg-39d` | D11 real-Docker/real-repo profile e2e (optional) | D11 | 4–6 | `fg-39c` |
 | `fg-39e` | D12 service container disk quota/egress-governed pulls (optional) | D12 | 6–8 | `fg-39c` |
 
-Lane C is `fg-39` only. `fg-48`/`fg-49`/`fg-50` remain blocked by `fg-31`/`fg-47`
-and are not part of this flow test.
+Lane C is `fg-39` only. The required Lane C slices (`fg-39a`-`fg-39c`) are
+merged; `fg-39c` landed as #237 (`607ebf1`). `fg-39d`/`fg-39e` are optional and
+still open. `fg-48`/`fg-49`/`fg-50` remain blocked by `fg-31`/`fg-47` and are
+not part of this flow test.
 
 The manual `fg-39a` landed as 20 files / 692 lines, above the 8-file worker cap.
 Before running it through a worker, split it into `fg-39a1` (backend/agent
