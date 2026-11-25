@@ -58,6 +58,20 @@ public final class OpenCodeConfigWriter {
         HarnessConfig config,
         boolean sandboxedBash
     ) throws IOException {
+        return write(tempDir, provider, config, sandboxedBash, false);
+    }
+
+    /**
+     * @param reviewMode read-only review session: guarded write/edit tools are
+     *     denied even though the workspace itself stays writable for builds.
+     */
+    public static Path write(
+        Path tempDir,
+        ProviderSettings provider,
+        HarnessConfig config,
+        boolean sandboxedBash,
+        boolean reviewMode
+    ) throws IOException {
         Files.createDirectories(tempDir);
 
         ModelSelection selection = selectModel(provider, config);
@@ -83,7 +97,8 @@ public final class OpenCodeConfigWriter {
             sandboxedBash,
             config != null
                 && config.questionLoop() != null
-                && config.questionLoop().enabled()));
+                && config.questionLoop().enabled(),
+            reviewMode));
 
         Map<String, Object> providers = new LinkedHashMap<>();
         providers.put(mapping.providerId, providerEntry(mapping));
@@ -188,7 +203,8 @@ public final class OpenCodeConfigWriter {
 
     private static Map<String, Object> permissions(
         boolean sandboxedBash,
-        boolean questionLoopEnabled
+        boolean questionLoopEnabled,
+        boolean reviewMode
     ) {
         Map<String, Object> permission = new LinkedHashMap<>();
         // Built-in edit/write tools only apply a lexical external-directory
@@ -201,8 +217,10 @@ public final class OpenCodeConfigWriter {
         permission.put("write", "deny");
         permission.put("multiedit", "deny");
         permission.put("patch", "deny");
-        permission.put("sandbox_write", "allow");
-        permission.put("sandbox_edit", "allow");
+        // A review session may read and run inspection commands, but its
+        // writable workspace must never be edited through the bridge.
+        permission.put("sandbox_write", reviewMode ? "deny" : "allow");
+        permission.put("sandbox_edit", reviewMode ? "deny" : "allow");
 
         for (String tool : List.of("glob", "todowrite")) {
             permission.put(tool, "allow");
@@ -221,7 +239,9 @@ public final class OpenCodeConfigWriter {
         // fg-55: the human question loop is opt-in. Even when enabled, the
         // non-portable doom_loop action stays denied; repetition is handled by
         // the supervisor so it also works after the OpenCode V2 removal.
-        permission.put("question", questionLoopEnabled ? "allow" : "deny");
+        permission.put("question", reviewMode
+            ? "deny"
+            : (questionLoopEnabled ? "allow" : "deny"));
         permission.put("doom_loop", "deny");
         permission.put("external_directory", "deny");
 
@@ -246,6 +266,14 @@ public final class OpenCodeConfigWriter {
             permission.put("sandbox_bash", "allow");
         } else {
             permission.put("bash", bash);
+        }
+        if (reviewMode) {
+            // A review session is read-only. It inspects through the guarded
+            // sandbox_read/sandbox_grep tools; shell execution is denied so it
+            // cannot read .env, edit files or install packages on the host.
+            permission.put("bash", "deny");
+            permission.put("shell", "deny");
+            permission.put("sandbox_bash", "deny");
         }
 
         return permission;

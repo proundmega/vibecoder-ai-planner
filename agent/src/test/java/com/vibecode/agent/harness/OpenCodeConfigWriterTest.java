@@ -115,6 +115,41 @@ class OpenCodeConfigWriterTest {
     }
 
     @Test
+    void reviewModeDeniesWriteAndEditBridgeTools() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
+        HarnessConfig reviewConfig = new HarnessConfig(
+            "opencode",
+            Duration.ofSeconds(30),
+            Duration.ofMinutes(45),
+            List.of(),
+            List.of(".env*"),
+            null,
+            "restart",
+            new HarnessConfig.QuestionLoopConfig(
+                true, Duration.ofMinutes(60), Duration.ofSeconds(5), 3, 3));
+
+        Path configFile = OpenCodeConfigWriter.write(
+            tempDir, provider, reviewConfig, false, true);
+        JsonNode permission = mapper.readTree(configFile.toFile()).path("permission");
+
+        assertEquals("deny", permission.path("edit").asText());
+        assertEquals("deny", permission.path("write").asText());
+        assertEquals("deny", permission.path("multiedit").asText());
+        assertEquals("deny", permission.path("patch").asText());
+        assertEquals("deny", permission.path("sandbox_write").asText());
+        assertEquals("deny", permission.path("sandbox_edit").asText());
+        assertEquals("allow", permission.path("sandbox_read").asText());
+        assertEquals("allow", permission.path("sandbox_grep").asText());
+        // Review mode denies the human loop and every shell path even when the
+        // operator enabled the question loop for the build harness.
+        assertEquals("deny", permission.path("question").asText());
+        assertEquals("deny", permission.path("bash").asText());
+        assertEquals("deny", permission.path("shell").asText());
+        assertEquals("deny", permission.path("sandbox_bash").asText());
+    }
+
+    @Test
     void writesGenericOpenAiCompatibleProvider() throws Exception {
         ProviderSettings provider = new ProviderSettings(
             "generic", "sk-local", "http://localhost:11434/v1", "qwen", 4096);
