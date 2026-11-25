@@ -385,7 +385,7 @@ the feature added no new tests; its acceptance review is still open.
 | Date | Slice | Waived limit | Decision |
 |---|---|---|---|
 | 2026-11-24 | `fg-57b` | 8 files / 400 lines | Operator accepted one PR after review hardening (provider scoping/config, token scoping, controller authorization, docs). Final diff: 24 files, 1356 additions / 297 deletions. |
-| 2026-11-25 | `fg-57e` | 8 files / 400 lines | Operator accepted one PR after review hardening (origin/port/SSH and traversal checks, sub-path clone round-trip, binary/rename/space/tab diff paths, Forgejo `/pulls/` review-number extraction, canonical clone URL, docs). Final diff: 12 files, 880 additions / 12 deletions. |
+| 2026-11-25 | `fg-57e` | 8 files / 400 lines | Operator accepted one PR after review hardening (origin/port/SSH and traversal checks, sub-path clone round-trip, binary/rename/space/tab/octal diff paths, Forgejo `/pulls/` review-number extraction, canonical clone URL, docs). Final diff: 12 files, 923 additions / 12 deletions. |
 
 The limits below still apply to later slices; this row is a one-off operator
 waiver, not a new default.

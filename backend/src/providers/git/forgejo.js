@@ -123,8 +123,42 @@ function parseScp(raw, base) {
 }
 
 function unescapeGitPath(value) {
-  return String(value).replace(/\\(["\\tn])/g, (_, ch) => (
-    ch === 't' ? '\t' : ch === 'n' ? '\n' : ch));
+  const input = String(value);
+  const map = {
+    '"': '"', '\\': '\\', t: '\t', n: '\n', r: '\r', b: '\b', f: '\f', v: '\v',
+  };
+  let out = '';
+  let bytes = [];
+  const flush = () => {
+    if (bytes.length) {
+      out += Buffer.from(bytes).toString('utf8');
+      bytes = [];
+    }
+  };
+  for (let i = 0; i < input.length; i += 1) {
+    if (input[i] !== '\\' || i + 1 >= input.length) {
+      flush();
+      out += input[i];
+      continue;
+    }
+    const octal = /^[0-7]{3}$/.exec(input.slice(i + 1, i + 4));
+    if (octal) {
+      bytes.push(parseInt(octal[0], 8));
+      i += 3;
+      continue;
+    }
+    const next = input[i + 1];
+    if (map[next] !== undefined) {
+      flush();
+      out += map[next];
+      i += 1;
+      continue;
+    }
+    flush();
+    out += input[i];
+  }
+  flush();
+  return out;
 }
 
 /**
