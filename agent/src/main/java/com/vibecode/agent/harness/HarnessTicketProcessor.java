@@ -525,6 +525,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
             prUrl = textValue(payload.get("prUrl"));
         }
         if (prUrl == null && isResumeMode() && headSha != null && branch != null
+            && gitService.supportsReviewRequests() && gitHubService != null
             && ("publishing".equals(step) || "done".equals(step))) {
             try {
                 prUrl = gitHubService.findPullRequestUrl(branch);
@@ -534,15 +535,18 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
         }
 
-        if (prUrl != null) {
+        boolean branchOnlyEvidence = prUrl == null && headSha != null
+            && ("publishing".equals(step) || "done".equals(step));
+        if (prUrl != null || branchOnlyEvidence) {
             // Persist the run-level evidence too, so a later reaper agrees
             // with the ticket even if this process dies before finish.
             persistPublishEvidence(runId, headSha, prUrl);
             // Restore the ticket before finishing the run. If we crash after
             // this point, the run is still active and the next recovery attempt
             // repeats the idempotent adoption instead of leaving a stranded
-            // in_progress ticket.
-            if (!"done".equals(ticketStatus)
+            // in_progress ticket. Branch-only evidence has no PR URL to restore;
+            // backend reconciliation moves the ticket to review.
+            if (prUrl != null && !"done".equals(ticketStatus)
                 && !restorePublishedTicket(ticketId, ticketStatus, ticketPrUrl, prUrl)) {
                 log.warn("Could not restore ticket {} for published run {}; "
                         + "leaving the run active for retry",
@@ -560,10 +564,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             }
             reconcileRecoveredRun(runId);
             if (ticketId != null) {
-                postMessage(ticketId, "update",
-                    "Recovered a published harness run after an agent restart; PR: " + prUrl);
+                postMessage(ticketId, "update", prUrl != null
+                    ? "Recovered a published harness run after an agent restart; PR: " + prUrl
+                    : "Recovered a branch-only harness run after an agent restart; head "
+                        + headSha + ".");
             }
-            log.info("Adopted published harness run {} (PR {})", runId, prUrl);
+            log.info("Adopted recovered harness run {} (review {}, head {})",
+                runId, prUrl, headSha);
             return true;
         }
 

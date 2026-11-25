@@ -519,6 +519,35 @@ class HarnessTicketProcessorTest {
     }
 
     @Test
+    void resumeModeAdoptsAHeadOnlyPublishingRunWithoutAGitHubLookup() throws Exception {
+        HarnessTicketProcessor resumeProcessor = processorWithResumeMode();
+        resumeProcessor.setGitService(GitService.branchOnly(
+            "local", "ssh://git@git.example.com/group/repo.git", "repo"));
+        when(config.getRuntimeId()).thenReturn("7");
+        when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
+            "id", "run-old",
+            "ticket_id", "1",
+            "branch", "vibecode/ticket-1-add-filtering",
+            "step", "publishing",
+            "ticket_status", "in_progress",
+            "head_sha", "abc1234",
+            "last_checkpoint_payload", Map.of()
+        )));
+        when(apiService.finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234", null))
+            .thenReturn("succeeded");
+
+        assertEquals(1, resumeProcessor.recoverActiveRuns());
+
+        verify(gitHubService, never()).findPullRequestUrl(anyString());
+        verify(apiService).recordHarnessPublish("run-old", "abc1234", null);
+        verify(apiService).finishHarnessRun(
+            "run-old", "succeeded", null, "abc1234", null);
+        verify(apiService).reconcileHarnessRun("run-old");
+        verify(apiService, never()).releaseHarnessTicket("run-old");
+    }
+
+    @Test
     void startupRecoveryNeverRegressesADoneTicket() throws Exception {
         when(config.getRuntimeId()).thenReturn("7");
         when(apiService.listActiveHarnessRuns(7L)).thenReturn(List.of(Map.of(
@@ -1120,6 +1149,9 @@ class HarnessTicketProcessorTest {
         verify(gitHubService, never()).createPullRequest(
             anyString(), anyString(), anyString(), anyString());
         verify(apiService, never()).updateTicketPrUrl(anyLong(), anyString());
+        verify(apiService).recordHarnessPublish("run-1", "abc1234", null);
+        verify(apiService).finishHarnessRun(
+            "run-1", "succeeded", null, "abc1234", null);
         verify(apiService).updateTicketStatus(1L, "review");
     }
 

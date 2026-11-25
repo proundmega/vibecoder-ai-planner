@@ -114,6 +114,8 @@ public class AgentConfig {
         this.aiApiKey = getEnv("AI_API_KEY", null);
         this.aiEndpointUrl = getEnv("AI_ENDPOINT_URL", "");
         this.aiMaxTokens = getIntEnv("AI_MAX_TOKENS", 4096);
+        // getEnv() treats blank values as unset, so an empty GIT_* alias
+        // falls back to the legacy GitHub variable.
         this.githubToken = getEnv("GIT_TOKEN", getEnv("GITHUB_TOKEN", null));
         this.githubAuthMode = getEnv("GIT_AUTH_MODE",
             getEnv("GITHUB_AUTH_MODE", "app")).toLowerCase();
