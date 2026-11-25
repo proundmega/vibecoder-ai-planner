@@ -76,9 +76,20 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   image it warns and leaves the field for an admin-supplied pinned image.
 - Registry publishing, signing and the rebuild cadence remain part of the
   fg-34 supply chain (D1).
-- Cache directories are mounted from a per-repo cache volume, keyed by repo + profile version + lockfile hash.
-- Cache is read-only for untrusted repo scripts where possible; writes go to a scratch layer, then a sanitized cache update.
-- Never share caches across projects.
+- Cache directories live under the runtime cache root, scoped by a hash of the
+  project id and a generation key (normalized repo + profile version + lockfile
+  hash). Each supported kind mounts at `/cache/<kind>` with the matching tool
+  environment (`NPM_CONFIG_CACHE`, `PIP_CACHE_DIR`, `MAVEN_OPTS`,
+  `GRADLE_USER_HOME`, `GOMODCACHE`/`GOCACHE`, `CARGO_HOME`).
+- Caches are writable during a run because package managers must populate
+  them. Before reuse, `CachePlan` removes symlinks, non-regular files and
+  credential-shaped artifacts; it never follows links. Writes are never shared
+  across projects.
+- `SANDBOX_CACHE_MAX_MB` bounds the project cache; `SANDBOX_CACHE_RETENTION_DAYS`
+  expires old generations. Eviction is LRU/age based and skips the cache mount
+  (rather than failing the run) if the current generation is over quota. The
+  fg-44 storage watchdog continues to cover total disk pressure.
+- Real package-manager command coverage (npm/mvn/go) remains the D11 dry-run.
 
 ## Services
 

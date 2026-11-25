@@ -67,12 +67,17 @@ class RepoProfileTest {
     }
 
     @Test
-    void rejectsAnEmptyVerifyListAndUnknownCaches() {
+    void acceptsCachesAndRejectsUnknownOnes() throws Exception {
+        RepoProfile profile = parse("""
+            {"schema_version":1,"verify":["npm test"],"caches":["npm","maven"]}
+            """);
+        assertEquals(List.of("npm", "maven"), profile.caches());
+
         assertThrows(IllegalArgumentException.class, () -> parse("""
             {"schema_version":1,"verify":[]}
             """));
         assertThrows(IllegalArgumentException.class, () -> parse("""
-            {"schema_version":1,"verify":["npm test"],"caches":["npm"]}
+            {"schema_version":1,"verify":["npm test"],"caches":["unknown"]}
             """));
     }
 

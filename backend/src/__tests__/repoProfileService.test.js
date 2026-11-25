@@ -268,14 +268,25 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/looks like a credential/);
     });
 
-    it('rejects unknown fields and unimplemented caches', async () => {
+    it('rejects unknown fields but accepts supported caches', async () => {
       await expect(
         RepoProfileService.create(1, validProfile({ wat: true }), owner())
       ).rejects.toThrow(/unknown profile field/);
 
-      await expect(
-        RepoProfileService.create(1, validProfile({ caches: ['npm'] }), owner())
-      ).rejects.toThrow(/D9\/fg-44/);
+      const stored = {
+        id: 'p1', project_id: 1, version: 1,
+        profile: validProfile({ caches: ['npm', 'maven'] }), status: 'draft',
+      };
+      clientWith([
+        {},
+        { rows: [{ id: 1 }] },
+        { rows: [{ version: 1 }] },
+        { rows: [stored] },
+        {},
+      ]);
+      await expect(RepoProfileService.create(
+        1, validProfile({ caches: ['npm', 'maven'] }), owner()
+      )).resolves.toBeTruthy();
     });
 
     it('accepts a valid service container definition', async () => {
@@ -763,6 +774,24 @@ describe('RepoProfileService', () => {
         'pytest -q',
         'go test ./...',
       ]));
+    });
+
+    it('proposes dependency caches for detected stacks', async () => {
+      const files = {
+        'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+        'package-lock.json': '{}',
+        'pom.xml': '<project/>',
+        'requirements.txt': 'pytest',
+        'go.mod': 'module example',
+      };
+      GitHubService.readRepoFile.mockImplementation(
+        (projectId, file) => Promise.resolve(files[file] ?? null)
+      );
+
+      const result = await RepoProfileService.detectStack(1);
+
+      expect(result.profile.caches).toEqual(
+        expect.arrayContaining(['npm', 'maven', 'pip', 'go']));
     });
 
     it('warns when a Gradle project has no wrapper', async () => {

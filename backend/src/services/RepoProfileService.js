@@ -286,6 +286,12 @@ async function detectStack(projectId) {
     verify.push('make test');
   }
 
+  const caches = [];
+  if (languages.includes('node')) caches.push('npm');
+  if (languages.includes('java')) caches.push(gradle ? 'gradle' : 'maven');
+  if (languages.includes('python')) caches.push('pip');
+  if (languages.includes('go')) caches.push('go');
+
   let stackImage;
   try {
     stackImage = selectStackImage(languages, stackImagesFromEnv());
@@ -306,7 +312,7 @@ async function detectStack(projectId) {
     ...(stackImage ? { image: stackImage.image } : {}),
     setup: [...new Set(setup)],
     verify: [...new Set(verify)],
-    caches: [],
+    caches: [...new Set(caches)],
     env: {},
     timeouts: { setup_minutes: 15, verify_minutes: 20 },
     max_round_minutes: 45,

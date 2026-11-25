@@ -56,7 +56,8 @@ public record SandboxConfig(
     List<String> egressOriginCaHosts,
     String egressOriginCaPem,
     EgressMtlsMaterial egressMtls,
-    List<ServiceSpec> services
+    List<ServiceSpec> services,
+    List<CachePlan.Mount> cacheMounts
 ) {
 
     public static final String DEFAULT_IMAGE = "vibecode-agent-sandbox:latest";
@@ -157,6 +158,7 @@ public record SandboxConfig(
             originCaHosts,
             originCaPem,
             null,
+            List.of(),
             List.of()
         );
         config.validate();
@@ -364,6 +366,13 @@ public record SandboxConfig(
         validate();
         Path supervisorWorkspace = SandboxPaths.validateWorkspace(workspace);
         Path mountSource = mountSource(supervisorWorkspace);
+        List<CachePlan.Mount> mappedCaches = new ArrayList<>();
+        Map<String, String> effectiveEnv = new LinkedHashMap<>(withSafeDefaults(runEnv));
+        for (CachePlan.Mount cache : cacheMounts) {
+            mappedCaches.add(new CachePlan.Mount(
+                cache.kind(), mountSource(cache.source()), cache.target(), cache.env()));
+            effectiveEnv.putAll(cache.env());
+        }
         return new SandboxSpec(
             image,
             proxyImage,
@@ -378,7 +387,7 @@ public record SandboxConfig(
             egressProbeTimeoutMs,
             egressTlsMode,
             owner,
-            withSafeDefaults(runEnv),
+            Map.copyOf(effectiveEnv),
             user,
             seccompProfile,
             apparmorProfile,
@@ -386,7 +395,8 @@ public record SandboxConfig(
             egressOriginCaHosts,
             egressOriginCaPem,
             egressMtls,
-            services
+            services,
+            mappedCaches
         );
     }
 
@@ -440,7 +450,8 @@ public record SandboxConfig(
             egressOriginCaHosts,
             egressOriginCaPem,
             material,
-            services
+            services,
+            cacheMounts
         );
     }
 
@@ -450,6 +461,16 @@ public record SandboxConfig(
      * request a dependency cache. It may not widen egress or weaken TLS mode.
      */
     public SandboxConfig withRepoProfile(RepoProfile profile, String projectId, int profileVersion) {
+        return withRepoProfile(profile, projectId, profileVersion, null, null);
+    }
+
+    public SandboxConfig withRepoProfile(
+        RepoProfile profile,
+        String projectId,
+        int profileVersion,
+        Path repoDir,
+        Path cacheRoot
+    ) {
         if (profile == null) {
             return this;
         }
@@ -461,6 +482,26 @@ public record SandboxConfig(
         List<ServiceSpec> effectiveServices = profile.services().stream()
             .map(RepoProfile.Service::toSpec)
             .toList();
+        List<CachePlan.Mount> effectiveCaches = cacheMounts;
+        if (!profile.caches().isEmpty()) {
+            if (repoDir == null || cacheRoot == null) {
+                throw new IllegalStateException(
+                    "repo profile caches require the workspace and runtime cache paths");
+            }
+            CachePlan.Prepared prepared;
+            try {
+                prepared = CachePlan.prepare(
+                    profile, projectId, profileVersion, repoDir, cacheRoot);
+            } catch (IOException e) {
+                throw new IllegalStateException(
+                    "Could not prepare dependency caches: " + e.getMessage(), e);
+            }
+            if (prepared.skippedReason() != null) {
+                java.util.logging.Logger.getLogger(SandboxConfig.class.getName()).warning(
+                    "Dependency caches skipped: " + prepared.skippedReason());
+            }
+            effectiveCaches = prepared.mounts();
+        }
         Map<String, String> effectiveEnv = new LinkedHashMap<>(runEnv);
         effectiveEnv.putAll(profile.environment());
 
@@ -511,7 +552,8 @@ public record SandboxConfig(
             effectiveCaHosts,
             effectiveCaPem,
             egressMtls,
-            effectiveServices
+            effectiveServices,
+            effectiveCaches
         );
     }
 

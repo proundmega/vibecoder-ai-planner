@@ -42,7 +42,8 @@ Slice 2 adds FR5: ephemeral service containers with health checks, a per-run
 internal network, generated test passwords and injected connection env. Slice 5
 adds the project settings profile editor for onboarding, drafts, dry runs,
 activation and version history. Slice 4a adds the prebuilt per-stack images,
-their pinned toolchains and stack-image detection (`fg-39b`).
+their pinned toolchains and stack-image detection (`fg-39b`). Slice 4b adds the
+persistent per-project dependency caches (`fg-39c`).
 
 ## Assumptions
 
