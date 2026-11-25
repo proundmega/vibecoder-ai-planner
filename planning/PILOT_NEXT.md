@@ -7,15 +7,15 @@
 ## Baseline
 
 The canonical queue is `PENDING.txt` → **Current focus**. At this writing,
-fg-43, fg-44 (foundation #209 plus fg-58 #212), fg-45, fg-55 and fg-56 (#203)
-are merged; fg-57's Git provider plan is merged (#206) with implementation
-post-pilot; bt-60 Phase A, the Phase B backend drills (#207) and the master
-staging rerun (`98d6f814`, PR #24) are done, and the staging rows/PRs were
-cleaned up and verified on 2026-11-24 (the reset coincided with an integration-test
-run against the shared `vibecode` URL and also removed the GTD staging
-project 2 (outside bt-60)). The next pilot step is the first real
-end-to-end run; there is no external credential blocker. The disposable PAT
-and provider key must still be revoked (D15).
+fg-43, fg-44 (foundation #209 plus fg-58 #212), fg-45, fg-55, fg-56 (#203)
+and fg-39 (#237, `607ebf1`) are merged; fg-57's Git provider plan is merged
+(#206) with implementation post-pilot; bt-60 Phase A, the Phase B backend
+drills (#207) and the master staging rerun (`98d6f814`, PR #24) are done, and
+the staging rows/PRs were cleaned up and verified on 2026-11-24 (the reset
+coincided with an integration-test run against the shared `vibecode` URL and
+also removed the GTD staging project 2 (outside bt-60)). The next pilot step is
+the first real end-to-end run; there is no external credential blocker. The
+disposable PAT and provider key must still be revoked (D15).
 
 ## Milestones
 
@@ -40,6 +40,10 @@ milestone; non-blocking findings follow the intake below.
 - **Storage lifecycle:** fg-44 is merged (foundation #209, supervisor lifecycle
   #212), so unattended runs rely on the workspace sweep and watermarks. The
   role budgets are already defined by fg-43.
+- **Repo profiles:** fg-39 is merged (#237). The pilot repo can use a pinned
+  profile with prebuilt stack images, services, flaky-test retry and
+  per-project dependency caches. D11 (real npm/mvn/go command coverage) stays
+  a follow-up and is not required for the first run.
 - **Readiness rollout:** apply migration 061/backfill, keep
   `READINESS_GATE_MODE=warn` for the pilot, and observe the readiness panel.
 - **Health gate:** the pilot host must reach `BACKEND_URL/api/health`; the
