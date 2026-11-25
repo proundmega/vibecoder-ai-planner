@@ -24,7 +24,6 @@ import java.util.Locale;
  */
 public final class ReviewTicketProcessor {
 
-    private static final SecretRedactor REDACTOR = SecretRedactor.patternsOnly();
     private static final Duration DEFAULT_VERIFICATION_TIMEOUT = Duration.ofMinutes(10);
 
     private final ReviewPromptBuilder promptBuilder;
@@ -32,6 +31,7 @@ public final class ReviewTicketProcessor {
     private final AttemptGate attemptGate;
     private final Verification verification;
     private final HarnessFactory harnessFactory;
+    private final SecretRedactor redactor;
 
     public ReviewTicketProcessor(
         ReviewPromptBuilder promptBuilder,
@@ -42,10 +42,34 @@ public final class ReviewTicketProcessor {
     ) {
         this(
             promptBuilder,
+            resultParser,
+            attemptGate,
+            verification,
+            harnessFactory,
+            SecretRedactor.patternsOnly()
+        );
+    }
+
+    /**
+     * @param redactor known-secret redactor supplied by the rollout wiring;
+     *     fg-31d passes the configured provider/GitHub/agent secrets instead of
+     *     relying on format patterns alone.
+     */
+    public ReviewTicketProcessor(
+        ReviewPromptBuilder promptBuilder,
+        ReviewResultParser resultParser,
+        AttemptGate attemptGate,
+        Verification verification,
+        HarnessFactory harnessFactory,
+        SecretRedactor redactor
+    ) {
+        this(
+            promptBuilder,
             resultParser == null ? null : resultParser::parse,
             attemptGate,
             verification,
-            harnessFactory
+            harnessFactory,
+            redactor
         );
     }
 
@@ -56,11 +80,30 @@ public final class ReviewTicketProcessor {
         Verification verification,
         HarnessFactory harnessFactory
     ) {
+        this(
+            promptBuilder,
+            resultParser,
+            attemptGate,
+            verification,
+            harnessFactory,
+            SecretRedactor.patternsOnly()
+        );
+    }
+
+    ReviewTicketProcessor(
+        ReviewPromptBuilder promptBuilder,
+        ResultParser resultParser,
+        AttemptGate attemptGate,
+        Verification verification,
+        HarnessFactory harnessFactory,
+        SecretRedactor redactor
+    ) {
         this.promptBuilder = promptBuilder == null ? new ReviewPromptBuilder() : promptBuilder;
         this.resultParser = resultParser == null ? new ReviewResultParser()::parse : resultParser;
         this.attemptGate = attemptGate == null ? AttemptGate.none() : attemptGate;
         this.verification = verification;
         this.harnessFactory = harnessFactory;
+        this.redactor = redactor == null ? SecretRedactor.patternsOnly() : redactor;
         if (verification == null || harnessFactory == null) {
             throw new IllegalArgumentException("verification and harnessFactory are required");
         }
@@ -203,23 +246,23 @@ public final class ReviewTicketProcessor {
         return result;
     }
 
-    private static ReviewResultParser.Result redact(ReviewResultParser.Result result) {
+    private ReviewResultParser.Result redact(ReviewResultParser.Result result) {
         List<ReviewResultParser.Finding> findings = new ArrayList<>();
         for (ReviewResultParser.Finding finding : result.findings()) {
             findings.add(new ReviewResultParser.Finding(
                 finding.severity(),
                 finding.file(),
                 finding.line(),
-                REDACTOR.redact(finding.message()),
-                finding.suggestion() == null ? null : REDACTOR.redact(finding.suggestion())
+                redactor.redact(finding.message()),
+                finding.suggestion() == null ? null : redactor.redact(finding.suggestion())
             ));
         }
         return new ReviewResultParser.Result(
             result.verdict(),
-            REDACTOR.redact(result.summary()),
+            redactor.redact(result.summary()),
             findings,
-            result.residualRisks().stream().map(REDACTOR::redact).toList(),
-            result.humanQuestions().stream().map(REDACTOR::redact).toList()
+            result.residualRisks().stream().map(redactor::redact).toList(),
+            result.humanQuestions().stream().map(redactor::redact).toList()
         );
     }
 
@@ -267,7 +310,7 @@ public final class ReviewTicketProcessor {
         return value == null || value.isBlank();
     }
 
-    private static String safe(Throwable error) {
+    private String safe(Throwable error) {
         if (error == null) {
             return "unknown error";
         }
@@ -275,7 +318,7 @@ public final class ReviewTicketProcessor {
         if (message == null || message.isBlank()) {
             message = error.getClass().getSimpleName();
         }
-        return REDACTOR.redact(message);
+        return redactor.redact(message);
     }
 
     public enum Status {

@@ -296,6 +296,31 @@ class ReviewTicketProcessorTest {
         assertTrue(outcome.result().summary().contains("[REDACTED]"));
     }
 
+    @Test
+    void redactsKnownProjectSecretsWhenSupplied() {
+        String secret = "project-secret-123";
+        String text = """
+            {"verdict": "comment", "summary": "token %s", "findings": [
+              {"severity": "info", "message": "leaked %s"}],
+             "residual_risks": ["risk %s"]}
+            """.formatted(secret, secret, secret);
+        ReviewTicketProcessor processor = new ReviewTicketProcessor(
+            new ReviewPromptBuilder(),
+            new ReviewResultParser(),
+            ReviewTicketProcessor.AttemptGate.none(),
+            passingVerification(),
+            () -> new ReviewHarnessClient(new FakeHarness(text)),
+            new SecretRedactor(List.of(secret)));
+
+        ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
+
+        assertEquals(ReviewTicketProcessor.Status.COMPLETED, outcome.status());
+        assertFalse(outcome.result().summary().contains(secret));
+        assertFalse(outcome.result().findings().get(0).message().contains(secret));
+        assertFalse(outcome.result().residualRisks().get(0).contains(secret));
+        assertTrue(outcome.result().summary().contains("[REDACTED]"));
+    }
+
     private ReviewTicketProcessor processor(
         FakeHarness harness,
         AtomicBoolean opened,
