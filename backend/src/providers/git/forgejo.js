@@ -122,6 +122,11 @@ function parseScp(raw, base) {
   };
 }
 
+function unescapeGitPath(value) {
+  return String(value).replace(/\\(["\\tn])/g, (_, ch) => (
+    ch === 't' ? '\t' : ch === 'n' ? '\n' : ch));
+}
+
 /**
  * Extract the two paths from a `diff --git a/x b/x` header. Git quotes paths
  * that contain spaces or special characters.
@@ -129,7 +134,22 @@ function parseScp(raw, base) {
 function headerPaths(line) {
   const match = /^(?:"a\/(.+)"|a\/(.+)) (?:"b\/(.+)"|b\/(.+))$/.exec(line || '');
   if (!match) return null;
-  return { from: match[1] || match[2], to: match[3] || match[4] };
+  return {
+    from: match[1] !== undefined ? unescapeGitPath(match[1]) : match[2],
+    to: match[3] !== undefined ? unescapeGitPath(match[3]) : match[4],
+  };
+}
+
+/**
+ * Normalise a path from a `+++`/`---`/`rename` line. Git may quote paths with
+ * spaces or escapes and these lines can carry a trailing tab and timestamp.
+ */
+function diffPath(value) {
+  let path = String(value || '').trimEnd().replace(/\t.*$/, '');
+  if (path.length > 1 && path.startsWith('"') && path.endsWith('"')) {
+    path = unescapeGitPath(path.slice(1, -1));
+  }
+  return path;
 }
 
 /**
@@ -144,10 +164,14 @@ function parseDiff(text) {
     const renamed = /^rename to (.+)$/m.exec(block);
     const added = /^\+\+\+ (?:b\/)?(.+)$/m.exec(block);
     const removed = /^--- (?:a\/)?(.+)$/m.exec(block);
-    const filename = (renamed && renamed[1])
-      || (added && added[1] !== '/dev/null' && added[1])
-      || (removed && removed[1] !== '/dev/null' && removed[1])
-      || (header && header.to);
+    const addedPath = added && added[1] !== '/dev/null' ? added[1] : null;
+    const removedPath = removed && removed[1] !== '/dev/null' ? removed[1] : null;
+    // Prefer the `diff --git` header: `+++` lines can carry a trailing tab and
+    // the header is unambiguous for the path Git quotes.
+    const filename = diffPath(renamed && renamed[1])
+      || (header && header.to)
+      || diffPath(addedPath)
+      || diffPath(removedPath);
     if (!filename) continue;
     const binary = /^Binary files .* differ$/m.test(block);
     let additions = 0;
