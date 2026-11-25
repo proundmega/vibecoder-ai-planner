@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-10-31"
-updated: "2026-11-24"
+updated: "2026-11-25"
 pr: null
 branch: null
 depends_on: ["fg-30", "fg-34"]
