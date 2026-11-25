@@ -153,7 +153,7 @@ describe('prebuilt stack images', () => {
     expect(script).toContain('TARGETS=(node python java go monorepo)');
     expect(script).toContain('--user 1000:1000');
     expect(script).toContain('--network none');
-    expect(script).toContain('pip install --no-index -r requirements.txt');
+    expect(script).toContain('pip install --no-index --find-links wheelhouse smoke-pkg');
     expect(script).toContain('pytest -q');
     expect(script).toContain('smoke_pkg-0.0.1-py3-none-any.whl');
     expect(script).toContain('/opt/venv/bin/python -c');

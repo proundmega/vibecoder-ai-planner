@@ -72,10 +72,8 @@ for target in python monorepo; do
         work=$(pwd)/smoke
         rm -rf "$work" && mkdir -p "$work"
         cd "$work"
-        printf "pytest\n" > requirements.txt
-        pip install --no-index -r requirements.txt
-        # A local wheel proves the venv is writable as uid 1000; skip a
-        # preinstalled pytest because that only proves the command resolves.
+        # The locally built wheel is the write proof; pytest is preinstalled,
+        # so a requirements install would only prove the command resolves.
         mkdir -p wheelhouse smoke_pkg-0.0.1.dist-info
         printf "Metadata-Version: 2.1\nName: smoke-pkg\nVersion: 0.0.1\n" \
             > smoke_pkg-0.0.1.dist-info/METADATA
