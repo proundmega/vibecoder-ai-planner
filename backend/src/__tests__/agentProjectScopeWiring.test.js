@@ -17,6 +17,7 @@ const routers = {
   github: require('../api/github'),
   repoProfiles: require('../api/repoProfiles'),
   review: require('../api/review'),
+  fix: require('../api/fix'),
   harnessRuns: require('../api/harnessRuns'),
   harnessObservability: require('../api/harnessObservability'),
   v1: require('../api/v1/index'),
