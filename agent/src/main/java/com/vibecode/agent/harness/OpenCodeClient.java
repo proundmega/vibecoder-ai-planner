@@ -55,6 +55,7 @@ public final class OpenCodeClient implements HarnessClient {
     private final String externalBaseUrl;
     private final String externalPassword;
     private final SandboxBashBridge bridge;
+    private final boolean reviewMode;
     private volatile WorkspaceFileBridge workspaceBridge;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConcurrentLinkedDeque<String> logTail = new ConcurrentLinkedDeque<>();
@@ -80,18 +81,32 @@ public final class OpenCodeClient implements HarnessClient {
         Path tempDir,
         SandboxBashBridge bridge
     ) {
-        this(config, provider, tempDir, false, null, null, bridge);
+        this(config, provider, tempDir, bridge, false);
+    }
+
+    /**
+     * @param reviewMode deny the write/edit bridge tools for a read-only review
+     *     session; the workspace itself stays writable for verification.
+     */
+    public OpenCodeClient(
+        HarnessConfig config,
+        ProviderSettings provider,
+        Path tempDir,
+        SandboxBashBridge bridge,
+        boolean reviewMode
+    ) {
+        this(config, provider, tempDir, false, null, null, bridge, reviewMode);
     }
 
     /**
      * Test seam: talks to an already-running server without spawning a process.
      */
     OpenCodeClient(String baseUrl, String password, Path tempDir) {
-        this(null, null, tempDir, true, baseUrl, password, null);
+        this(null, null, tempDir, true, baseUrl, password, null, false);
     }
 
     OpenCodeClient(String baseUrl, String password, Path tempDir, HarnessConfig config) {
-        this(config, null, tempDir, true, baseUrl, password, null);
+        this(config, null, tempDir, true, baseUrl, password, null, false);
     }
 
     private OpenCodeClient(
@@ -101,7 +116,8 @@ public final class OpenCodeClient implements HarnessClient {
         boolean externalServer,
         String externalBaseUrl,
         String externalPassword,
-        SandboxBashBridge bridge
+        SandboxBashBridge bridge,
+        boolean reviewMode
     ) {
         this.config = config;
         this.provider = provider;
@@ -110,6 +126,7 @@ public final class OpenCodeClient implements HarnessClient {
         this.externalBaseUrl = externalBaseUrl;
         this.externalPassword = externalPassword == null ? "" : externalPassword;
         this.bridge = bridge;
+        this.reviewMode = reviewMode;
     }
 
     @Override
@@ -133,7 +150,7 @@ public final class OpenCodeClient implements HarnessClient {
 
         Files.createDirectories(tempDir);
         Path configFile = OpenCodeConfigWriter.write(
-            tempDir, provider, config, bridge != null);
+            tempDir, provider, config, bridge != null, reviewMode);
         Path home = Files.createDirectories(tempDir.resolve("home"));
         Files.createDirectories(home.resolve(".config"));
         Files.createDirectories(home.resolve(".local/share"));

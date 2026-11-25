@@ -115,6 +115,26 @@ class OpenCodeConfigWriterTest {
     }
 
     @Test
+    void reviewModeDeniesWriteAndEditBridgeTools() throws Exception {
+        ProviderSettings provider = new ProviderSettings(
+            "opencode-go", "oc_sk_secret", null, "beam-free", 4096);
+
+        Path configFile = OpenCodeConfigWriter.write(
+            tempDir, provider, config(null), false, true);
+        JsonNode permission = mapper.readTree(configFile.toFile()).path("permission");
+
+        assertEquals("deny", permission.path("edit").asText());
+        assertEquals("deny", permission.path("write").asText());
+        assertEquals("deny", permission.path("multiedit").asText());
+        assertEquals("deny", permission.path("patch").asText());
+        assertEquals("deny", permission.path("sandbox_write").asText());
+        assertEquals("deny", permission.path("sandbox_edit").asText());
+        assertEquals("allow", permission.path("sandbox_read").asText());
+        assertEquals("allow", permission.path("sandbox_grep").asText());
+        assertEquals("deny", permission.path("question").asText());
+    }
+
+    @Test
     void writesGenericOpenAiCompatibleProvider() throws Exception {
         ProviderSettings provider = new ProviderSettings(
             "generic", "sk-local", "http://localhost:11434/v1", "qwen", 4096);
