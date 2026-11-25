@@ -125,7 +125,7 @@ function parseScp(raw, base) {
 function unescapeGitPath(value) {
   const input = String(value);
   const map = {
-    '"': '"', '\\': '\\', t: '\t', n: '\n', r: '\r', b: '\b', f: '\f', v: '\v',
+    '"': '"', '\\': '\\', a: '\x07', t: '\t', n: '\n', r: '\r', b: '\b', f: '\f', v: '\v',
   };
   let out = '';
   let bytes = [];
