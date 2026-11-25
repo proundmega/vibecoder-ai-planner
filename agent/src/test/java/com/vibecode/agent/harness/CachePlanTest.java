@@ -87,6 +87,13 @@ class CachePlanTest {
         Files.createSymbolicLink(generation.resolve("npm").resolve("escape"),
             Path.of("/etc/passwd"));
         Files.writeString(generation.resolve("npm").resolve(".npmrc"), "token=secret");
+        Files.writeString(generation.resolve("npm").resolve(".env.local"), "SECRET=1");
+        Files.writeString(generation.resolve("npm").resolve(".yarnrc.yml"), "token: x");
+        Files.writeString(generation.resolve("gradle.properties"), "org.gradle.jvmargs=-Xmx1g");
+        Files.writeString(generation.resolve("config.toml"), "[net]\ngit-fetch-with-cli = true");
+        Files.writeString(generation.resolve("credentials.toml"), "[registry]\ntoken = \"x\"");
+        Path initDir = Files.createDirectories(generation.resolve("init.d"));
+        Files.writeString(initDir.resolve("evil.gradle"), "println 'x'");
         Files.createDirectories(projectRoot.resolve("old"));
         Files.write(projectRoot.resolve("old").resolve("blob"), new byte[4096]);
         Files.setLastModifiedTime(projectRoot.resolve("old"),
@@ -98,7 +105,89 @@ class CachePlanTest {
         assertEquals(2, again.mounts().size());
         assertFalse(Files.exists(generation.resolve("npm").resolve("escape")));
         assertFalse(Files.exists(generation.resolve("npm").resolve(".npmrc")));
+        assertFalse(Files.exists(generation.resolve("npm").resolve(".env.local")));
+        assertFalse(Files.exists(generation.resolve("npm").resolve(".yarnrc.yml")));
+        assertFalse(Files.exists(generation.resolve("gradle.properties")));
+        assertFalse(Files.exists(generation.resolve("config.toml")));
+        assertFalse(Files.exists(generation.resolve("credentials.toml")));
+        assertFalse(Files.exists(generation.resolve("init.d")));
         assertFalse(Files.exists(projectRoot.resolve("old")));
+    }
+
+    @Test
+    void changesGenerationForLargeLockfileTailChanges() throws Exception {
+        Path repo = repo();
+        int size = (int) (17L * 1024 * 1024);
+        byte[] content = new byte[size];
+        java.util.Arrays.fill(content, (byte) 'a');
+        Files.write(repo.resolve("package-lock.json"), content);
+
+        Path first = CachePlan.prepare(profile("npm"), "42", 7, repo, temp.resolve("cache"))
+            .mounts().get(0).source();
+        content[size - 1] = 'b';
+        Files.write(repo.resolve("package-lock.json"), content);
+        Path second = CachePlan.prepare(profile("npm"), "42", 7, repo, temp.resolve("cache"))
+            .mounts().get(0).source();
+
+        assertNotEquals(first, second);
+    }
+
+    @Test
+    void evictsOldGenerationsByTotalQuota() throws Exception {
+        Path repo = repo();
+        Path cacheRoot = temp.resolve("cache");
+        CachePlan.Prepared prepared = CachePlan.prepare(
+            profile("npm"), "42", 7, repo, cacheRoot, 2000, Duration.ofDays(14));
+        Path projectRoot = prepared.mounts().get(0).source().getParent().getParent();
+        for (int i = 0; i < 3; i++) {
+            Path old = Files.createDirectories(projectRoot.resolve("old-" + i));
+            Files.write(old.resolve("blob"), new byte[1500]);
+            Files.setLastModifiedTime(old, java.nio.file.attribute.FileTime.fromMillis(
+                System.currentTimeMillis() - (i + 1) * 60_000L));
+        }
+
+        CachePlan.Prepared again = CachePlan.prepare(
+            profile("npm"), "42", 7, repo, cacheRoot, 2000, Duration.ofDays(14));
+
+        assertEquals(1, again.mounts().size());
+        long remaining = Files.list(projectRoot)
+            .filter((path) -> path.getFileName().toString().startsWith("old-"))
+            .count();
+        assertTrue(remaining <= 1, "quota should evict old generations: " + remaining);
+    }
+
+    @Test
+    void mountsOnlyGradleAndCargoCacheSubdirectories() throws Exception {
+        Path repo = repo();
+        Path cacheRoot = temp.resolve("cache");
+
+        CachePlan.Prepared gradle = CachePlan.prepare(
+            profile("gradle"), "42", 7, repo, cacheRoot);
+        assertEquals(2, gradle.mounts().size());
+        assertTrue(gradle.mounts().stream().allMatch(
+            (mount) -> mount.target().startsWith("/tmp/.gradle/")));
+        assertTrue(gradle.mounts().stream().allMatch(
+            (mount) -> "/tmp/.gradle".equals(mount.env().get("GRADLE_USER_HOME"))));
+        assertTrue(gradle.mounts().stream().noneMatch(
+            (mount) -> mount.source().getFileName().toString().equals("gradle")));
+
+        CachePlan.Prepared cargo = CachePlan.prepare(
+            profile("cargo"), "42", 7, repo, cacheRoot);
+        assertEquals(2, cargo.mounts().size());
+        assertTrue(cargo.mounts().stream().allMatch(
+            (mount) -> mount.target().startsWith("/tmp/.cargo/")));
+        assertTrue(cargo.mounts().stream().allMatch(
+            (mount) -> "/tmp/.cargo".equals(mount.env().get("CARGO_HOME"))));
+    }
+
+    @Test
+    void mountsGoCacheAndEnvironment() throws Exception {
+        CachePlan.Prepared go = CachePlan.prepare(
+            profile("go"), "42", 7, repo(), temp.resolve("cache"));
+        assertEquals(1, go.mounts().size());
+        assertEquals("/cache/go", go.mounts().get(0).target());
+        assertEquals("/cache/go/mod", go.mounts().get(0).env().get("GOMODCACHE"));
+        assertEquals("/cache/go/build", go.mounts().get(0).env().get("GOCACHE"));
     }
 
     @Test

@@ -85,5 +85,6 @@ deferred scope are owned by this document; `01`–`04` link here.
 - A profile may select an image only by digest; it may not widen the operator
   egress allowlist or force a weaker TLS mode.
 - The first dry run is an operator-triggered setup/verify run, not a model run.
-- Services run only in Docker mode and fail closed in host mode; `flaky_tests`
-  and `caches` remain rejected until slices 3 and 4.
+- Services and per-project dependency caches run only in Docker mode and fail
+  closed in host mode; `flaky_tests` and `caches` are supported by slices 3 and
+  4b.

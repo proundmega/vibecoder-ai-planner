@@ -83,12 +83,24 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   `GRADLE_USER_HOME`, `GOMODCACHE`/`GOCACHE`, `CARGO_HOME`).
 - Caches are writable during a run because package managers must populate
   them. Before reuse, `CachePlan` removes symlinks, non-regular files and
-  credential-shaped artifacts; it never follows links. Writes are never shared
-  across projects.
+  credential-shaped artifacts (including Gradle `gradle.properties`/`init.d`/
+  `init.gradle`, Cargo `config.toml`/`credentials.toml`, `.env.*`, `.yarnrc*`,
+  `.pypirc`, `.git-credentials` and `.docker/`); it never follows links. Only
+  Gradle `caches`/`wrapper` and Cargo `registry`/`git` subdirectories are
+  mounted, so their home config/init files stay ephemeral. Writes are never
+  shared across projects.
 - `SANDBOX_CACHE_MAX_MB` bounds the project cache; `SANDBOX_CACHE_RETENTION_DAYS`
-  expires old generations. Eviction is LRU/age based and skips the cache mount
-  (rather than failing the run) if the current generation is over quota. The
-  fg-44 storage watchdog continues to cover total disk pressure.
+  expires old generations (0 is treated as 1 day, not disabled). Eviction is
+  LRU/age based and skips the cache mount (rather than failing the run) if the
+  current generation is over quota. The fg-44 storage watchdog continues to
+  cover total disk pressure. The cache root is the runtime cache directory, so
+  caches survive tickets but are removed when the runtime is recycled; the age
+  retention applies within a runtime. Cross-runtime host-level persistence is
+  not part of this slice.
+- The cache directories are created by the supervisor. `SANDBOX_USER` defaults
+  to the supervisor uid; if it is set to a different uid, the operator must
+  make the runtime cache root writable by that uid (the workspace mount has the
+  same constraint).
 - Real package-manager command coverage (npm/mvn/go) remains the D11 dry-run.
 
 ## Services

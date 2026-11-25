@@ -79,7 +79,7 @@ public record SandboxSpec(
         caches = caches == null ? List.of() : List.copyOf(caches);
         for (CachePlan.Mount cache : caches) {
             if (cache == null || cache.source() == null || cache.target() == null
-                || !cache.target().startsWith("/cache/")) {
+                || !CachePlan.isAllowedTarget(cache.target())) {
                 throw new IllegalArgumentException("Cache mount is invalid");
             }
         }

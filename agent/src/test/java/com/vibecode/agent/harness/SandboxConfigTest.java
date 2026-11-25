@@ -757,7 +757,7 @@ class SandboxConfigTest {
               "schema_version": 1,
               "repo_url": "https://github.com/acme/app",
               "verify": ["npm test"],
-              "caches": ["npm", "maven"]
+              "caches": ["npm", "maven", "gradle", "cargo"]
             }
             """);
         profile.validate();
@@ -769,7 +769,7 @@ class SandboxConfigTest {
         SandboxSpec spec = effective.specFor(
             Files.createDirectories(tempDir.resolve("cache-workspace")));
 
-        assertEquals(2, spec.caches().size());
+        assertEquals(6, spec.caches().size());
         CachePlan.Mount npm = spec.caches().stream()
             .filter((cache) -> "npm".equals(cache.kind()))
             .findFirst().orElseThrow();
@@ -777,6 +777,12 @@ class SandboxConfigTest {
         assertTrue(npm.source().startsWith(cacheRoot));
         assertEquals("/cache/npm", spec.env().get("NPM_CONFIG_CACHE"));
         assertTrue(spec.env().get("MAVEN_OPTS").contains("-Dmaven.repo.local=/cache/maven"));
+        assertEquals("/tmp/.gradle", spec.env().get("GRADLE_USER_HOME"));
+        assertEquals("/tmp/.cargo", spec.env().get("CARGO_HOME"));
+        assertTrue(spec.caches().stream().anyMatch(
+            (cache) -> "/tmp/.gradle/caches".equals(cache.target())));
+        assertTrue(spec.caches().stream().anyMatch(
+            (cache) -> "/tmp/.cargo/registry".equals(cache.target())));
 
         List<String> args = DockerSandboxRunner.buildCreateArgs(spec, "cache-test");
         assertTrue(args.contains(npm.source() + ":/cache/npm:rw"));
