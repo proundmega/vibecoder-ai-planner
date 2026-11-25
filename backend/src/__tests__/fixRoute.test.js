@@ -64,6 +64,18 @@ describe('fix queue/claim/renew routes (fg-32b1)', () => {
     expect(FixQueueService.listQueue).toHaveBeenCalledWith('5', { limit: '10' });
   });
 
+  it('rejects a JWT reading a project fix queue', async () => {
+    FixQueueService.listQueue.mockResolvedValue([]);
+
+    const response = await request(app)
+      .get('/api/v1/agents/fix-queue?projectId=999')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.error.code).toBe('RUNTIME_REQUIRED');
+    expect(FixQueueService.listQueue).not.toHaveBeenCalled();
+  });
+
   it('claims a request for the authenticated runtime', async () => {
     mockRuntime();
     FixQueueService.claim.mockResolvedValue({
@@ -116,6 +128,36 @@ describe('fix queue/claim/renew routes (fg-32b1)', () => {
     expect(response.statusCode).toBe(400);
     expect(response.body.error.code).toBe('RUNTIME_REQUIRED');
     expect(FixQueueService.claim).not.toHaveBeenCalled();
+  });
+
+  it('requires a runtime for renew', async () => {
+    jest.spyOn(AgentNodeService, 'authenticateAccessToken').mockResolvedValue({
+      status: 'ok',
+      node: { id: 12, owner_id: 7 },
+    });
+
+    const response = await request(app)
+      .post('/api/v1/tickets/42/fix/renew')
+      .set('X-API-Key', 'at_valid');
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.error.code).toBe('RUNTIME_REQUIRED');
+    expect(FixQueueService.renew).not.toHaveBeenCalled();
+  });
+
+  it('maps a renew conflict to 409', async () => {
+    mockRuntime();
+    const { ConflictError } = require('../errors/HttpError');
+    FixQueueService.renew.mockRejectedValue(
+      new ConflictError('Fix lease is not owned by this agent'));
+
+    const response = await request(app)
+      .post('/api/v1/tickets/42/fix/renew')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3');
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body.success).toBe(false);
   });
 
   it('maps a live-lease conflict to 409', async () => {

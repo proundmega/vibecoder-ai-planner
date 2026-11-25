@@ -29,12 +29,18 @@ async function createFixture() {
      RETURNING *`,
     [ticket.rows[0].id, SHA]
   );
-  await global.db.query(
-    `INSERT INTO ticket_review_findings
-       (attempt_id, finding_key, severity, file, line, message, suggestion)
-     VALUES ($1, 'finding-1', 'critical', 'backend/src/App.js', 4, 'Drop scope', 'Add guard')`,
-    [attempt.rows[0].id]
-  );
+  for (const finding of [
+    ['finding-1', 'critical', 'backend/src/App.js', 4, 'Drop scope', 'Add guard'],
+    ['finding-2', 'warning', 'backend/src/App.js', 20, 'Missing test', 'Add a case'],
+    ['finding-3', 'info', 'backend/src/App.js', null, 'Consider a comment', null],
+  ]) {
+    await global.db.query(
+      `INSERT INTO ticket_review_findings
+         (attempt_id, finding_key, severity, file, line, message, suggestion)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [attempt.rows[0].id, ...finding]
+    );
+  }
 
   const credential = await global.db.query(
     `INSERT INTO provider_credentials
@@ -116,7 +122,8 @@ describe('fg-32b1 fix queue and lease (real DB)', () => {
         reviewed_sha: SHA,
         state: 'queued',
       });
-      expect(rows[0].findings).toHaveLength(1);
+      expect(rows[0].findings.map((finding) => finding.severity))
+        .toEqual(['critical', 'warning', 'info']);
       expect(rows[0].findings[0]).toMatchObject({
         severity: 'critical',
         file: 'backend/src/App.js',
@@ -166,6 +173,25 @@ describe('fg-32b1 fix queue and lease (real DB)', () => {
     }
   });
 
+  test('does not queue or claim a ticket that left in_progress', async () => {
+    const fixture = await createFixture();
+    try {
+      await FixRequestService.createOrEnsure(
+        fixture.ticketId, { attemptId: fixture.attemptId });
+      await global.db.query(
+        "UPDATE tickets SET status = 'review', phase = 'review' WHERE id = $1",
+        [fixture.ticketId]
+      );
+
+      expect(await FixQueueService.listQueue(fixture.projectId)).toHaveLength(0);
+      await expect(FixQueueService.claim(fixture.ticketId, {
+        runtimeId: fixture.runtimeIds[0], leaseSeconds: 120,
+      })).rejects.toThrow('No active fix request');
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
   test('reclaims an expired lease and records an audit event', async () => {
     const fixture = await createFixture();
     try {
@@ -190,11 +216,13 @@ describe('fg-32b1 fix queue and lease (real DB)', () => {
       expect(reclaimed.request.claimed_by).toBe(other);
 
       const audit = await global.db.query(
-        `SELECT payload FROM harness_events
+        `SELECT runtime_id, agent_id, payload FROM harness_events
           WHERE project_id = $1 AND type = 'fix.lease_reclaimed'`,
         [fixture.projectId]
       );
       expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0].runtime_id).toBe(other);
+      expect(audit.rows[0].agent_id).toBeNull();
       expect(audit.rows[0].payload.previousOwner).toBe(owner);
     } finally {
       await cleanup(fixture);

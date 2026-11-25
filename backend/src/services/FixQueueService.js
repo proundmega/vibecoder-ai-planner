@@ -69,8 +69,15 @@ class FixQueueService {
                          'line', f.line,
                          'message', f.message,
                          'suggestion', f.suggestion
-                       ) ORDER BY f.severity, f.file NULLS LAST,
-                                  f.line NULLS LAST, f.finding_key)
+                       ) ORDER BY
+                           CASE f.severity
+                             WHEN 'critical' THEN 0
+                             WHEN 'warning' THEN 1
+                             ELSE 2
+                           END,
+                           f.file NULLS LAST,
+                           f.line NULLS LAST,
+                           f.finding_key)
                   FROM ticket_review_findings f
                  WHERE f.attempt_id = fr.attempt_id
               ), '[]'::json) AS findings
@@ -78,6 +85,7 @@ class FixQueueService {
          JOIN tickets t ON t.id = fr.ticket_id
         WHERE t.project_id = $1
           AND t.deleted_at IS NULL
+          AND t.status = 'in_progress'
           AND fr.state = 'queued'
           AND (fr.next_attempt_at IS NULL OR fr.next_attempt_at <= NOW())
         ORDER BY fr.created_at
@@ -102,6 +110,8 @@ class FixQueueService {
               (fr.next_attempt_at IS NULL OR fr.next_attempt_at <= NOW()) AS due
          FROM ticket_fix_requests fr
          JOIN tickets t ON t.id = fr.ticket_id
+          AND t.deleted_at IS NULL
+          AND t.status = 'in_progress'
         WHERE fr.ticket_id = $1
           AND fr.state IN ('queued', 'claimed', 'fixing')
         FOR UPDATE OF fr`,
@@ -174,6 +184,9 @@ class FixQueueService {
     const selected = await client.query(
       `SELECT fr.*, (fr.lease_expires_at > NOW()) AS lease_live
          FROM ticket_fix_requests fr
+         JOIN tickets t ON t.id = fr.ticket_id
+          AND t.deleted_at IS NULL
+          AND t.status = 'in_progress'
         WHERE fr.ticket_id = $1
           AND fr.state IN ('claimed', 'fixing')
         FOR UPDATE OF fr`,
@@ -212,7 +225,7 @@ class FixQueueService {
   async auditReclaim(client, request, runtimeId) {
     await client.query(
       `INSERT INTO harness_events
-         (event_id, trace_id, ticket_id, project_id, agent_id, type, payload)
+         (event_id, trace_id, ticket_id, project_id, runtime_id, type, payload)
        VALUES (gen_random_uuid(), gen_random_uuid(), $1, $2, $3,
                'fix.lease_reclaimed', $4::jsonb)`,
       [

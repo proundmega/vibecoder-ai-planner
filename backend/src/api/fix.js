@@ -29,6 +29,7 @@ router.get(
   requireRuntime('running'),
   forQueryProject(),
   requireQueryProjectGrant('worker'),
+  requireRuntimeIdentity,
   async (req, res, next) => {
     try {
       const requests = await FixQueueService.listQueue(req.query.projectId, {
