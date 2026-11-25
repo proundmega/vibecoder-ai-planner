@@ -62,6 +62,33 @@ Files: `backend/src/validators/repoProfiles.js`,
 `ProfileValidationProcessor.java`,
 `frontend/src/components/RepoProfileEditor.vue`, plus tests.
 
+### Slice 4b — dependency caches
+
+- [x] Profile schema and detection accept `npm`, `maven`, `gradle`, `pip`, `go`
+      and `cargo`; unknown or duplicate cache kinds are rejected.
+- [x] `CachePlan` scopes a generation by project + normalized repo + profile
+      version + lockfile hash and mounts only safe cache subdirectories
+      (Gradle `caches`/`wrapper`, Cargo `registry`/`git`; `/cache/<kind>` for
+      npm/maven/pip/go).
+- [x] `SANDBOX_CACHE_MAX_MB` bounds each project with LRU/age eviction and
+      `SANDBOX_CACHE_RETENTION_DAYS` expires old generations (0 means 1 day);
+      an over-quota current generation skips the cache instead of failing the run.
+- [x] Reuse scrubs symlinks, non-regular files and config/init/credential
+      artifacts (Gradle/Cargo homes, `.env.*`, `.yarnrc*`, `.ssh`/`.kube`/
+      `.aws`/`.config`/`.gnupg`/`.terraform.d`, `.pgpass`, `.authinfo`,
+      `.gitconfig`, `.terraformrc`, `.vault-token`) before reuse and never
+      shares a cache across projects.
+- [x] Cache mounts/env reach `SandboxSpec` and the Docker `-v` args; the profile
+      is applied after clone so the lockfile hash sees the checked-out repo.
+- [x] The editor round-trips caches; tests cover mounts/env for every kind,
+      scrub locations, quota/LRU and large-lockfile head/tail hashing.
+
+Files: `agent/.../harness/CachePlan.java`, `SandboxSpec.java`,
+`SandboxConfig.java`, `DockerSandboxRunner.java`, `HarnessTicketProcessor.java`,
+`backend/src/services/RepoProfileService.js`,
+`backend/src/validators/repoProfiles.js`,
+`frontend/src/components/RepoProfileEditor.vue`, plus tests.
+
 ## Per-file changes
 
 | File | Action | Change |
@@ -89,6 +116,9 @@ Files: `backend/src/validators/repoProfiles.js`,
 | `agent/.../harness/SandboxConfig.java` | edit | Profile image/env/CA derivation |
 | `agent/.../harness/VerificationRunner.java` | edit | Host-mode profile env |
 | `agent/.../harness/HarnessTicketProcessor.java` | edit | Fetch/use profile, run columns, PR base |
+| `agent/.../harness/CachePlan.java` | add | Generation, quota/GC, sanitize and mount/env specs |
+| `agent/.../harness/SandboxSpec.java` | edit | Cache mount target validation |
+| `agent/src/test/java/.../CachePlanTest.java` | add | Scoping, lockfile hash, quota/LRU, scrub, mounts/env |
 | `agent/.../AgentApp.java` | edit | Poll dry-run validation queue |
 | `agent/src/test/java/.../RepoProfileTest.java` | add | Model validation/env/supported-cache/CA |
 | `agent/src/test/java/.../ProfileValidationProcessorTest.java` | add | Success/failure/cleanup/claim |
@@ -160,5 +190,6 @@ One row per requirement from `01`. A requirement with no row is not done.
 | 2026-11-22 | `867b9f7` (#167) | fg-39 slices 2/5 | Merged; FR3 (D7), FR4 (D9) and FR8 (D6) remain open, so the suite stays `in_progress`. |
 | 2026-11-24 | `83baf48` (PR #225) | Backend 162 suites / 1875 tests; agent 1007 tests / 10 skipped; frontend 70 files / 600 tests + typecheck/lint | Slice 3: `flaky_tests`/`flaky_retries`/`test_data` schema and agent validation; retries only when failed output names a known-flaky test and records attempts/flaky; test-data setup/cleanup phases with fail-closed cleanup (including setup failure/cleanup-only and a temporary-index tree fingerprint so cleanup cannot publish a tree that differs from the verified one; the test covers already-dirty files, untracked non-ignored files, ignored test data and assume-unchanged flags); editor round-trip. |
 | 2026-11-24 | `e2b94f1` (PR #225, merged) | Slice 3 merged | FR8/D6 done. The suite stays `in_progress` for FR3 (slice 4a) and FR4 (slice 4b). |
-| 2026-11-25 | `d02b6b0` (PR #237) | Backend 166 suites / 1976 tests; backend integration 22 suites / 177 tests; agent 1059 tests / 0 failures / 10 skipped; frontend 70 files / 600 tests; Docker npm cache-mount smoke in the real projects/<hash>/<generation> shape writes `/cache/npm` | Slice 4b: profiles accept supported caches and detection proposes them; `CachePlan` scopes generations by project + repo + profile version + lockfile hash, exports cache env and mounts only safe cache subdirectories (Gradle caches/wrapper, Cargo registry/git; `/cache/<kind>` for npm/maven/pip/go), evicts old/oversized generations, and removes symlinks, non-regular files and config/init/credential artifacts (Gradle/Cargo homes, `.env.*`, `.yarnrc*`, `.ssh`/`.kube`/`.aws`/`.config`/`.gnupg`/`.terraform.d`, `.pgpass`, `.authinfo`, `.gitconfig`, `.terraformrc`, `.vault-token`) before reuse; editor round-trips caches. FR4/D9 in review; D11 real-command coverage remains. |
+| 2026-11-25 | `d02b6b0` (PR #237) | Backend 166 suites / 1976 tests; backend integration 22 suites / 177 tests; agent 1059 tests / 0 failures / 10 skipped; frontend 70 files / 600 tests; Docker npm cache-mount smoke in the real projects/<hash>/<generation> shape writes `/cache/npm` | Slice 4b: profiles accept supported caches and detection proposes them; `CachePlan` scopes generations by project + repo + profile version + lockfile hash, exports cache env and mounts only safe cache subdirectories (Gradle caches/wrapper, Cargo registry/git; `/cache/<kind>` for npm/maven/pip/go), evicts old/oversized generations, and removes symlinks, non-regular files and config/init/credential artifacts (Gradle/Cargo homes, `.env.*`, `.yarnrc*`, `.ssh`/`.kube`/`.aws`/`.config`/`.gnupg`/`.terraform.d`, `.pgpass`, `.authinfo`, `.gitconfig`, `.terraformrc`, `.vault-token`) before reuse; editor round-trips caches. FR4/D9 done; D11 real-command coverage remains. |
+| 2026-11-25 | `607ebf1` (PR #237, merged) | Slice 4b merged | FR4/D9 done. The suite is `done`; D1 and D11-D16 remain as follow-ups in `00`. |
 | 2026-11-25 | `8a38cb8` (PR #232, merged) | Backend 166 suites / 1975 tests; backend integration 22 suites / 177 tests; agent 1007 tests / 0 failures / 10 skipped; all five stack stages built; Python/monorepo uid-1000 local-wheel + pytest smoke pass; pin check clean | Slice 4a merged. Digest-pinned Node 24/Python 3.12/Java 21 + Maven 3.9.11/Go 1.23 stages plus a monorepo assembled from the same toolchains; `/usr/local/bin` exposure works under the sanitized PATH; Python uses `/opt/venv` (no PEP 668 failure) and the smoke installs a local wheel; Gradle without a wrapper warns; catalog rejects unknown/unpinned/userinfo/oversized mappings and bad config is a validation error; detection proposes the configured image (monorepo for multi-language repos) and warns when absent. FR3/D7 done; FR4/D9 remains. |

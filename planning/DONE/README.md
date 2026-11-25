@@ -99,3 +99,9 @@
 - **PR**: #198 (Phase A), #207 (Phase B backend drills); staging rerun: `proundmega/planner-test` #24
 - **Date**: 2026-11-24
 - **Description**: Full durable-harness e2e: real backend HTTP/Postgres, agent contract/processor drills, disposable staging happy path and crash/restart, lease-loss and health-gate drills. Run `98d6f814` on merged `master` opened PR #24 with the full checkpoint sequence and no lease. The staging rows and PRs #20-#24 were cleaned up and verified on 2026-11-24; the reset coincided with an integration-test run against the shared `vibecode` URL and also removed the GTD staging project 2 (outside bt-60). Finish/key-expiry, CI e2e, the OpenCode Go session-header/checkpoint-step findings and credential revocation (D15) remain deferred.
+
+## fg-39: Repository Onboarding and Environment Profiles
+- **PR**: #161, #167, #225, #232, #237
+- **Merge**: `607ebf1`
+- **Date**: 2026-11-25
+- **Description**: Versioned repo profiles with stack detection, pinned images, service containers, flaky-test retries/test-data hooks, prebuilt per-stack images and persistent per-project dependency caches with quota/GC, lockfile-keyed generations and credential-scrubbing reuse.
