@@ -85,7 +85,9 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   them. Before reuse, `CachePlan` removes symlinks, non-regular files and
   credential-shaped artifacts (including Gradle `gradle.properties`/`init.d`/
   `init.gradle`, Cargo `config.toml`/`credentials.toml`, `.env.*`, `.yarnrc*`,
-  `.pypirc`, `.git-credentials` and `.docker/`); it never follows links. Only
+  `.pypirc`, `.git-credentials`, `.docker/` and the common cloud/SSH/GPG config
+  directories); it never follows links. `.config/` is removed wholesale because
+  a dependency cache is disposable and may hold tool config. Only
   Gradle `caches`/`wrapper` and Cargo `registry`/`git` subdirectories are
   mounted, so their home config/init files stay ephemeral. Writes are never
   shared across projects.

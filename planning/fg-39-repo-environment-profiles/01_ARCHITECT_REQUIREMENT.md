@@ -82,7 +82,10 @@ persistent per-project dependency caches (`fg-39c`).
 - **FR1 - Profile schema:** repo URL, base branch, languages, image/toolchain versions, setup commands, verify commands, services, env (non-secret), cache paths, timeouts, flaky tests. `base_branch` is the first source in fg-36's shared resolver.
 - **FR2 - Onboarding:** detect stack from manifests; propose a profile; let an admin edit/approve.
 - **FR3 - Images:** per-stack sandbox images or a devcontainer; pinned versions; pre-installed tools.
-- **FR4 - Caches:** dependency caches (npm, Maven, pip, Go) persisted across runs and scoped per repo.
+- **FR4 - Caches:** dependency caches (npm, Maven, Gradle, pip, Go, Cargo)
+  persisted across runs and scoped per repo. Detection covers npm/Maven/Gradle/
+  pip/Go; Cargo is accepted by the profile schema (Rust detection is not yet a
+  stack the detector proposes).
 - **FR5 - Services:** start Postgres/Redis/etc. in the sandbox network with health checks and ephemeral data.
 - **FR6 - Commands:** run setup once, then verification; capture output; respect per-command timeouts.
 - **FR7 - Env:** inject non-secret env from the profile; secrets come from the secret store only when required.

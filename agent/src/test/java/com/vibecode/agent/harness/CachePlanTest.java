@@ -206,12 +206,15 @@ class CachePlanTest {
             "oauth_token: x");
         Files.createDirectories(generation.resolve(".gnupg"));
         Files.writeString(generation.resolve(".gnupg").resolve("gpg.conf"), "x");
+        Files.createDirectories(generation.resolve(".terraform.d"));
+        Files.writeString(generation.resolve(".terraform.d").resolve("credentials.tfrc.json"),
+            "{\"token\":\"x\"}");
 
         CachePlan.prepare(profile("npm"), "42", 7, repo, cacheRoot);
 
         for (String name : new String[]{
             ".pgpass", ".authinfo", ".gitconfig", ".terraformrc", ".vault-token",
-            ".ssh", ".kube", ".aws", ".config", ".gnupg"}) {
+            ".ssh", ".kube", ".aws", ".config", ".gnupg", ".terraform.d"}) {
             assertFalse(Files.exists(generation.resolve(name)), name + " should be scrubbed");
         }
     }
