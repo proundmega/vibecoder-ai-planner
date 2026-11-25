@@ -47,4 +47,3 @@ CREATE INDEX IF NOT EXISTS idx_fix_requests_ticket
   ON ticket_fix_requests (ticket_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_fix_requests_queue
   ON ticket_fix_requests (state, next_attempt_at);
-

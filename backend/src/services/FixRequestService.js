@@ -122,8 +122,8 @@ class FixRequestService {
 
     if (attemptId) {
       const existing = await client.query(
-        'SELECT * FROM ticket_fix_requests WHERE attempt_id = $1',
-        [attemptId]
+        'SELECT * FROM ticket_fix_requests WHERE attempt_id = $1 AND ticket_id = $2',
+        [attemptId, id]
       );
       if (existing.rows[0]) {
         return { request: existing.rows[0], created: false };
@@ -195,8 +195,8 @@ class FixRequestService {
       if (error.code === '23505') {
         if (attemptId) {
           const existing = await client.query(
-            'SELECT * FROM ticket_fix_requests WHERE attempt_id = $1',
-            [attemptId]
+            'SELECT * FROM ticket_fix_requests WHERE attempt_id = $1 AND ticket_id = $2',
+            [attemptId, id]
           );
           if (existing.rows[0]) {
             return { request: existing.rows[0], created: false };

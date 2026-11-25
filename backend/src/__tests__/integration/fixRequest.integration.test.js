@@ -170,6 +170,29 @@ describe('fg-32a fix requests (real DB)', () => {
     }
   });
 
+  test('does not leak another ticket fix request for a foreign attempt', async () => {
+    const first = await createFixture();
+    const second = await createFixture();
+    try {
+      const foreignAttempt = await createAttempt(second.ticketId);
+      await FixRequestService.createOrEnsure(
+        second.ticketId, { attemptId: foreignAttempt.id });
+
+      await expect(FixRequestService.createOrEnsure(
+        first.ticketId, { attemptId: foreignAttempt.id }))
+        .rejects.toThrow('Review attempt not found for this ticket');
+
+      const leaked = await global.db.query(
+        'SELECT COUNT(*)::int AS count FROM ticket_fix_requests WHERE ticket_id = $1',
+        [first.ticketId]
+      );
+      expect(leaked.rows[0].count).toBe(0);
+    } finally {
+      await cleanup(first);
+      await cleanup(second);
+    }
+  });
+
   test('supports a manual request from the latest completed review', async () => {
     const fixture = await createFixture();
     try {

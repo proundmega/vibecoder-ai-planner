@@ -66,7 +66,10 @@ function fakeClient(overrides = {}) {
         return { rows: state.ticket ? [state.ticket] : [] };
       }
       if (sql.includes('FROM ticket_fix_requests WHERE attempt_id')) {
-        return { rows: state.existingAttemptRequest };
+        return {
+          rows: state.existingAttemptRequest.filter(
+            (row) => Number(row.ticket_id) === Number(params[1])),
+        };
       }
       if (sql.includes('FROM ticket_review_attempts WHERE id =')) {
         return { rows: state.attempt ? [state.attempt] : [] };
@@ -115,6 +118,19 @@ describe('FixRequestService (fg-32a)', () => {
     expect(insert.params).toEqual([
       TICKET_ID, ATTEMPT_ID, 'reviewer', BRANCH, SHA, null,
     ]);
+  });
+
+  it('does not return another ticket request for a foreign attempt', async () => {
+    const foreign = fixRequest({ ticket_id: 99 });
+    const { client } = fakeClient({
+      existingAttemptRequest: [foreign],
+      attempt: attempt({ ticket_id: 99 }),
+    });
+    const service = new FixRequestService();
+
+    await expect(service.createOrEnsureWithClient(
+      client, TICKET_ID, { attemptId: ATTEMPT_ID }))
+      .rejects.toThrow('Review attempt not found for this ticket');
   });
 
   it('returns the existing request for a repeated attempt id', async () => {

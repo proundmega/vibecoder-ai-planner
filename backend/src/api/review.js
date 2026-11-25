@@ -6,6 +6,8 @@ const { requireRuntime, requireTicketGrant } = require('../middleware/agentRole'
 const { requireAnyPermission } = require('../middleware/permissions');
 const ReviewService = require('../services/ReviewService');
 const FixRequestService = require('../services/FixRequestService');
+const Ticket = require('../models/ticket');
+const TicketService = require('../services/TicketService');
 
 const statusChangePermission = requireAnyPermission('TICKET_STATUS_CHANGE');
 
@@ -20,6 +22,39 @@ function requireHumanStatusPermission(req, res, next) {
   return statusChangePermission(req, res, next);
 }
 
+/**
+ * Human callers must be members of the ticket's project. Agent callers are
+ * already covered by the runtime/ticket grant middleware.
+ */
+async function requireHumanProjectMembership(req, res, next) {
+  if (req.agent || !req.user) return next();
+  try {
+    const ticket = await Ticket.findById(req.params.ticketId);
+    if (!ticket) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'NOT_FOUND', message: 'Ticket not found' },
+      });
+    }
+    const allowed = await TicketService.canActOnTicketProject(ticket, {
+      operatorId: req.user.userId ?? req.user.id,
+      role: req.user.role,
+    });
+    if (!allowed) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Unauthorized to act on this ticket project',
+        },
+      });
+    }
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
 // fg-32a: the reviewer calls this after writing a completed request_changes
 // attempt. The endpoint is idempotent per attempt id.
 router.post(
@@ -29,16 +64,28 @@ router.post(
   forTicketParam(),
   requireTicketGrant('reviewer'),
   requireHumanStatusPermission,
+  requireHumanProjectMembership,
   async (req, res, next) => {
     try {
+      const attemptId = req.body?.attempt_id ?? req.body?.attemptId ?? null;
+      if (req.agent && !attemptId) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'attempt_id is required for reviewer agents',
+          },
+        });
+      }
       const result = await FixRequestService.createOrEnsure(
         req.params.ticketId,
         {
-          attemptId: req.body?.attempt_id ?? req.body?.attemptId ?? null,
+          attemptId,
           feedback: req.body?.feedback ?? null,
         },
         {
-          actorId: req.runtime?.id ?? req.agent?.id ?? req.user?.id ?? null,
+          actorId: req.runtime?.id ?? req.agent?.id
+            ?? req.user?.userId ?? req.user?.id ?? null,
         }
       );
       res.status(result.created ? 201 : 200).json({
