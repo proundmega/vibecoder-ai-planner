@@ -42,6 +42,7 @@ describe('Git provider contract', () => {
       reviewRequestName: 'branch',
       requiresBaseUrl: false,
     });
+    expect(getCapabilities('local').authModes).toEqual(['ssh']);
   });
 
   it('normalises ids and rejects unknown providers', () => {
@@ -172,6 +173,124 @@ describe('Git provider contract', () => {
       expect(registry.has('github')).toBe(false);
       expect(registry.has(undefined)).toBe(false);
     });
+  });
+});
+
+describe('Local provider', () => {
+  it('registers and parses SSH URLs', () => {
+    expect(git.registry.has('local')).toBe(true);
+    const provider = git.registry.get('local', {
+      credential: 'key',
+      authMode: 'ssh',
+    });
+
+    expect(provider.id).toBe('local');
+    expect(provider.capabilities.supportsReviewRequests).toBe(false);
+    expect(provider.parseRepoUrl('ssh://git@git.example.com/group/repo.git'))
+      .toMatchObject({ host: 'git.example.com', protocol: 'ssh' });
+    expect(provider.parseRepoUrl('git@git.example.com:group/repo.git'))
+      .toMatchObject({ host: 'git.example.com', protocol: 'ssh' });
+    expect(provider.getCloneUrl('git@git.example.com:group/repo.git'))
+      .toBe('git@git.example.com:group/repo.git');
+  });
+
+  it('rejects embedded passwords, filesystem paths and empty paths', () => {
+    const provider = git.local.createProvider({ authMode: 'ssh' });
+
+    expect(() => provider.parseRepoUrl(
+      'ssh://git:secret@git.example.com/group/repo.git'))
+      .toThrow('must not contain a password');
+    expect(() => provider.parseRepoUrl(
+      'user:secret@git.example.com:group/repo.git'))
+      .toThrow('must not contain a password');
+    expect(() => provider.parseRepoUrl(
+      'ssh://user%3Apass@git.example.com/group/repo.git'))
+      .toThrow('must not contain a password');
+    expect(() => provider.parseRepoUrl(
+      'user%3Apass@git.example.com:group/repo.git'))
+      .toThrow('must not contain a password');
+    expect(() => provider.parseRepoUrl('/srv/git/private-app.git'))
+      .toThrow('deferred to fg-57d2');
+    expect(() => provider.parseRepoUrl('file:///srv/git/private-app.git'))
+      .toThrow('deferred to fg-57d2');
+    expect(() => provider.parseRepoUrl('ssh://git@git.example.com/'))
+      .toThrow('must include a repository path');
+  });
+
+  it('applies the private-host policy to SSH hosts', async () => {
+    const saved = process.env.ALLOW_PRIVATE_HOSTS;
+    const savedGit = process.env.GIT_ALLOW_PRIVATE_HOSTS;
+    const publicLookup = jest.fn().mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: publicLookup });
+    try {
+      delete process.env.ALLOW_PRIVATE_HOSTS;
+      delete process.env.GIT_ALLOW_PRIVATE_HOSTS;
+      for (const host of ['localhost', '127.0.0.1', '10.1.2.3', '[::1]']) {
+        await expect(provider.validateRepoAccess(
+          `ssh://git@${host}/group/repo.git`, 'key'))
+          .resolves.toMatchObject({ accessible: false });
+      }
+      await expect(provider.validateRepoAccess(
+        'ssh://git@git.example.com/group/repo.git', 'key'))
+        .resolves.toMatchObject({ accessible: true });
+
+      process.env.ALLOW_PRIVATE_HOSTS = '1';
+      await expect(provider.validateRepoAccess(
+        'ssh://git@127.0.0.1/group/repo.git', 'key'))
+        .resolves.toMatchObject({ accessible: true });
+
+      delete process.env.ALLOW_PRIVATE_HOSTS;
+      process.env.GIT_ALLOW_PRIVATE_HOSTS = '1';
+      await expect(provider.validateRepoAccess(
+        'ssh://git@127.0.0.1/group/repo.git', 'key'))
+        .resolves.toMatchObject({ accessible: true });
+    } finally {
+      if (saved === undefined) delete process.env.ALLOW_PRIVATE_HOSTS;
+      else process.env.ALLOW_PRIVATE_HOSTS = saved;
+      if (savedGit === undefined) delete process.env.GIT_ALLOW_PRIVATE_HOSTS;
+      else process.env.GIT_ALLOW_PRIVATE_HOSTS = savedGit;
+    }
+  });
+
+  it('rejects a public name that resolves to a private address', async () => {
+    const privateLookup = jest.fn().mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: privateLookup });
+
+    await expect(provider.validateRepoAccess(
+      'ssh://git@127.0.0.1.sslip.io/group/repo.git', 'key'))
+      .resolves.toMatchObject({
+        accessible: false,
+        error: 'SSH host is not allowed by the host policy',
+      });
+    expect(privateLookup).toHaveBeenCalledWith(
+      '127.0.0.1.sslip.io', { all: true, verbatim: true });
+  });
+
+  it('fails closed when the SSH host cannot be resolved', async () => {
+    const failingLookup = jest.fn().mockRejectedValue(new Error('ENOTFOUND'));
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: failingLookup });
+
+    await expect(provider.validateRepoAccess(
+      'ssh://git@unresolvable.example.com/group/repo.git', 'key'))
+      .resolves.toMatchObject({
+        accessible: false,
+        error: 'SSH host could not be resolved',
+      });
+  });
+
+  it('requires an SSH key and has no review API', async () => {
+    const publicLookup = jest.fn().mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: publicLookup });
+
+    await expect(provider.validateRepoAccess('ssh://git@git.example.com/group/repo.git'))
+      .resolves.toMatchObject({ accessible: false });
+    await expect(provider.validateRepoAccess(
+      'ssh://git@git.example.com/group/repo.git', 'private-key'))
+      .resolves.toMatchObject({ accessible: true });
+    expect(() => provider.parseRepoUrl('https://git.example.com/group/repo'))
+      .toThrow('must use an SSH URL');
+    await expect(provider.createReviewRequest()).resolves.toBeNull();
+    expect(await provider.listReviewRequests()).toEqual([]);
   });
 });
 

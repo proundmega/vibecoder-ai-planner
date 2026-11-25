@@ -111,15 +111,14 @@ describe('GitProjectService', () => {
       expect(result.accessToken).toBeUndefined();
     });
 
-    it('stores an encrypted SSH key for local providers', async () => {
-      const provider = fakeProvider();
-      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+    it('stores an encrypted SSH key for the registered local provider', async () => {
+      jest.spyOn(gitProviders.registry, 'get');
       pool.query.mockResolvedValue({
         rows: [{
           id: 1,
           project_id: 1,
           provider: 'local',
-          repo_url: 'ssh://git@git.example.com/group/repo.git',
+          repo_url: 'ssh://git@203.0.113.10/group/repo.git',
           ssh_key_encrypted: 'enc:key',
           default_branch: 'main',
           is_active: true,
@@ -129,14 +128,26 @@ describe('GitProjectService', () => {
 
       await GitProjectService.connect(1, {
         provider: 'local',
-        repoUrl: 'ssh://git@git.example.com/group/repo.git',
+        repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
         sshKey: 'key',
-        authMode: 'ssh',
       }, 100);
 
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('local', {
+        credential: 'key',
+        baseUrl: null,
+        authMode: 'ssh',
+      });
       expect(encrypt).toHaveBeenCalledWith('key');
       expect(pool.query.mock.calls[0][1][3]).toBeNull();
       expect(pool.query.mock.calls[0][1][8]).toBe('enc:key');
+    });
+
+    it('rejects the removed local none auth mode', async () => {
+      await expect(GitProjectService.connect(1, {
+        provider: 'local',
+        repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
+        authMode: 'none',
+      }, 100)).rejects.toThrow('Unsupported auth mode for local: none');
     });
 
     it('requires a base URL for self-hosted providers', async () => {
@@ -475,6 +486,31 @@ describe('GitProjectService', () => {
         .resolves.toEqual({ success: true });
       expect(provider.deleteBranch).toHaveBeenCalledWith(repo, 'vibecode/ticket-42-title');
       expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SET branch_name = NULL'),
+        [42]
+      );
+    });
+
+    it('does not clear ticket state when the local provider refuses branch deletion', async () => {
+      jest.spyOn(gitProviders.registry, 'get');
+      pool.query.mockResolvedValue({
+        rows: [{
+          provider: 'local',
+          repo_url: 'ssh://git@203.0.113.10/group/repo.git',
+          auth_mode: 'ssh',
+          ssh_key_encrypted: 'enc:key',
+        }],
+      });
+
+      await expect(GitProjectService.deleteBranch(1, 42, {
+        repo: {
+          provider: 'local',
+          repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
+          authMode: 'ssh',
+        },
+      })).rejects.toThrow('not available for local repositories');
+
+      expect(pool.query).not.toHaveBeenCalledWith(
         expect.stringContaining('SET branch_name = NULL'),
         [42]
       );

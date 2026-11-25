@@ -40,7 +40,9 @@ class GitProjectService {
       );
     }
     const authMode = input.authMode
-      || (providerId === 'github' ? globalGithubMode : 'pat');
+      || (providerId === 'github'
+        ? globalGithubMode
+        : providerId === 'local' ? 'ssh' : 'pat');
     if (!capabilities.authModes.includes(authMode)) {
       throw new ValidationError(`Unsupported auth mode for ${providerId}: ${authMode}`);
     }
@@ -270,6 +272,9 @@ class GitProjectService {
         { repo: connected, provider }
       );
     } catch (error) {
+      if (error instanceof ValidationError) {
+        throw error;
+      }
       logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
     }
 
