@@ -59,8 +59,13 @@ for image in "$NODE_IMAGE" "$JAVA_IMAGE" "$GO_IMAGE"; do
 done
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/vibecode-cache-smoke.XXXXXX")"
+# mktemp creates 0700. The sandbox runs as uid 1000, so let it traverse the
+# root and write the cache even when the invoking host user is root or another
+# uid. Fixture files are made writable as they are created below.
+chmod 755 "$WORK"
 CACHE="$WORK/cache"
 mkdir -p "$CACHE/npm" "$CACHE/maven" "$CACHE/go/mod" "$CACHE/go/build"
+chmod -R a+rwX "$CACHE"
 
 cleanup() {
     if [[ -d "$WORK" ]]; then

@@ -23,7 +23,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class SandboxCacheSmokeScriptTest {
 
     private static final Path SCRIPT = Path.of(
-        "scripts", "smoke-sandbox-caches.sh").toAbsolutePath();
+        System.getProperty("basedir", "."),
+        "scripts",
+        "smoke-sandbox-caches.sh").toAbsolutePath();
 
     @BeforeEach
     void requireBash() {
