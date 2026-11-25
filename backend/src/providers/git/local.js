@@ -1,5 +1,7 @@
+const dns = require('dns');
+const net = require('net');
 const { ValidationError } = require('../../errors/HttpError');
-const { getCapabilities, isPrivateHostname } = require('./GitProvider');
+const { getCapabilities, isPrivateHostname, isPrivateAddress } = require('./GitProvider');
 
 function parseSshUrl(raw) {
   const url = new URL(raw);
@@ -55,6 +57,7 @@ class LocalGitProvider {
     this.id = 'local';
     this.capabilities = getCapabilities('local');
     this.config = config || {};
+    this.lookup = this.config.lookup || dns.promises.lookup;
   }
 
   parseRepoUrl(repoUrl) {
@@ -92,6 +95,35 @@ class LocalGitProvider {
         defaultBranch: null,
         error: 'SSH host is not allowed by the host policy',
       };
+    }
+    if (!privateHostsAllowed()) {
+      const host = parsed.host.replace(/^\[|\]$/g, '');
+      if (!net.isIP(host)) {
+        let addresses;
+        try {
+          addresses = await this.lookup(host, { all: true, verbatim: true });
+        } catch {
+          return {
+            accessible: false,
+            defaultBranch: null,
+            error: 'SSH host could not be resolved',
+          };
+        }
+        if (!Array.isArray(addresses) || addresses.length === 0) {
+          return {
+            accessible: false,
+            defaultBranch: null,
+            error: 'SSH host could not be resolved',
+          };
+        }
+        if (addresses.some(entry => isPrivateAddress(entry.address))) {
+          return {
+            accessible: false,
+            defaultBranch: null,
+            error: 'SSH host is not allowed by the host policy',
+          };
+        }
+      }
     }
     return { accessible: true, defaultBranch: null, error: null };
   }

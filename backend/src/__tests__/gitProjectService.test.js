@@ -21,7 +21,6 @@ const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
 const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const { encrypt, decrypt } = require('../utils/crypto');
-const { ValidationError } = require('../errors/HttpError');
 const gitProviders = require('../providers/git');
 
 function fakeProvider(overrides = {}) {
@@ -119,7 +118,7 @@ describe('GitProjectService', () => {
           id: 1,
           project_id: 1,
           provider: 'local',
-          repo_url: 'ssh://git@git.example.com/group/repo.git',
+          repo_url: 'ssh://git@203.0.113.10/group/repo.git',
           ssh_key_encrypted: 'enc:key',
           default_branch: 'main',
           is_active: true,
@@ -129,9 +128,8 @@ describe('GitProjectService', () => {
 
       await GitProjectService.connect(1, {
         provider: 'local',
-        repoUrl: 'ssh://git@git.example.com/group/repo.git',
+        repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
         sshKey: 'key',
-        authMode: 'ssh',
       }, 100);
 
       expect(gitProviders.registry.get).toHaveBeenCalledWith('local', {
@@ -142,6 +140,14 @@ describe('GitProjectService', () => {
       expect(encrypt).toHaveBeenCalledWith('key');
       expect(pool.query.mock.calls[0][1][3]).toBeNull();
       expect(pool.query.mock.calls[0][1][8]).toBe('enc:key');
+    });
+
+    it('rejects the removed local none auth mode', async () => {
+      await expect(GitProjectService.connect(1, {
+        provider: 'local',
+        repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
+        authMode: 'none',
+      }, 100)).rejects.toThrow('Unsupported auth mode for local: none');
     });
 
     it('requires a base URL for self-hosted providers', async () => {
@@ -485,19 +491,22 @@ describe('GitProjectService', () => {
       );
     });
 
-    it('does not clear ticket state when the provider refuses branch deletion', async () => {
-      const provider = fakeProvider({
-        deleteBranch: jest.fn().mockRejectedValue(
-          new ValidationError('Branch deletion is not available for local repositories')),
+    it('does not clear ticket state when the local provider refuses branch deletion', async () => {
+      jest.spyOn(gitProviders.registry, 'get');
+      pool.query.mockResolvedValue({
+        rows: [{
+          provider: 'local',
+          repo_url: 'ssh://git@203.0.113.10/group/repo.git',
+          auth_mode: 'ssh',
+          ssh_key_encrypted: 'enc:key',
+        }],
       });
-      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
-      pool.query.mockResolvedValue({ rows: [] });
 
       await expect(GitProjectService.deleteBranch(1, 42, {
         repo: {
-          provider: 'github',
-          repoUrl: 'owner/repo',
-          accessTokenEncrypted: 'enc:pat',
+          provider: 'local',
+          repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
+          authMode: 'ssh',
         },
       })).rejects.toThrow('not available for local repositories');
 

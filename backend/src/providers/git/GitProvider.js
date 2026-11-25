@@ -41,7 +41,7 @@ const PROVIDERS = Object.freeze({
   local: capabilities('local', 'Local bare repository', {
     review: false,
     reviewName: 'branch',
-    authModes: ['ssh', 'none'],
+    authModes: ['ssh'],
   }),
 });
 
@@ -228,6 +228,7 @@ module.exports = {
   normalizeProviderId,
   getCapabilities,
   isPrivateHostname,
+  isPrivateAddress,
   assertSafeBaseUrl,
   createRegistry,
 };

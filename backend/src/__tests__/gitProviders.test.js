@@ -42,6 +42,7 @@ describe('Git provider contract', () => {
       reviewRequestName: 'branch',
       requiresBaseUrl: false,
     });
+    expect(getCapabilities('local').authModes).toEqual(['ssh']);
   });
 
   it('normalises ids and rejects unknown providers', () => {
@@ -213,7 +214,8 @@ describe('Local provider', () => {
   it('applies the private-host policy to SSH hosts', async () => {
     const saved = process.env.ALLOW_PRIVATE_HOSTS;
     const savedGit = process.env.GIT_ALLOW_PRIVATE_HOSTS;
-    const provider = git.local.createProvider({ authMode: 'ssh' });
+    const publicLookup = jest.fn().mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: publicLookup });
     try {
       delete process.env.ALLOW_PRIVATE_HOSTS;
       delete process.env.GIT_ALLOW_PRIVATE_HOSTS;
@@ -244,8 +246,35 @@ describe('Local provider', () => {
     }
   });
 
+  it('rejects a public name that resolves to a private address', async () => {
+    const privateLookup = jest.fn().mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: privateLookup });
+
+    await expect(provider.validateRepoAccess(
+      'ssh://git@127.0.0.1.sslip.io/group/repo.git', 'key'))
+      .resolves.toMatchObject({
+        accessible: false,
+        error: 'SSH host is not allowed by the host policy',
+      });
+    expect(privateLookup).toHaveBeenCalledWith(
+      '127.0.0.1.sslip.io', { all: true, verbatim: true });
+  });
+
+  it('fails closed when the SSH host cannot be resolved', async () => {
+    const failingLookup = jest.fn().mockRejectedValue(new Error('ENOTFOUND'));
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: failingLookup });
+
+    await expect(provider.validateRepoAccess(
+      'ssh://git@unresolvable.example.com/group/repo.git', 'key'))
+      .resolves.toMatchObject({
+        accessible: false,
+        error: 'SSH host could not be resolved',
+      });
+  });
+
   it('requires an SSH key and has no review API', async () => {
-    const provider = git.local.createProvider({ authMode: 'ssh' });
+    const publicLookup = jest.fn().mockResolvedValue([{ address: '203.0.113.10', family: 4 }]);
+    const provider = git.local.createProvider({ authMode: 'ssh', lookup: publicLookup });
 
     await expect(provider.validateRepoAccess('ssh://git@git.example.com/group/repo.git'))
       .resolves.toMatchObject({ accessible: false });
