@@ -48,6 +48,14 @@ function mark(fn, scope) {
   return fn;
 }
 
+function forQueryProject(param = 'projectId') {
+  return mark((req, res, next) => {
+    if (scopedProject(req) == null) return next();
+    if (!assertAgentProject(req, req.query[param])) return deny(res);
+    next();
+  }, 'query-project');
+}
+
 function forProjectParam(param = 'projectId') {
   return mark((req, res, next) => {
     if (!assertAgentProject(req, req.params[param])) return deny(res);
@@ -163,6 +171,7 @@ module.exports = {
   assertAgentProject,
   isNodeToken,
   forProjectParam,
+  forQueryProject,
   forBodyProject,
   forBodyTicket,
   forTicketParam,
