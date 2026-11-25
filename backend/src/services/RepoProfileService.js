@@ -9,6 +9,9 @@ const {
   validateRepoProfile, normalizeExactHost,
 } = require('../validators/repoProfiles');
 const {
+  selectStackImage, stackImagesFromEnv,
+} = require('../config/stackImages');
+const {
   NotFoundError, ForbiddenError, ValidationError,
 } = require('../errors/HttpError');
 
@@ -252,7 +255,14 @@ async function detectStack(projectId) {
   }
   if (gradle) {
     const wrapper = await readOptionalFile(projectId, 'gradlew');
-    verify.push(wrapper ? './gradlew test' : 'gradle test');
+    if (wrapper) {
+      verify.push('./gradlew test');
+    } else {
+      verify.push('gradle test');
+      warnings.push(
+        'Gradle project has no ./gradlew; the prebuilt Java image provides Maven, '
+        + 'not Gradle. Add a wrapper or use a custom pinned image with Gradle');
+    }
   }
 
   const pyproject = await readOptionalFile(projectId, 'pyproject.toml');
@@ -276,11 +286,24 @@ async function detectStack(projectId) {
     verify.push('make test');
   }
 
+  let stackImage;
+  try {
+    stackImage = selectStackImage(languages, stackImagesFromEnv());
+  } catch (error) {
+    throw new ValidationError(error.message);
+  }
+  if (!stackImage && languages.length > 0) {
+    warnings.push(
+      'No pinned stack image is configured for the detected stack; '
+      + 'set REPO_PROFILE_STACK_IMAGES or provide a digest-pinned image');
+  }
+
   const profile = {
     schema_version: 1,
     repo_url: repo.repoUrl.replace(/\.git$/, ''),
     base_branch: repo.defaultBranch || 'main',
     languages: [...new Set(languages)],
+    ...(stackImage ? { image: stackImage.image } : {}),
     setup: [...new Set(setup)],
     verify: [...new Set(verify)],
     caches: [],

@@ -28,6 +28,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_DOCKERFILES=(
     "$ROOT/sandbox.Dockerfile"
+    "$ROOT/sandbox-stacks.Dockerfile"
     "$ROOT/sandbox-proxy.Dockerfile"
     "$ROOT/Dockerfile"
 )
