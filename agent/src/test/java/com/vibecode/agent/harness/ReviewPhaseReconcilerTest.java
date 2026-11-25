@@ -54,6 +54,15 @@ class ReviewPhaseReconcilerTest {
     }
 
     @Test
+    void refusesANullPhase() {
+        FakePhases phases = new FakePhases(null);
+
+        assertThrows(ReviewPhaseReconciler.ReconciliationException.class,
+            () -> new ReviewPhaseReconciler(phases).ensureReviewPhase(42L));
+        assertEquals(0, phases.reconcileCalls);
+    }
+
+    @Test
     void approvalRechecksReviewBeforeTransitioning() throws Exception {
         FakePhases phases = new FakePhases("review");
 

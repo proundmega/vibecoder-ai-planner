@@ -30,6 +30,7 @@ class GitHubServiceTest {
     private volatile String responseBody = "[]";
     private volatile String postResponseBody = "{}";
     private volatile int unauthorizedRequests = 0;
+    private volatile int errorStatus = 0;
     private volatile boolean unauthorizedOnPostOnly = false;
 
     @BeforeEach
@@ -49,12 +50,15 @@ class GitHubServiceTest {
             if (unauthorized) {
                 unauthorizedRequests -= 1;
             }
+            int code = unauthorized ? 401 : (errorStatus > 0 ? errorStatus : 200);
             String payload = unauthorized
                 ? "{}"
-                : (isPost ? postResponseBody : responseBody);
+                : (errorStatus > 0
+                    ? "{\"message\":\"request failed\"}"
+                    : (isPost ? postResponseBody : responseBody));
             byte[] body = payload.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(unauthorized ? 401 : 200, body.length);
+            exchange.sendResponseHeaders(code, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
@@ -100,6 +104,20 @@ class GitHubServiceTest {
         responseBody = "{\"login\":\"vibecode-reviewer\"}";
 
         assertEquals("vibecode-reviewer", service.getAuthenticatedLogin());
+    }
+
+    @Test
+    void rejectsAForbiddenAuthenticatedLoginLookup() {
+        errorStatus = 403;
+
+        assertThrows(IOException.class, () -> service.getAuthenticatedLogin());
+    }
+
+    @Test
+    void rejectsABlankAuthenticatedLogin() throws Exception {
+        responseBody = "{\"login\":\"\"}";
+
+        assertThrows(IOException.class, () -> service.getAuthenticatedLogin());
     }
 
     @Test

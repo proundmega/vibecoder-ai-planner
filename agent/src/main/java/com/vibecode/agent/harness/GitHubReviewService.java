@@ -36,9 +36,12 @@ public final class GitHubReviewService {
     }
 
     /**
-     * Build a service for the token's own identity. A distinct reviewer
-     * identity remains a Phase 2 prerequisite; this only makes adoption
-     * author-aware.
+     * Build a service for the token's own identity.
+     *
+     * <p>This calls {@code GET /user}, which is fine for PAT/user tokens but
+     * returns 403 for GitHub App installation tokens (the default production
+     * auth mode). fg-31d wiring must pass the bot login from the backend/app
+     * slug through the explicit constructor instead.</p>
      */
     public static GitHubReviewService forAuthenticatedUser(GitHubService gitHub)
         throws IOException {

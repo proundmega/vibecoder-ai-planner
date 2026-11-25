@@ -314,8 +314,9 @@ public class GitHubService {
     }
 
     /**
-     * Fetch the authenticated login. Used to require that a review adopted for
-     * partial-publish recovery was authored by this reviewer identity.
+     * Fetch the authenticated login. This is useful for PAT/user tokens;
+     * GitHub App installation tokens return 403 (or no login), so App wiring
+     * must take the bot login from the backend/app slug instead.
      */
     public String getAuthenticatedLogin() throws IOException {
         Request request = new Request.Builder()

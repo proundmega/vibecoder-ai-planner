@@ -35,7 +35,7 @@ public final class ReviewPhaseReconciler {
         if ("review".equals(phase)) {
             return phase;
         }
-        if (!RECONCILABLE_PHASES.contains(phase)) {
+        if (phase == null || !RECONCILABLE_PHASES.contains(phase)) {
             throw new ReconciliationException(
                 "Ticket " + ticketId + " phase '" + phase
                     + "' is not safe to reconcile to review");
