@@ -4,6 +4,8 @@ const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { forTicketParam } = require('../middleware/agentProjectScope');
 const { requireRuntime, requireTicketGrant } = require('../middleware/agentRole');
 const { requireAnyPermission } = require('../middleware/permissions');
+const { validatePathParams } = require('../middleware/validate');
+const { pathParams } = require('../validators/pathParams');
 const ReviewService = require('../services/ReviewService');
 const FixRequestService = require('../services/FixRequestService');
 const Ticket = require('../models/ticket');
@@ -15,6 +17,20 @@ const statusChangePermission = requireAnyPermission('TICKET_STATUS_CHANGE');
  * Agents are authorized by runtime role/grant; humans need the same permission
  * as a normal status change. Kept local so one route can serve both callers.
  */
+function requireAgentRuntime(req, res, next) {
+  if (!req.agent) return next();
+  if (!req.runtime || !req.runtime.id) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'RUNTIME_REQUIRED',
+        message: 'A running reviewer runtime is required',
+      },
+    });
+  }
+  return next();
+}
+
 function requireHumanStatusPermission(req, res, next) {
   // verifyTokenOrAgent also populates req.user for agent requests; only a
   // human JWT should be checked against the user permission.
@@ -62,7 +78,9 @@ router.post(
   verifyTokenOrAgent,
   requireRuntime('running'),
   forTicketParam(),
+  validatePathParams({ ticketId: pathParams.ticketId }),
   requireTicketGrant('reviewer'),
+  requireAgentRuntime,
   requireHumanStatusPermission,
   requireHumanProjectMembership,
   async (req, res, next) => {
