@@ -10,7 +10,7 @@ const { row, activeRow, oldDraft, authState } = vi.hoisted(() => {
     languages: ['node'],
     setup: ['npm ci'],
     verify: ['npm test'],
-    caches: [],
+    caches: ['npm', 'maven'],
     env: { NODE_ENV: 'test' },
     timeouts: { setup_minutes: 15, verify_minutes: 20 },
     max_round_minutes: 45,
@@ -190,6 +190,7 @@ describe('RepoProfileEditor', () => {
       expect.objectContaining({
         verify: ['npm test'],
         setup: ['npm ci'],
+        caches: ['npm', 'maven'],
         env: { NODE_ENV: 'test' },
         flaky_tests: ['test/known-flake.test.js'],
         flaky_retries: 1,

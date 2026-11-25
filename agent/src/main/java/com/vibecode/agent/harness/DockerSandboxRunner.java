@@ -2648,6 +2648,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
         String mount = spec.mountSource().toString();
         args.add("-v");
         args.add(mount + ":" + SandboxPaths.CONTAINER_WORKSPACE + ":rw");
+        for (CachePlan.Mount cache : spec.caches()) {
+            args.add("-v");
+            args.add(cache.source() + ":" + cache.target() + ":rw");
+        }
         // Check .git on the supervisor-visible path: with a daemon-path mapping
         // the mount source is not visible inside a containerized agent, but the
         // workspace is. Mount the mapped path read-only to keep .git immutable.

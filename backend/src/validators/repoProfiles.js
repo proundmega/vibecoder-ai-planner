@@ -371,9 +371,6 @@ function validateRepoProfile(value) {
   for (const key of Object.keys(validated)) {
     if (!TOP_LEVEL.has(key)) issues.push(`unknown profile field: ${key}`);
   }
-  if (Array.isArray(validated.caches) && validated.caches.length > 0) {
-    issues.push('profile caches are not implemented until D9/fg-44');
-  }
   const envError = envIssue(validated.env, { reserved: true });
   if (envError) issues.push(envError);
   for (const field of ['setup', 'verify']) {

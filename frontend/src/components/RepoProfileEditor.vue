@@ -49,6 +49,7 @@ const repoUrl = ref('')
 const baseBranch = ref('')
 const image = ref('')
 const languagesText = ref('')
+const cachesText = ref('')
 const setupText = ref('')
 const verifyText = ref('')
 const flakyTestsText = ref('')
@@ -155,6 +156,7 @@ function populate(row: RepoProfileRow | null) {
   baseBranch.value = profile?.base_branch || ''
   image.value = profile?.image || ''
   languagesText.value = (profile?.languages || []).join(', ')
+  cachesText.value = (profile?.caches || []).join(', ')
   setupText.value = (profile?.setup || []).join('\n')
   verifyText.value = (profile?.verify || []).join('\n')
   flakyTestsText.value = (profile?.flaky_tests || []).join('\n')
@@ -182,7 +184,7 @@ function buildProfile(): RepoProfile {
     image: image.value || undefined,
     setup: splitLines(setupText.value),
     verify: splitLines(verifyText.value),
-    caches: [],
+    caches: splitCommas(cachesText.value),
     env,
     timeouts: {
       setup_minutes: Number(setupMinutes.value) || 15,
@@ -464,6 +466,9 @@ onBeforeUnmount(() => {
         </div>
         <label>Languages
           <input v-model="languagesText" type="text" placeholder="node, java" />
+        </label>
+        <label>Caches (comma separated)
+          <input v-model="cachesText" type="text" placeholder="npm, maven" />
         </label>
         <div class="grid two">
           <label>Setup commands (one per line)

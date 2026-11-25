@@ -34,7 +34,8 @@ public record SandboxSpec(
     List<String> egressOriginCaHosts,
     String egressOriginCaPem,
     EgressMtlsMaterial egressMtls,
-    List<ServiceSpec> services
+    List<ServiceSpec> services,
+    List<CachePlan.Mount> caches
 ) {
 
     public SandboxSpec {
@@ -75,6 +76,13 @@ public record SandboxSpec(
                 "Origin CA hosts and PEM must be configured together");
         }
         services = services == null ? List.of() : List.copyOf(services);
+        caches = caches == null ? List.of() : List.copyOf(caches);
+        for (CachePlan.Mount cache : caches) {
+            if (cache == null || cache.source() == null || cache.target() == null
+                || !CachePlan.isAllowedTarget(cache.target())) {
+                throw new IllegalArgumentException("Cache mount is invalid");
+            }
+        }
         if (egressMtls != null && egressTlsMode != EgressTlsMode.TERMINATE) {
             throw new IllegalArgumentException(
                 "client-certificate mTLS requires EgressTlsMode.TERMINATE");

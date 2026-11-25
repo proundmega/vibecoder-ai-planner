@@ -141,7 +141,8 @@ public class ProfileValidationProcessor {
             SandboxConfig effective = sandboxConfig;
             if (sandboxConfig.isDocker()) {
                 effective = sandboxConfig.withRepoProfile(
-                    profile, projectId, validation.profileVersion());
+                    profile, projectId, validation.profileVersion(),
+                    workspace.getRepoDir(), workspace.getCacheDir());
                 if (profile.egress() != null && profile.egress().mtls() != null) {
                     EgressMtlsMaterial material = apiService.getRepoProfileMtls(
                         projectId,

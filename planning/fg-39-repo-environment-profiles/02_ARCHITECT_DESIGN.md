@@ -76,9 +76,34 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   image it warns and leaves the field for an admin-supplied pinned image.
 - Registry publishing, signing and the rebuild cadence remain part of the
   fg-34 supply chain (D1).
-- Cache directories are mounted from a per-repo cache volume, keyed by repo + profile version + lockfile hash.
-- Cache is read-only for untrusted repo scripts where possible; writes go to a scratch layer, then a sanitized cache update.
-- Never share caches across projects.
+- Cache directories live under the runtime cache root, scoped by a hash of the
+  project id and a generation key (normalized repo + profile version + lockfile
+  hash). Each supported kind mounts at `/cache/<kind>` with the matching tool
+  environment (`NPM_CONFIG_CACHE`, `PIP_CACHE_DIR`, `MAVEN_OPTS`,
+  `GRADLE_USER_HOME`, `GOMODCACHE`/`GOCACHE`, `CARGO_HOME`).
+- Caches are writable during a run because package managers must populate
+  them. Before reuse, `CachePlan` removes symlinks, non-regular files and
+  credential-shaped artifacts (including Gradle `gradle.properties`/`init.d`/
+  `init.gradle`, Cargo `config.toml`/`credentials.toml`, `.env.*`, `.yarnrc*`,
+  `.pypirc`, `.git-credentials`, `.docker/` and the common cloud/SSH/GPG config
+  directories); it never follows links. `.config/` is removed wholesale because
+  a dependency cache is disposable and may hold tool config. Only
+  Gradle `caches`/`wrapper` and Cargo `registry`/`git` subdirectories are
+  mounted, so their home config/init files stay ephemeral. Writes are never
+  shared across projects.
+- `SANDBOX_CACHE_MAX_MB` bounds the project cache; `SANDBOX_CACHE_RETENTION_DAYS`
+  expires old generations (0 is treated as 1 day, not disabled). Eviction is
+  LRU/age based and skips the cache mount (rather than failing the run) if the
+  current generation is over quota. The fg-44 storage watchdog continues to
+  cover total disk pressure. The cache root is the runtime cache directory, so
+  caches survive tickets but are removed when the runtime is recycled; the age
+  retention applies within a runtime. Cross-runtime host-level persistence is
+  not part of this slice.
+- The cache directories are created by the supervisor. `SANDBOX_USER` defaults
+  to the supervisor uid; if it is set to a different uid, the operator must
+  make the runtime cache root writable by that uid (the workspace mount has the
+  same constraint).
+- Real package-manager command coverage (npm/mvn/go) remains the D11 dry-run.
 
 ## Services
 

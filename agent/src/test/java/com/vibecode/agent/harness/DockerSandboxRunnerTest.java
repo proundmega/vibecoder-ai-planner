@@ -818,7 +818,7 @@ class DockerSandboxRunnerTest {
             spec.egressUpstreamNetwork(), spec.egressProbeTimeoutMs(), spec.egressTlsMode(),
             spec.owner(), Map.of("OPENAI_KEY", "sk-secret"), spec.user(), spec.seccompProfile(),
             spec.apparmorProfile(), spec.artifactMaxBytes(), spec.egressOriginCaHosts(),
-            spec.egressOriginCaPem(), spec.egressMtls(), spec.services());
+            spec.egressOriginCaPem(), spec.egressMtls(), spec.services(), List.of());
 
         assertThrows(IllegalArgumentException.class,
             () -> DockerSandboxRunner.containerEnvironment(poisoned));

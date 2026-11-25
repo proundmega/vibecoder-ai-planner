@@ -32,17 +32,18 @@ Without profiles, agents spend their budget debugging the environment or fail ve
 ## Slice 1 scope
 
 Slice 1 implements FR1, FR2, FR3 (operator-provided pinned image), FR6, FR7,
-FR9, FR10 and the fg-34/D27 origin-CA profile handoff. Persistent caches (FR4)
-and flaky-test retry (FR8) are rejected at validation until their slices land,
-so no profile declares storage or execution it does not get. FR3's prebuilt
-image catalog is deferred to slice 4; slice 1 accepts any digest-pinned image
-the operator supplies.
+FR9, FR10 and the fg-34/D27 origin-CA profile handoff. Slice 1 originally
+rejected persistent caches (FR4) and flaky-test retry (FR8) until their slices
+landed; slices 3 and 4b now accept and implement them. FR3's prebuilt image
+catalog was deferred to slice 4; slice 1 accepts any digest-pinned image the
+operator supplies.
 
 Slice 2 adds FR5: ephemeral service containers with health checks, a per-run
 internal network, generated test passwords and injected connection env. Slice 5
 adds the project settings profile editor for onboarding, drafts, dry runs,
 activation and version history. Slice 4a adds the prebuilt per-stack images,
-their pinned toolchains and stack-image detection (`fg-39b`).
+their pinned toolchains and stack-image detection (`fg-39b`). Slice 4b adds the
+persistent per-project dependency caches (`fg-39c`).
 
 ## Assumptions
 
@@ -63,7 +64,7 @@ their pinned toolchains and stack-image detection (`fg-39b`).
 |---|---|
 | Database | New `repo_profiles` and `repo_profile_validations` tables with exact-content `profile_hash`; nullable `repo_profile_id`/`repo_profile_version` columns on `harness_runs`; harness starts validate the profile against the ticket's project. |
 | Backend API | New project-scoped profile CRUD, detection, activation and dry-run routes; new agent read/claim/finish routes. |
-| Agent | Profile fetch/validation and repo binding, base-branch checkout, profile setup/verify commands, timeout/env handling, image override, overall `max_round_minutes` deadline, dry-run worker, D27 origin-CA handoff, and ephemeral service containers/health checks with generated connection credentials. Persistent cache mounts are deferred (D9). |
+| Agent | Profile fetch/validation and repo binding, base-branch checkout, profile setup/verify commands, timeout/env handling, image override, overall `max_round_minutes` deadline, dry-run worker, D27 origin-CA handoff, ephemeral service containers/health checks with generated connection credentials, and persistent per-project dependency caches with quota/GC and lockfile-scoped generations. |
 | Frontend | New Repository Profile tab in Project Settings with detection, draft editing, services/env/egress fields, dry-run polling, activation and version/validation history. |
 | Existing behavior | No profile → previous autodetection and defaults, with a warning. Profile create/update/activate/validate requires an active connected repo and a matching `repo_url`; activation requires a successful dry run for the exact profile hash. `sni-only` stays the default; a profile cannot force `terminate`. |
 | Compatibility | Additive migrations and nullable columns; old agents ignore the new endpoint. Profiles are opt-in per project. |
@@ -81,7 +82,10 @@ their pinned toolchains and stack-image detection (`fg-39b`).
 - **FR1 - Profile schema:** repo URL, base branch, languages, image/toolchain versions, setup commands, verify commands, services, env (non-secret), cache paths, timeouts, flaky tests. `base_branch` is the first source in fg-36's shared resolver.
 - **FR2 - Onboarding:** detect stack from manifests; propose a profile; let an admin edit/approve.
 - **FR3 - Images:** per-stack sandbox images or a devcontainer; pinned versions; pre-installed tools.
-- **FR4 - Caches:** dependency caches (npm, Maven, pip, Go) persisted across runs and scoped per repo.
+- **FR4 - Caches:** dependency caches (npm, Maven, Gradle, pip, Go, Cargo)
+  persisted across runs and scoped per repo. Detection covers npm/Maven/Gradle/
+  pip/Go; Cargo is accepted by the profile schema (Rust detection is not yet a
+  stack the detector proposes).
 - **FR5 - Services:** start Postgres/Redis/etc. in the sandbox network with health checks and ephemeral data.
 - **FR6 - Commands:** run setup once, then verification; capture output; respect per-command timeouts.
 - **FR7 - Env:** inject non-secret env from the profile; secrets come from the secret store only when required.

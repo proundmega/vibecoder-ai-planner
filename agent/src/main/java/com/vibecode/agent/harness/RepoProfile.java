@@ -403,9 +403,17 @@ public class RepoProfile {
         if (verify == null || verify.isEmpty()) {
             throw new IllegalArgumentException("profile verify must contain at least one command");
         }
-        if (!caches().isEmpty()) {
-            throw new IllegalArgumentException(
-                "profile caches are not implemented until D9/fg-44");
+        if (caches().size() > CachePlan.KINDS.size()) {
+            throw new IllegalArgumentException("profile caches has too many entries");
+        }
+        Set<String> seenCaches = new LinkedHashSet<>();
+        for (String cache : caches()) {
+            if (cache == null || !CachePlan.KINDS.contains(cache)) {
+                throw new IllegalArgumentException("profile cache is unsupported: " + cache);
+            }
+            if (!seenCaches.add(cache)) {
+                throw new IllegalArgumentException("profile cache is duplicated: " + cache);
+            }
         }
         for (Map.Entry<String, String> entry : env().entrySet()) {
             validateEnvEntry(entry.getKey(), entry.getValue(), "profile");

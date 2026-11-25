@@ -934,46 +934,6 @@ public final class HarnessTicketProcessor implements TicketWorker {
 
             RepoProfile profile = profileSnapshot == null ? null : profileSnapshot.profile();
             SandboxConfig effectiveSandboxConfig = sandboxConfig;
-            if (profile != null && sandboxConfig.isDocker()) {
-                try {
-                    effectiveSandboxConfig = sandboxConfig.withRepoProfile(
-                        profile, config.getProjectId(), profileSnapshot.version());
-                    if (profile.egress() != null && profile.egress().mtls() != null) {
-                        EgressMtlsMaterial material = apiService.getRepoProfileMtls(
-                            config.getProjectId(),
-                            profileSnapshot.id(),
-                            profileSnapshot.version(),
-                            profile.egress().mtls().credentialId());
-                        if (material == null) {
-                            throw new IllegalStateException(
-                                "the active profile requires client-certificate mTLS, "
-                                    + "but no active mTLS credential is configured");
-                        }
-                        if (!new java.util.HashSet<>(material.hosts())
-                            .equals(new java.util.HashSet<>(profile.egress().mtls().hosts()))) {
-                            throw new IllegalStateException(
-                                "the active profile mTLS hosts do not match the credential scope");
-                        }
-                        effectiveSandboxConfig = effectiveSandboxConfig.withEgressMtls(material);
-                    }
-                } catch (IOException | RuntimeException e) {
-                    failAndRelease(pickedUp.getId(),
-                        "The active repo profile cannot be applied: " + e.getMessage());
-                    return;
-                }
-            } else if (profile != null) {
-                if (!profile.services().isEmpty()) {
-                    failAndRelease(pickedUp.getId(),
-                        "The active repo profile declares services, but host mode cannot "
-                            + "provide them. Set SANDBOX_MODE=docker.");
-                    return;
-                }
-                if (!profile.caches().isEmpty() || profile.image() != null
-                    || profile.egress() != null) {
-                    log.warn("Repo profile image/caches/egress are ignored in host mode; "
-                        + "enable SANDBOX_MODE=docker to use them");
-                }
-            }
 
             workspace = workspaceFactory.apply(gitService.repoName());
             workspace.setWorkspaceKey(String.valueOf(pickedUp.getId()));
@@ -1018,6 +978,49 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 cloned.put("repoProfileVersion", profileSnapshot.version());
             }
             recordCheckpoint("cloned", cloned);
+
+            if (profile != null && sandboxConfig.isDocker()) {
+                try {
+                    effectiveSandboxConfig = sandboxConfig.withRepoProfile(
+                        profile, config.getProjectId(), profileSnapshot.version(),
+                        workspace.getRepoDir(), workspace.getCacheDir());
+                    if (profile.egress() != null && profile.egress().mtls() != null) {
+                        EgressMtlsMaterial material = apiService.getRepoProfileMtls(
+                            config.getProjectId(),
+                            profileSnapshot.id(),
+                            profileSnapshot.version(),
+                            profile.egress().mtls().credentialId());
+                        if (material == null) {
+                            throw new IllegalStateException(
+                                "the active profile requires client-certificate mTLS, "
+                                    + "but no active mTLS credential is configured");
+                        }
+                        if (!new java.util.HashSet<>(material.hosts())
+                            .equals(new java.util.HashSet<>(profile.egress().mtls().hosts()))) {
+                            throw new IllegalStateException(
+                                "the active profile mTLS hosts do not match the credential scope");
+                        }
+                        effectiveSandboxConfig = effectiveSandboxConfig.withEgressMtls(material);
+                    }
+                } catch (IOException | RuntimeException e) {
+                    failAndRelease(pickedUp.getId(),
+                        "The active repo profile cannot be applied: " + e.getMessage());
+                    return;
+                }
+            } else if (profile != null) {
+                if (!profile.services().isEmpty()) {
+                    failAndRelease(pickedUp.getId(),
+                        "The active repo profile declares services, but host mode cannot "
+                            + "provide them. Set SANDBOX_MODE=docker.");
+                    return;
+                }
+                if (!profile.caches().isEmpty() || profile.image() != null
+                    || profile.egress() != null) {
+                    log.warn("Repo profile image/caches/egress are ignored in host mode; "
+                        + "enable SANDBOX_MODE=docker to use them");
+                }
+            }
+
 
             List<String> commands = safeResolveCommands(workspace, profile);
             if (commands.isEmpty()) {
