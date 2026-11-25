@@ -69,7 +69,9 @@ for target in python monorepo; do
     echo "smoke-testing ${image} pip/pytest as uid 1000"
     run "$image" sh -c '
         set -eu
-        rm -rf smoke && mkdir smoke && cd smoke
+        work=$(pwd)/smoke
+        rm -rf "$work" && mkdir -p "$work"
+        cd "$work"
         printf "pytest\n" > requirements.txt
         pip install --no-index -r requirements.txt
         # A local wheel proves the venv is writable as uid 1000; skip a
@@ -85,8 +87,13 @@ for target in python monorepo; do
         python3 -m zipfile -c wheelhouse/smoke_pkg-0.0.1-py3-none-any.whl \
             smoke_pkg.py smoke_pkg-0.0.1.dist-info
         pip install --no-index --find-links wheelhouse smoke-pkg
-        python3 -c "import smoke_pkg; assert smoke_pkg.ok()"
-        printf "def test_smoke():\n    assert True\n" > test_smoke.py
+        # Remove the source so the import and pytest resolve the installed
+        # wheel, not ./smoke_pkg.py.
+        rm -f smoke_pkg.py
+        cd /tmp
+        /opt/venv/bin/python -c "import smoke_pkg; assert smoke_pkg.__file__.startswith(\"/opt/venv/\") and smoke_pkg.ok()"
+        cd "$work"
+        printf "import smoke_pkg\n\ndef test_smoke():\n    assert smoke_pkg.ok()\n" > test_smoke.py
         pytest -q
     '
 done
