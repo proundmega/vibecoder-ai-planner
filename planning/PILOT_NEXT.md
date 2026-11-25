@@ -42,8 +42,9 @@ milestone; non-blocking findings follow the intake below.
   role budgets are already defined by fg-43.
 - **Repo profiles:** fg-39 is merged (#237). The pilot repo can use a pinned
   profile with prebuilt stack images, services, flaky-test retry and
-  per-project dependency caches. D11 (real npm/mvn/go command coverage) stays
-  a follow-up and is not required for the first run.
+  per-project dependency caches. D11's cache/package-manager coverage is in
+  `smoke-sandbox-caches.sh`; the full profile dry-run e2e stays a follow-up and
+  is not required for the first run.
 - **Readiness rollout:** apply migration 061/backfill, keep
   `READINESS_GATE_MODE=warn` for the pilot, and observe the readiness panel.
 - **Health gate:** the pilot host must reach `BACKEND_URL/api/health`; the

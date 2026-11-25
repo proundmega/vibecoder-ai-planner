@@ -68,8 +68,8 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   `externally-managed-environment` failure.
 - The Java image carries Maven, not Gradle. A Gradle project without `./gradlew`
   gets a detection warning; use the wrapper or a custom pinned image with
-  Gradle. Real `npm install`/`mvn test`/`go test` coverage belongs to the D11
-  dry-run.
+  Gradle. `agent/scripts/smoke-sandbox-caches.sh` covers real npm/Maven/Go
+  cache reuse; the full profile dry-run e2e remains D11.
 - Detection maps one detected language to its stack and multiple languages to
   the monorepo image. It proposes only digest-pinned references configured in
   `REPO_PROFILE_STACK_IMAGES`; it never guesses a tag. Without a configured
@@ -103,7 +103,8 @@ Profiles are validated against a JSON schema; unknown fields are rejected or war
   to the supervisor uid; if it is set to a different uid, the operator must
   make the runtime cache root writable by that uid (the workspace mount has the
   same constraint).
-- Real package-manager command coverage (npm/mvn/go) remains the D11 dry-run.
+- Real package-manager command coverage (npm/mvn/go) is covered by
+  `smoke-sandbox-caches.sh`; the profile dry-run e2e remains D11.
 
 ## Services
 
