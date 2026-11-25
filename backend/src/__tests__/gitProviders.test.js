@@ -572,7 +572,7 @@ describe('Forgejo/Gitea provider', () => {
     }
   });
 
-  it('parses text paths with spaces, escaped tabs, octal bytes and bells', async () => {
+  it('parses text paths with spaces, tabs, octal, bells and b/ segments', async () => {
     const diffText = [
       'diff --git a/notes 1795641559550.txt b/notes 1795641559550.txt',
       'new file mode 100644',
@@ -598,6 +598,12 @@ describe('Forgejo/Gitea provider', () => {
       '+++ "b/bell\\aname.txt"',
       '@@ -0,0 +1 @@',
       '+bell',
+      'diff --git a/notes b/2024.txt b/notes b/2024.txt',
+      '--- a/notes b/2024.txt',
+      '+++ b/notes b/2024.txt',
+      '@@ -1 +1 @@',
+      '-old',
+      '+new',
     ].join('\n');
     const original = global.fetch;
     global.fetch = jest.fn().mockResolvedValue({
@@ -606,7 +612,7 @@ describe('Forgejo/Gitea provider', () => {
     try {
       const diff = await provider().getReviewDiff(
         { repoUrl: 'acme/widgets', defaultBranch: 'main' }, 5);
-      expect(diff.files).toHaveLength(4);
+      expect(diff.files).toHaveLength(5);
       expect(diff.files[0]).toMatchObject({
         filename: 'notes 1795641559550.txt', additions: 1,
       });
@@ -618,6 +624,9 @@ describe('Forgejo/Gitea provider', () => {
       });
       expect(diff.files[3]).toMatchObject({
         filename: 'bell\x07name.txt', additions: 1,
+      });
+      expect(diff.files[4]).toMatchObject({
+        filename: 'notes b/2024.txt', additions: 1, deletions: 1,
       });
     } finally {
       global.fetch = original;

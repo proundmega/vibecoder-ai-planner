@@ -122,6 +122,10 @@ function parseScp(raw, base) {
   };
 }
 
+/**
+ * Decode the escapes Git puts in quoted paths. Octal sequences are treated as
+ * UTF-8 bytes; non-UTF-8 repository paths are decoded best-effort.
+ */
 function unescapeGitPath(value) {
   const input = String(value);
   const map = {
@@ -175,8 +179,19 @@ function headerPaths(line) {
 }
 
 /**
- * Normalise a path from a `+++`/`---`/`rename` line. Git may quote paths with
- * spaces or escapes and these lines can carry a trailing tab and timestamp.
+ * Normalise a path from a `+++`/`---` line: strip a trailing tab/timestamp,
+ * unquote, unescape and drop the single `a/`/`b/` prefix.
+ */
+function indexPath(value) {
+  const path = String(value || '').trimEnd().replace(/\t.*$/, '');
+  if (path.length > 1 && path.startsWith('"') && path.endsWith('"')) {
+    return unescapeGitPath(path.slice(1, -1)).replace(/^[ab]\//, '');
+  }
+  return path.replace(/^[ab]\//, '');
+}
+
+/**
+ * Normalise a path from a `rename` line. These carry no `a/`/`b/` prefix.
  */
 function diffPath(value) {
   let path = String(value || '').trimEnd().replace(/\t.*$/, '');
@@ -196,16 +211,17 @@ function parseDiff(text) {
     const lines = block.split('\n');
     const header = headerPaths(lines[0]);
     const renamed = /^rename to (.+)$/m.exec(block);
-    const added = /^\+\+\+ (?:b\/)?(.+)$/m.exec(block);
-    const removed = /^--- (?:a\/)?(.+)$/m.exec(block);
-    const addedPath = added && added[1] !== '/dev/null' ? added[1] : null;
-    const removedPath = removed && removed[1] !== '/dev/null' ? removed[1] : null;
-    // Prefer the `diff --git` header: `+++` lines can carry a trailing tab and
-    // the header is unambiguous for the path Git quotes.
+    const added = /^\+\+\+ (.*)$/m.exec(block);
+    const removed = /^--- (.*)$/m.exec(block);
+    const addedPath = added && added[1] !== '/dev/null' ? indexPath(added[1]) : null;
+    const removedPath = removed && removed[1] !== '/dev/null' ? indexPath(removed[1]) : null;
+    // `+++`/`---` name one path each, so prefer them over the `diff --git`
+    // header, which is ambiguous for a path containing a literal ` b/`.
+    // Binary blocks have neither line and fall back to the header.
     const filename = diffPath(renamed && renamed[1])
-      || (header && header.to)
-      || diffPath(addedPath)
-      || diffPath(removedPath);
+      || addedPath
+      || removedPath
+      || (header && header.to);
     if (!filename) continue;
     const binary = /^Binary files .* differ$/m.test(block);
     let additions = 0;
