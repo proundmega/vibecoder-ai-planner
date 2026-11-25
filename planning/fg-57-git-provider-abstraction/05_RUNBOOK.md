@@ -33,10 +33,11 @@ if you already operate it.
    docker run -d --name forgejo-test \
      -p 3000:3000 -p 2222:22 \
      -v forgejo-test-data:/data \
-     codeberg.org/forgejo/forgejo:<pinned-release>
+     codeberg.org/forgejo/forgejo:9.0.3
    ```
 
-   For Gitea, use the `gitea/gitea:<pinned-release>` image with the same ports.
+   For Gitea, use the `gitea/gitea:1.22.6` image with the same ports. Replace
+   the tag with the release pinned for the test host.
 
 2. Create a test user and repository. Do not enable public registration on a
    host reachable from untrusted networks.

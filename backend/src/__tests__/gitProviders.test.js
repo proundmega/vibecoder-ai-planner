@@ -378,6 +378,11 @@ describe('Forgejo/Gitea provider', () => {
       .toMatchObject({ owner: 'acme', repo: 'widgets', protocol: 'https' });
     expect(provider().parseRepoUrl('https://git.example.com:443/acme/widgets'))
       .toMatchObject({ owner: 'acme', repo: 'widgets', protocol: 'https' });
+    expect(provider().parseRepoUrl('HTTPS://GIT.EXAMPLE.COM/acme/widgets.git'))
+      .toMatchObject({
+        protocol: 'https',
+        cloneUrl: 'https://git.example.com/acme/widgets.git',
+      });
     expect(provider().parseRepoUrl('ssh://git@git.example.com/acme/widgets.git'))
       .toMatchObject({ protocol: 'ssh', cloneUrl: 'ssh://git@git.example.com/acme/widgets.git' });
     expect(provider().parseRepoUrl('git@git.example.com:acme/widgets.git'))
@@ -401,10 +406,22 @@ describe('Forgejo/Gitea provider', () => {
     reject('https://user:pass@git.example.com/acme/widgets', 'must not contain credentials');
     reject('https://token@git.example.com/acme/widgets', 'must not contain credentials');
     reject('ssh://token@git.example.com/acme/widgets', 'git user');
+    reject('git:pass@git.example.com:acme/widgets.git', 'git user');
     reject('git@git.example.com:../admin.git', 'plain path segments');
     reject('../admin', 'plain path segments');
     reject('acme/..', 'plain path segments');
     reject('acme/../admin', 'owner/repo');
+    reject('https://git.example.com/acme/widgets?ref=main', 'query or fragment');
+    reject('https://git.example.com/acme/widgets#readme', 'query or fragment');
+  });
+
+  it('requires the shorthand when the base URL has a path', () => {
+    const subPath = git.forgejo.createProvider(
+      { baseUrl: 'https://git.example.com/forgejo', credential: 'token' }, 'forgejo');
+    expect(subPath.parseRepoUrl('acme/widgets').cloneUrl)
+      .toBe('https://git.example.com/forgejo/acme/widgets.git');
+    expect(() => subPath.parseRepoUrl('https://git.example.com/acme/widgets'))
+      .toThrow('shorthand');
   });
 
   it('accepts a repository on the configured base port only', () => {
@@ -499,6 +516,66 @@ describe('Forgejo/Gitea provider', () => {
       await expect(provider().deleteBranch(repo, 'vibecode/ticket-1-change'))
         .resolves.toBeUndefined();
       await expect(provider().listBranches(repo)).resolves.toEqual(['vibecode/ticket-1-x']);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('keeps binary, deleted and renamed diff entries', async () => {
+    const diffText = [
+      'diff --git a/logo.png b/logo.png',
+      'new file mode 100644',
+      'index 0000000..1111111',
+      'Binary files /dev/null and b/logo.png differ',
+      'diff --git a/old.js b/old.js',
+      'deleted file mode 100644',
+      '--- a/old.js',
+      '+++ /dev/null',
+      '@@ -1 +0,0 @@',
+      '-gone',
+      'diff --git a/a.txt b/b.txt',
+      'similarity index 100%',
+      'rename from a.txt',
+      'rename to b.txt',
+    ].join('\n');
+    const original = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true, status: 200, text: async () => diffText,
+    });
+    try {
+      const diff = await provider().getReviewDiff(
+        { repoUrl: 'acme/widgets', defaultBranch: 'main' }, 3);
+      expect(diff.files).toHaveLength(3);
+      expect(diff.files[0]).toMatchObject({
+        filename: 'logo.png', status: 'added', additions: 0, deletions: 0, patch: '',
+      });
+      expect(diff.files[1]).toMatchObject({
+        filename: 'old.js',
+        status: 'removed',
+        deletions: 1,
+        patch: expect.stringContaining('-gone'),
+      });
+      expect(diff.files[2]).toMatchObject({ filename: 'b.txt', status: 'renamed' });
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('lists open review requests only', async () => {
+    const original = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify([
+        { id: 2, number: 9, html_url: 'open-pr', state: 'open',
+          head: { ref: 'vibecode/ticket-2-y' } },
+        { id: 3, number: 10, html_url: 'other', state: 'open', head: { ref: 'feature' } },
+      ]),
+    });
+    try {
+      await expect(provider().listReviewRequests({ repoUrl: 'acme/widgets' }))
+        .resolves.toEqual([{ id: 2, number: 9, url: 'open-pr', state: 'open' }]);
+      expect(global.fetch.mock.calls[0][0]).toContain('pulls?state=open');
     } finally {
       global.fetch = original;
     }

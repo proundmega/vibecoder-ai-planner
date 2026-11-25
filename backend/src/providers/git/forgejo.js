@@ -68,6 +68,9 @@ function parseFullUrl(raw, base) {
   if (!ssh && url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new ValidationError('Repository URL must use http, https or ssh');
   }
+  if (url.search || url.hash) {
+    throw new ValidationError('Repository URL must not contain a query or fragment');
+  }
   if (ssh) {
     const user = (url.username || '').toLowerCase();
     if (url.password || (user && user !== 'git')) {
@@ -80,6 +83,11 @@ function parseFullUrl(raw, base) {
       throw new ValidationError('Repository URLs must not contain credentials');
     }
     assertHttpOrigin(url, base);
+    if (base.pathname && base.pathname !== '/') {
+      throw new ValidationError(
+        'Repository URL must use the owner/repo shorthand when the base URL has a path'
+      );
+    }
   }
   const { owner, repo } = splitRepoPath(url.pathname);
   return {
@@ -87,7 +95,7 @@ function parseFullUrl(raw, base) {
     protocol: ssh ? 'ssh' : url.protocol.replace(':', ''),
     owner,
     repo,
-    cloneUrl: raw,
+    cloneUrl: url.toString(),
   };
 }
 
@@ -117,13 +125,16 @@ function parseDiff(text) {
   const files = [];
   for (const block of String(text || '').split(/^diff --git /m).slice(1)) {
     const lines = block.split('\n');
+    const header = /^a\/(.+?) b\/(.+)$/.exec(lines[0] || '');
     const renamed = /^rename to (.+)$/m.exec(block);
     const added = /^\+\+\+ (?:b\/)?(.+)$/m.exec(block);
     const removed = /^--- (?:a\/)?(.+)$/m.exec(block);
     const filename = (renamed && renamed[1])
       || (added && added[1] !== '/dev/null' && added[1])
-      || (removed && removed[1] !== '/dev/null' && removed[1]);
+      || (removed && removed[1] !== '/dev/null' && removed[1])
+      || (header && header[2]);
     if (!filename) continue;
+    const binary = /^Binary files .* differ$/m.test(block);
     let additions = 0;
     let deletions = 0;
     for (const line of lines.slice(1)) {
@@ -139,7 +150,7 @@ function parseDiff(text) {
       additions,
       deletions,
       changes: additions + deletions,
-      patch: `diff --git ${block}`.trimEnd(),
+      patch: binary ? '' : `diff --git ${block}`.trimEnd(),
     });
   }
   return files;
@@ -331,7 +342,7 @@ class ForgejoGitProvider {
     const parsed = this.parseRepoUrl(projectRepo.repoUrl);
     const { response, text } = await this.request(
       'GET',
-      `/repos/${repoPath(parsed.owner, parsed.repo)}/pulls?state=all&limit=50`);
+      `/repos/${repoPath(parsed.owner, parsed.repo)}/pulls?state=open&limit=50`);
     if (!response.ok) {
       throw new ValidationError(`Failed to list review requests: HTTP ${response.status}`);
     }

@@ -111,6 +111,42 @@ describe('GitProjectService', () => {
       expect(result.accessToken).toBeUndefined();
     });
 
+    it('stores the expanded clone URL for a self-hosted shorthand', async () => {
+      const provider = fakeProvider({
+        parseRepoUrl: jest.fn().mockReturnValue({
+          owner: 'group',
+          repo: 'repo',
+          cloneUrl: 'https://git.example.com/group/repo.git',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      jest.spyOn(gitProviders, 'assertSafeBaseUrl').mockResolvedValue('https://git.example.com');
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'forgejo',
+          repo_url: 'https://git.example.com/group/repo.git',
+          default_branch: 'main',
+          provider_base_url: 'https://git.example.com',
+          auth_mode: 'pat',
+        }],
+      });
+
+      await GitProjectService.connect(1, {
+        provider: 'forgejo',
+        repoUrl: 'group/repo',
+        baseUrl: 'https://git.example.com',
+        token: 'secret',
+        authMode: 'pat',
+      }, 100);
+
+      expect(provider.validateRepoAccess).toHaveBeenCalledWith(
+        'https://git.example.com/group/repo.git', 'secret');
+      expect(pool.query.mock.calls[0][1][2]).toBe(
+        'https://git.example.com/group/repo.git');
+    });
+
     it('stores an encrypted SSH key for the registered local provider', async () => {
       jest.spyOn(gitProviders.registry, 'get');
       pool.query.mockResolvedValue({
@@ -489,6 +525,36 @@ describe('GitProjectService', () => {
         expect.stringContaining('SET branch_name = NULL'),
         [42]
       );
+    });
+
+    it('extracts the review number from a Forgejo pull URL', async () => {
+      const provider = fakeProvider({
+        getReviewDiff: jest.fn().mockResolvedValue({ files: [] }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: 1,
+        prUrl: 'http://127.0.0.1:3300/test/widgets/pulls/1',
+      });
+      pool.query.mockResolvedValue({
+        rows: [{
+          provider: 'forgejo',
+          repo_url: 'test/widgets',
+          access_token_encrypted: 'enc:token',
+          provider_base_url: 'https://git.example.com',
+          auth_mode: 'pat',
+        }],
+      });
+      const repo = {
+        provider: 'forgejo',
+        repoUrl: 'test/widgets',
+        accessTokenEncrypted: 'enc:token',
+      };
+
+      await expect(GitProjectService.getReviewDiff(1, 42, { repo }))
+        .resolves.toEqual({ files: [] });
+      expect(provider.getReviewDiff).toHaveBeenCalledWith(repo, 1);
     });
 
     it('does not clear ticket state when the local provider refuses branch deletion', async () => {
