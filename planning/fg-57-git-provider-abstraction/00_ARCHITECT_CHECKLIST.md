@@ -88,7 +88,7 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D10 | Webhook-driven review state and merge events | self | Integration | follow-up | open |
 | D11 | Consolidate the private-host checks in `providers/generic`, `ProviderRegistryService` and `providers/git` | review | Security | follow-up | open |
 | D12 | Pin or revalidate the resolved base URL address at connect time (DNS rebinding) | review | Security | fg-57b / follow-up | open |
-| D13 | Local filesystem repo paths with a configured repository root; local repo/default-branch existence validation | review | Security | fg-57d2 | open |
+| D13 | Local filesystem repo paths with a configured repository root; local repo/default-branch existence validation and the 04 integration test | review | Security | fg-57d2 | open |
 
 ## Decisions needed from the user
 

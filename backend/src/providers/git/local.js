@@ -5,7 +5,7 @@ const { getCapabilities, isPrivateHostname } = require('./GitProvider');
 
 function parseSshUrl(raw) {
   const url = new URL(raw);
-  if (url.password) {
+  if (url.password || url.username.includes(':') || /%3a/i.test(url.username)) {
     throw new ValidationError('SSH URLs must not contain a password');
   }
   const path = url.pathname.replace(/^\/+|\/+$/g, '');
@@ -24,7 +24,7 @@ function parseScpLike(raw) {
   const match = /^(?:([^@\s]+)@)?([^:/\s]+):(.+)$/.exec(raw);
   if (!match) return null;
   const userinfo = match[1] || '';
-  if (userinfo.includes(':')) {
+  if (userinfo.includes(':') || /%3a/i.test(userinfo)) {
     throw new ValidationError('SSH URLs must not contain a password');
   }
   const path = match[3].replace(/^\/+|\/+$/g, '');

@@ -203,6 +203,12 @@ describe('Local provider', () => {
     expect(() => provider.parseRepoUrl(
       'user:secret@git.example.com:group/repo.git'))
       .toThrow('must not contain a password');
+    expect(() => provider.parseRepoUrl(
+      'ssh://user%3Apass@git.example.com/group/repo.git'))
+      .toThrow('must not contain a password');
+    expect(() => provider.parseRepoUrl(
+      'user%3Apass@git.example.com:group/repo.git'))
+      .toThrow('must not contain a password');
     expect(() => provider.parseRepoUrl('/srv/git/private-app.git'))
       .toThrow('deferred to fg-57d2');
     expect(() => provider.parseRepoUrl('file:///srv/git/private-app.git'))

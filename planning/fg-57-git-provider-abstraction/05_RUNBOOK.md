@@ -84,6 +84,9 @@ follow-up.
 3. Give the agent the **private key** through the planner credential store, and
    a verified `known_hosts` entry. Never use `StrictHostKeyChecking=no`.
 4. Connect with provider `local`, the SSH clone URL, auth mode `ssh`.
+   The backend resolves the SSH host on connect. A host only the agent can
+   resolve is rejected; use a name both sides resolve, or set
+   `ALLOW_PRIVATE_HOSTS=1` / `GIT_ALLOW_PRIVATE_HOSTS=1` for a private host.
 5. Run one ticket. The harness pushes the branch and finishes with a branch/SHA,
    no PR URL. Review the diff locally or in the Git UI.
 6. Clean up the branch, deploy key and bare repo.
