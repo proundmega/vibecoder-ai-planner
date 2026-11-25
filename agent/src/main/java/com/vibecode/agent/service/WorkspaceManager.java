@@ -355,7 +355,7 @@ public class WorkspaceManager {
         // in a command line or in .git/config.
         String token = currentToken();
         boolean authenticate = token != null && !token.isBlank()
-            && repoUrl.startsWith("https://github.com/");
+            && repoUrl.startsWith("https://");
         if (authenticate) {
             ensureAskPass(token);
         }

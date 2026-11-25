@@ -361,3 +361,146 @@ describe('GitHub provider adapter', () => {
     expect(inner.getPRDiff).toHaveBeenCalledWith(repo, 7);
   });
 });
+
+describe('Forgejo/Gitea provider', () => {
+  const baseUrl = 'https://git.example.com';
+  const response = (status, body) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(body),
+  });
+  const provider = () => git.forgejo.createProvider({ baseUrl, credential: 'token' }, 'forgejo');
+
+  it('registers and parses HTTPS, SSH and shorthand URLs', () => {
+    expect(git.registry.has('forgejo')).toBe(true);
+    expect(git.registry.has('gitea')).toBe(true);
+    expect(provider().parseRepoUrl('https://git.example.com/acme/widgets.git'))
+      .toMatchObject({ owner: 'acme', repo: 'widgets', protocol: 'https' });
+    expect(provider().parseRepoUrl('https://git.example.com:443/acme/widgets'))
+      .toMatchObject({ owner: 'acme', repo: 'widgets', protocol: 'https' });
+    expect(provider().parseRepoUrl('ssh://git@git.example.com/acme/widgets.git'))
+      .toMatchObject({ protocol: 'ssh', cloneUrl: 'ssh://git@git.example.com/acme/widgets.git' });
+    expect(provider().parseRepoUrl('git@git.example.com:acme/widgets.git'))
+      .toMatchObject({ host: 'git.example.com', protocol: 'ssh', owner: 'acme' });
+    expect(provider().parseRepoUrl('acme/widgets'))
+      .toMatchObject({
+        owner: 'acme',
+        repo: 'widgets',
+        cloneUrl: 'https://git.example.com/acme/widgets.git',
+      });
+  });
+
+  it('rejects mismatched origins, credentials and path traversal', () => {
+    const reject = (repoUrl, message) => expect(() => provider().parseRepoUrl(repoUrl))
+      .toThrow(message);
+    reject('https://other.example.com/acme/widgets', 'host must match');
+    reject('https://git.example.com:8443/acme/widgets', 'scheme and port');
+    reject('http://git.example.com/acme/widgets', 'scheme and port');
+    reject('ssh://git@evil.example.com/acme/widgets.git', 'host must match');
+    reject('git@evil.example.com:acme/widgets.git', 'host must match');
+    reject('https://user:pass@git.example.com/acme/widgets', 'must not contain credentials');
+    reject('https://token@git.example.com/acme/widgets', 'must not contain credentials');
+    reject('ssh://token@git.example.com/acme/widgets', 'git user');
+    reject('git@git.example.com:../admin.git', 'plain path segments');
+    reject('../admin', 'plain path segments');
+    reject('acme/..', 'plain path segments');
+    reject('acme/../admin', 'owner/repo');
+  });
+
+  it('accepts a repository on the configured base port only', () => {
+    const portBase = git.forgejo.createProvider(
+      { baseUrl: 'https://git.example.com:8443', credential: 'token' }, 'gitea');
+    expect(portBase.parseRepoUrl('https://git.example.com:8443/acme/widgets'))
+      .toMatchObject({ owner: 'acme' });
+    expect(() => portBase.parseRepoUrl('https://git.example.com/acme/widgets'))
+      .toThrow('scheme and port');
+    // SSH compares only the host; the SSH port is not the HTTP origin port.
+    expect(portBase.parseRepoUrl('ssh://git@git.example.com:2222/acme/widgets'))
+      .toMatchObject({ host: 'git.example.com', protocol: 'ssh' });
+  });
+
+  it('validates access and reuses an existing review request', async () => {
+    const review = {
+      id: 1,
+      number: 7,
+      html_url: 'https://git.example.com/acme/widgets/pulls/7',
+      head: { ref: 'vibecode/ticket-1-change' },
+      state: 'open',
+    };
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(response(200, { default_branch: 'main' }))
+      .mockResolvedValueOnce(response(201, review))
+      .mockResolvedValueOnce(response(409, { message: 'already exists' }))
+      .mockResolvedValueOnce(response(200, [review]));
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      await expect(provider().validateRepoAccess('acme/widgets'))
+        .resolves.toMatchObject({ accessible: true, defaultBranch: 'main' });
+      const repo = { repoUrl: 'acme/widgets', defaultBranch: 'main' };
+      const first = await provider().createReviewRequest(
+        repo, 1, 'Change', 'vibecode/ticket-1-change', 'body');
+      const second = await provider().createReviewRequest(
+        repo, 1, 'Change', 'vibecode/ticket-1-change', 'body');
+
+      expect(first).toEqual({
+        id: 1,
+        number: 7,
+        url: 'https://git.example.com/acme/widgets/pulls/7',
+        state: 'open',
+      });
+      expect(second).toEqual(first);
+      expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('token token');
+      expect(fetchMock.mock.calls[3][0]).toContain('pulls?state=open');
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('reads a unified diff and manages branches', async () => {
+    const diffText = [
+      'diff --git a/src/a.js b/src/a.js',
+      '--- a/src/a.js',
+      '+++ b/src/a.js',
+      '@@ -1 +1,2 @@',
+      '-old',
+      '+new',
+      '+more',
+      'diff --git a/new.txt b/new.txt',
+      'new file mode 100644',
+      '--- /dev/null',
+      '+++ b/new.txt',
+      '@@ -0,0 +1 @@',
+      '+hello',
+    ].join('\n');
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => diffText })
+      .mockResolvedValueOnce(response(201, {}))
+      .mockResolvedValueOnce(response(204, {}))
+      .mockResolvedValueOnce(response(200, [{ name: 'vibecode/ticket-1-x' }, { name: 'main' }]));
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const repo = { repoUrl: 'acme/widgets', defaultBranch: 'main' };
+      const diff = await provider().getReviewDiff(repo, 7);
+      expect(fetchMock.mock.calls[0][0]).toMatch(/\/pulls\/7\.diff$/);
+      expect(fetchMock.mock.calls[0][1].headers.Accept).toBe('text/plain');
+      expect(diff.prNumber).toBe(7);
+      expect(diff.files).toHaveLength(2);
+      expect(diff.files[0]).toMatchObject({
+        filename: 'src/a.js', status: 'modified', additions: 2, deletions: 1, changes: 3,
+      });
+      expect(diff.files[0].patch).toContain('-old');
+      expect(diff.files[1]).toMatchObject({
+        filename: 'new.txt', status: 'added', additions: 1, deletions: 0,
+      });
+      await expect(provider().createBranch(repo, 1, 'Change'))
+        .resolves.toBe('vibecode/ticket-1-change');
+      await expect(provider().deleteBranch(repo, 'vibecode/ticket-1-change'))
+        .resolves.toBeUndefined();
+      await expect(provider().listBranches(repo)).resolves.toEqual(['vibecode/ticket-1-x']);
+    } finally {
+      global.fetch = original;
+    }
+  });
+});

@@ -331,7 +331,7 @@ class WorkspaceManagerTest {
             tempDir.toString(), "fake", false, null, () -> token[0]);
         setField(wm, "gitBinary", git.toString());
 
-        wm.cloneRepo("https://github.com/owner/repo.git", "feature");
+        wm.cloneRepo("https://git.example.com/owner/repo.git", "feature");
 
         assertTrue(Files.exists(capturedAskpass));
         assertTrue(Files.readString(capturedAskpass).contains("ghs_first"));
