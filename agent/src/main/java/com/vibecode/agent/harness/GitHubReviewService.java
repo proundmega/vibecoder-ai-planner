@@ -22,12 +22,27 @@ public final class GitHubReviewService {
     private static final Pattern SHA = Pattern.compile("^[0-9a-f]{40}([0-9a-f]{24})?$");
 
     private final GitHubService gitHub;
+    private final String expectedAuthor;
 
-    public GitHubReviewService(GitHubService gitHub) {
+    public GitHubReviewService(GitHubService gitHub, String expectedAuthor) {
         if (gitHub == null) {
             throw new IllegalArgumentException("GitHubService is required");
         }
+        if (expectedAuthor == null || expectedAuthor.isBlank()) {
+            throw new IllegalArgumentException("An expected reviewer login is required");
+        }
         this.gitHub = gitHub;
+        this.expectedAuthor = expectedAuthor.trim();
+    }
+
+    /**
+     * Build a service for the token's own identity. A distinct reviewer
+     * identity remains a Phase 2 prerequisite; this only makes adoption
+     * author-aware.
+     */
+    public static GitHubReviewService forAuthenticatedUser(GitHubService gitHub)
+        throws IOException {
+        return new GitHubReviewService(gitHub, gitHub.getAuthenticatedLogin());
     }
 
     public PublishResult publish(
@@ -47,26 +62,38 @@ public final class GitHubReviewService {
             throw new IOException("A review result is required");
         }
 
+        String marker = marker(attemptId);
+        // Adopt an existing review before the head check: partial-publish
+        // recovery must still find the review when the PR has moved since.
+        for (GitHubService.PullRequestReview review
+            : gitHub.listPullRequestReviews(pullNumber)) {
+            if (isAdoptable(review, sha, marker)) {
+                return new PublishResult(review.id(), true);
+            }
+        }
+
+        // Re-check immediately before the POST, after the list/adoption work.
         String head = gitHub.getPullRequestHeadSha(pullNumber);
         if (head == null || !sha.equalsIgnoreCase(head.trim())) {
             throw new HeadMovedException(
                 "PR head moved from " + sha + " to " + (head == null ? "unknown" : head.trim()));
         }
 
-        String marker = marker(attemptId);
-        List<GitHubService.PullRequestReview> reviews =
-            gitHub.listPullRequestReviews(pullNumber);
-        for (GitHubService.PullRequestReview review : reviews) {
-            if (sha.equalsIgnoreCase(review.commitId())
-                && review.body() != null
-                && review.body().contains(marker)) {
-                return new PublishResult(review.id(), true);
-            }
-        }
-
         long reviewId = gitHub.createPullRequestReview(
             pullNumber, sha, body(marker, result));
         return new PublishResult(reviewId, false);
+    }
+
+    private boolean isAdoptable(
+        GitHubService.PullRequestReview review,
+        String reviewedSha,
+        String marker
+    ) {
+        return reviewedSha.equalsIgnoreCase(review.commitId())
+            && "COMMENTED".equalsIgnoreCase(review.state())
+            && expectedAuthor.equalsIgnoreCase(review.author())
+            && review.body() != null
+            && review.body().startsWith(marker);
     }
 
     public static String marker(String attemptId) {

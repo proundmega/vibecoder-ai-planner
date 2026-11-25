@@ -83,7 +83,7 @@ class GitHubServiceTest {
     @Test
     void listsPullRequestReviews() throws Exception {
         responseBody = "[{\"id\":11,\"commit_id\":\"sha-1\",\"body\":\"marker\","
-            + "\"user\":{\"login\":\"reviewer\"}}]";
+            + "\"state\":\"COMMENTED\",\"user\":{\"login\":\"reviewer\"}}]";
 
         List<GitHubService.PullRequestReview> reviews = service.listPullRequestReviews(7);
 
@@ -92,6 +92,14 @@ class GitHubServiceTest {
         assertEquals("sha-1", reviews.get(0).commitId());
         assertEquals("marker", reviews.get(0).body());
         assertEquals("reviewer", reviews.get(0).author());
+        assertEquals("COMMENTED", reviews.get(0).state());
+    }
+
+    @Test
+    void fetchesTheAuthenticatedLogin() throws Exception {
+        responseBody = "{\"login\":\"vibecode-reviewer\"}";
+
+        assertEquals("vibecode-reviewer", service.getAuthenticatedLogin());
     }
 
     @Test

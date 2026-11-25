@@ -314,6 +314,31 @@ public class GitHubService {
     }
 
     /**
+     * Fetch the authenticated login. Used to require that a review adopted for
+     * partial-publish recovery was authored by this reviewer identity.
+     */
+    public String getAuthenticatedLogin() throws IOException {
+        Request request = new Request.Builder()
+            .url(apiBase + "/user")
+            .header("Authorization", "token " + token())
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = executeWithAuth(request)) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Failed to get authenticated login: " + response.code());
+            }
+            String login = objectMapper.readTree(response.body().string())
+                .path("login").asText("");
+            if (login.isBlank()) {
+                throw new IOException("GitHub did not return an authenticated login");
+            }
+            return login;
+        }
+    }
+
+    /**
      * Fetch the current head SHA of a pull request. Used to re-check the
      * reviewed commit immediately before publishing a review.
      */
@@ -370,7 +395,8 @@ public class GitHubService {
                         id,
                         node.path("commit_id").asText(""),
                         node.path("body").asText(""),
-                        node.path("user").path("login").asText("")
+                        node.path("user").path("login").asText(""),
+                        node.path("state").asText("")
                     ));
                 }
             }
@@ -420,7 +446,13 @@ public class GitHubService {
         }
     }
 
-    public record PullRequestReview(long id, String commitId, String body, String author) {
+    public record PullRequestReview(
+        long id,
+        String commitId,
+        String body,
+        String author,
+        String state
+    ) {
     }
 
     private String createTree(String filePath, String content) throws IOException {

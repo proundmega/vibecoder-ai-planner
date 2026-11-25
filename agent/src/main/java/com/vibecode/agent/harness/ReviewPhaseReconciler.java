@@ -14,6 +14,9 @@ import java.io.IOException;
  */
 public final class ReviewPhaseReconciler {
 
+    private static final java.util.Set<String> RECONCILABLE_PHASES = java.util.Set.of(
+        "draft", "planning", "plan_approved", "assigned", "in_progress");
+
     private final PhaseClient phases;
 
     public ReviewPhaseReconciler(PhaseClient phases) {
@@ -32,6 +35,11 @@ public final class ReviewPhaseReconciler {
         if ("review".equals(phase)) {
             return phase;
         }
+        if (!RECONCILABLE_PHASES.contains(phase)) {
+            throw new ReconciliationException(
+                "Ticket " + ticketId + " phase '" + phase
+                    + "' is not safe to reconcile to review");
+        }
         phases.reconcileToReview(ticketId);
         String reconciled = phases.currentPhase(ticketId);
         if (!"review".equals(reconciled)) {
@@ -43,8 +51,9 @@ public final class ReviewPhaseReconciler {
     }
 
     /**
-     * Re-check {@code phase=review} immediately before approval and move to
-     * {@code human_approval}. Returns false when the phase moved away.
+     * Re-check {@code phase=review} immediately before approval, move to
+     * {@code human_approval}, then re-read the phase. Returns false when the
+     * phase moved away or the transition did not reach human_approval.
      */
     public boolean approve(long ticketId) throws IOException {
         String phase = phases.currentPhase(ticketId);
@@ -52,7 +61,7 @@ public final class ReviewPhaseReconciler {
             return false;
         }
         phases.transitionToHumanApproval(ticketId);
-        return true;
+        return "human_approval".equals(phases.currentPhase(ticketId));
     }
 
     public interface PhaseClient {

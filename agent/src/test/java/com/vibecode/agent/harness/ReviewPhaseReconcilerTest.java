@@ -2,6 +2,8 @@ package com.vibecode.agent.harness;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -40,6 +42,18 @@ class ReviewPhaseReconcilerTest {
     }
 
     @Test
+    void refusesToReconcileTerminalOrApprovalPhases() {
+        for (String phase : List.of("done", "deployed", "human_approval", "blocked")) {
+            FakePhases phases = new FakePhases(phase);
+
+            assertThrows(ReviewPhaseReconciler.ReconciliationException.class,
+                () -> new ReviewPhaseReconciler(phases).ensureReviewPhase(42L),
+                "phase " + phase);
+            assertEquals(0, phases.reconcileCalls, "phase " + phase);
+        }
+    }
+
+    @Test
     void approvalRechecksReviewBeforeTransitioning() throws Exception {
         FakePhases phases = new FakePhases("review");
 
@@ -60,10 +74,22 @@ class ReviewPhaseReconcilerTest {
         assertEquals(0, phases.approvalCalls);
     }
 
+    @Test
+    void approvalFailsWhenTheTransitionDoesNotReachHumanApproval() throws Exception {
+        FakePhases phases = new FakePhases("review");
+        phases.afterTransition = "review";
+
+        boolean approved = new ReviewPhaseReconciler(phases).approve(42L);
+
+        assertFalse(approved);
+        assertEquals(1, phases.approvalCalls);
+    }
+
     private static final class FakePhases implements ReviewPhaseReconciler.PhaseClient {
 
         private String phase;
         private String afterReconcile;
+        private String afterTransition = "human_approval";
         private int reconcileCalls;
         private int approvalCalls;
         private String lastTransition;
@@ -88,6 +114,7 @@ class ReviewPhaseReconcilerTest {
         public void transitionToHumanApproval(long ticketId) {
             approvalCalls++;
             lastTransition = "human_approval";
+            phase = afterTransition;
         }
     }
 }
