@@ -74,6 +74,42 @@ class GitHubServiceTest {
     }
 
     @Test
+    void fetchesPullRequestHeadSha() throws Exception {
+        responseBody = "{\"head\":{\"sha\":\"abc123\"},\"state\":\"open\"}";
+
+        assertEquals("abc123", service.getPullRequestHeadSha(7));
+    }
+
+    @Test
+    void listsPullRequestReviews() throws Exception {
+        responseBody = "[{\"id\":11,\"commit_id\":\"sha-1\",\"body\":\"marker\","
+            + "\"user\":{\"login\":\"reviewer\"}}]";
+
+        List<GitHubService.PullRequestReview> reviews = service.listPullRequestReviews(7);
+
+        assertEquals(1, reviews.size());
+        assertEquals(11L, reviews.get(0).id());
+        assertEquals("sha-1", reviews.get(0).commitId());
+        assertEquals("marker", reviews.get(0).body());
+        assertEquals("reviewer", reviews.get(0).author());
+    }
+
+    @Test
+    void createsACommentOnlyReviewAtTheReviewedCommit() throws Exception {
+        postResponseBody = "{\"id\":42}";
+
+        long id = service.createPullRequestReview(7, "commit-1", "review body");
+
+        assertEquals(42L, id);
+        String body = postBodies.get(0);
+        assertTrue(body.contains("\"event\":\"COMMENT\""));
+        assertTrue(body.contains("\"commit_id\":\"commit-1\""));
+        assertTrue(body.contains("\"body\":\"review body\""));
+        assertFalse(body.contains("\"event\":\"APPROVE\""));
+        assertFalse(body.contains("\"event\":\"REQUEST_CHANGES\""));
+    }
+
+    @Test
     void recoveryLooksUpOnlyOpenPullRequests() throws Exception {
         responseBody = "[{\"number\":7,\"html_url\":\"https://github.com/owner/repo/pull/7\"}]";
 
