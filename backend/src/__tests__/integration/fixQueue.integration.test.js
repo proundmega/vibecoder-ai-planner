@@ -220,7 +220,7 @@ describe('fg-32b1 fix queue and lease (real DB)', () => {
         runtimeId: deleted.runtimeIds[0], leaseSeconds: 120,
       });
       await global.db.query(
-        'UPDATE tickets SET deleted_at = NOW() WHERE id = $1',
+        "UPDATE tickets SET status = 'done', deleted_at = NOW() WHERE id = $1",
         [deleted.ticketId]
       );
 
