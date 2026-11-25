@@ -415,13 +415,18 @@ describe('Forgejo/Gitea provider', () => {
     reject('https://git.example.com/acme/widgets#readme', 'query or fragment');
   });
 
-  it('requires the shorthand when the base URL has a path', () => {
+  it('round-trips a shorthand clone URL on a sub-path base', () => {
     const subPath = git.forgejo.createProvider(
       { baseUrl: 'https://git.example.com/forgejo', credential: 'token' }, 'forgejo');
-    expect(subPath.parseRepoUrl('acme/widgets').cloneUrl)
-      .toBe('https://git.example.com/forgejo/acme/widgets.git');
-    expect(() => subPath.parseRepoUrl('https://git.example.com/acme/widgets'))
-      .toThrow('shorthand');
+    const parsed = subPath.parseRepoUrl('acme/widgets');
+    expect(parsed.cloneUrl).toBe('https://git.example.com/forgejo/acme/widgets.git');
+    expect(subPath.parseRepoUrl(parsed.cloneUrl)).toMatchObject({
+      owner: 'acme',
+      repo: 'widgets',
+      cloneUrl: parsed.cloneUrl,
+    });
+    expect(() => subPath.parseRepoUrl('https://git.example.com/other/acme/widgets'))
+      .toThrow('base URL path');
   });
 
   it('accepts a repository on the configured base port only', () => {
@@ -537,6 +542,9 @@ describe('Forgejo/Gitea provider', () => {
       'similarity index 100%',
       'rename from a.txt',
       'rename to b.txt',
+      'diff --git "a/logo copy.png" "b/logo copy.png"',
+      'new file mode 100644',
+      'Binary files /dev/null and "b/logo copy.png" differ',
     ].join('\n');
     const original = global.fetch;
     global.fetch = jest.fn().mockResolvedValue({
@@ -545,7 +553,7 @@ describe('Forgejo/Gitea provider', () => {
     try {
       const diff = await provider().getReviewDiff(
         { repoUrl: 'acme/widgets', defaultBranch: 'main' }, 3);
-      expect(diff.files).toHaveLength(3);
+      expect(diff.files).toHaveLength(4);
       expect(diff.files[0]).toMatchObject({
         filename: 'logo.png', status: 'added', additions: 0, deletions: 0, patch: '',
       });
@@ -556,6 +564,9 @@ describe('Forgejo/Gitea provider', () => {
         patch: expect.stringContaining('-gone'),
       });
       expect(diff.files[2]).toMatchObject({ filename: 'b.txt', status: 'renamed' });
+      expect(diff.files[3]).toMatchObject({
+        filename: 'logo copy.png', status: 'added', patch: '',
+      });
     } finally {
       global.fetch = original;
     }

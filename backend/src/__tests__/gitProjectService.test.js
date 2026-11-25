@@ -147,6 +147,42 @@ describe('GitProjectService', () => {
         'https://git.example.com/group/repo.git');
     });
 
+    it('connects a shorthand repository on a sub-path base URL', async () => {
+      jest.spyOn(gitProviders, 'assertSafeBaseUrl').mockResolvedValue('https://host/forgejo');
+      const original = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ default_branch: 'main', private: true }),
+      });
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'forgejo',
+          repo_url: 'https://host/forgejo/group/repo.git',
+          default_branch: 'main',
+          provider_base_url: 'https://host/forgejo',
+          auth_mode: 'pat',
+        }],
+      });
+      try {
+        await GitProjectService.connect(1, {
+          provider: 'forgejo',
+          repoUrl: 'group/repo',
+          baseUrl: 'https://host/forgejo',
+          token: 'secret',
+          authMode: 'pat',
+        }, 100);
+        expect(global.fetch.mock.calls[0][0]).toBe(
+          'https://host/forgejo/api/v1/repos/group/repo');
+        expect(pool.query.mock.calls[0][1][2]).toBe(
+          'https://host/forgejo/group/repo.git');
+      } finally {
+        global.fetch = original;
+      }
+    });
+
     it('stores an encrypted SSH key for the registered local provider', async () => {
       jest.spyOn(gitProviders.registry, 'get');
       pool.query.mockResolvedValue({

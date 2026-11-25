@@ -65,6 +65,7 @@ function parseFullUrl(raw, base) {
     throw new ValidationError('Repository URL must be an absolute URL');
   }
   const ssh = url.protocol === 'ssh:';
+  const basePath = String(base.pathname || '').replace(/\/+$/, '');
   if (!ssh && url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new ValidationError('Repository URL must use http, https or ssh');
   }
@@ -83,13 +84,17 @@ function parseFullUrl(raw, base) {
       throw new ValidationError('Repository URLs must not contain credentials');
     }
     assertHttpOrigin(url, base);
-    if (base.pathname && base.pathname !== '/') {
-      throw new ValidationError(
-        'Repository URL must use the owner/repo shorthand when the base URL has a path'
-      );
+    if (basePath && url.pathname !== basePath
+        && !url.pathname.startsWith(`${basePath}/`)) {
+      throw new ValidationError('Repository URL must be under the provider base URL path');
     }
   }
-  const { owner, repo } = splitRepoPath(url.pathname);
+  // A sub-path installation puts the repository under the base path; strip it
+  // so a shorthand-expanded clone URL round-trips through this parser.
+  const pathname = !ssh && basePath && url.pathname.startsWith(`${basePath}/`)
+    ? url.pathname.slice(basePath.length)
+    : url.pathname;
+  const { owner, repo } = splitRepoPath(pathname);
   return {
     host: lowerHost(url.hostname),
     protocol: ssh ? 'ssh' : url.protocol.replace(':', ''),
@@ -118,6 +123,16 @@ function parseScp(raw, base) {
 }
 
 /**
+ * Extract the two paths from a `diff --git a/x b/x` header. Git quotes paths
+ * that contain spaces or special characters.
+ */
+function headerPaths(line) {
+  const match = /^(?:"a\/(.+)"|a\/(.+)) (?:"b\/(.+)"|b\/(.+))$/.exec(line || '');
+  if (!match) return null;
+  return { from: match[1] || match[2], to: match[3] || match[4] };
+}
+
+/**
  * Parse a unified diff (Forgejo/Gitea `.diff` endpoint) into the same file
  * shape the GitHub provider returns, so review tooling reads both alike.
  */
@@ -125,14 +140,14 @@ function parseDiff(text) {
   const files = [];
   for (const block of String(text || '').split(/^diff --git /m).slice(1)) {
     const lines = block.split('\n');
-    const header = /^a\/(.+?) b\/(.+)$/.exec(lines[0] || '');
+    const header = headerPaths(lines[0]);
     const renamed = /^rename to (.+)$/m.exec(block);
     const added = /^\+\+\+ (?:b\/)?(.+)$/m.exec(block);
     const removed = /^--- (?:a\/)?(.+)$/m.exec(block);
     const filename = (renamed && renamed[1])
       || (added && added[1] !== '/dev/null' && added[1])
       || (removed && removed[1] !== '/dev/null' && removed[1])
-      || (header && header[2]);
+      || (header && header.to);
     if (!filename) continue;
     const binary = /^Binary files .* differ$/m.test(block);
     let additions = 0;
