@@ -1,7 +1,7 @@
 const dns = require('dns');
 const net = require('net');
 const { ValidationError } = require('../../errors/HttpError');
-const { getCapabilities, isPrivateHostname, isPrivateAddress } = require('./GitProvider');
+const { getCapabilities, isPrivateHostname } = require('./GitProvider');
 
 function parseSshUrl(raw) {
   const url = new URL(raw);
@@ -116,7 +116,7 @@ class LocalGitProvider {
             error: 'SSH host could not be resolved',
           };
         }
-        if (addresses.some(entry => isPrivateAddress(entry.address))) {
+        if (addresses.some(entry => isPrivateHostname(entry.address))) {
           return {
             accessible: false,
             defaultBranch: null,

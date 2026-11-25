@@ -141,11 +141,8 @@ describe('githubController.getRepoForAgent (fg-35 FR4/NFR1)', () => {
     expect(res.json).toHaveBeenCalledWith({
       success: true,
       data: {
-        provider: 'github',
         repoUrl: 'https://github.com/acme/widgets',
         accessToken: null,
-        sshKey: null,
-        providerBaseUrl: null,
         authMode: 'app',
       },
     });

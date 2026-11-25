@@ -228,7 +228,6 @@ module.exports = {
   normalizeProviderId,
   getCapabilities,
   isPrivateHostname,
-  isPrivateAddress,
   assertSafeBaseUrl,
   createRegistry,
 };

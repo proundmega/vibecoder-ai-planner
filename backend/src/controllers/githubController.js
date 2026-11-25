@@ -160,11 +160,8 @@ async function getRepoForAgent(req, res, next) {
     res.json({
       success: true,
       data: {
-        provider: repo.provider || 'github',
         repoUrl: repo.repoUrl,
-        accessToken: repo.accessToken ?? null,
-        sshKey: repo.sshKey ?? null,
-        providerBaseUrl: repo.providerBaseUrl ?? null,
+        accessToken: repo.accessToken,
         authMode: repo.authMode,
       },
     });
