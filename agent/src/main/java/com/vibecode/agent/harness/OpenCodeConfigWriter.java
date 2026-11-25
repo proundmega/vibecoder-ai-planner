@@ -239,7 +239,9 @@ public final class OpenCodeConfigWriter {
         // fg-55: the human question loop is opt-in. Even when enabled, the
         // non-portable doom_loop action stays denied; repetition is handled by
         // the supervisor so it also works after the OpenCode V2 removal.
-        permission.put("question", questionLoopEnabled ? "allow" : "deny");
+        permission.put("question", reviewMode
+            ? "deny"
+            : (questionLoopEnabled ? "allow" : "deny"));
         permission.put("doom_loop", "deny");
         permission.put("external_directory", "deny");
 
@@ -264,6 +266,14 @@ public final class OpenCodeConfigWriter {
             permission.put("sandbox_bash", "allow");
         } else {
             permission.put("bash", bash);
+        }
+        if (reviewMode) {
+            // A review session is read-only. It inspects through the guarded
+            // sandbox_read/sandbox_grep tools; shell execution is denied so it
+            // cannot read .env, edit files or install packages on the host.
+            permission.put("bash", "deny");
+            permission.put("shell", "deny");
+            permission.put("sandbox_bash", "deny");
         }
 
         return permission;

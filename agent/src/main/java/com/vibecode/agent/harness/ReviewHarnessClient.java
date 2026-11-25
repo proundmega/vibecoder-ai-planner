@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -11,35 +12,49 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Runs one read-only review session (fg-31c, FR1/FR3).
  *
  * <p>The client owns the OpenCode lifecycle and prompt/event handling; the
  * caller owns the disposable workspace and supervisor verification. The
- * OpenCode config denies the write/edit bridge tools, and the returned text is
- * the assistant's final message for {@link ReviewResultParser}.</p>
+ * OpenCode config denies the write/edit bridge tools and the shell, and the
+ * returned text is the assistant's final message for
+ * {@link ReviewResultParser}.</p>
  */
 public final class ReviewHarnessClient implements AutoCloseable {
 
+    static final Duration DEFAULT_TERMINAL_TIMEOUT = Duration.ofSeconds(15);
+
     private final HarnessClient harness;
     private final ReviewPromptBuilder promptBuilder;
+    private final Duration terminalTimeout;
 
     public ReviewHarnessClient(HarnessClient harness) {
-        this(harness, new ReviewPromptBuilder());
+        this(harness, new ReviewPromptBuilder(), DEFAULT_TERMINAL_TIMEOUT);
     }
 
-    ReviewHarnessClient(HarnessClient harness, ReviewPromptBuilder promptBuilder) {
+    ReviewHarnessClient(
+        HarnessClient harness,
+        ReviewPromptBuilder promptBuilder,
+        Duration terminalTimeout
+    ) {
         if (harness == null) {
             throw new IllegalArgumentException("harness is required");
         }
         this.harness = harness;
         this.promptBuilder = promptBuilder == null ? new ReviewPromptBuilder() : promptBuilder;
+        this.terminalTimeout = terminalTimeout == null || terminalTimeout.isNegative()
+            ? DEFAULT_TERMINAL_TIMEOUT
+            : terminalTimeout;
     }
 
     /**
      * Production factory. {@code reviewMode} denies the guarded write/edit
-     * tools while leaving the workspace writable for verification.
+     * tools and the shell while leaving the workspace writable for the
+     * supervisor's verification.
      */
     public static ReviewHarnessClient open(
         HarnessConfig config,
@@ -52,8 +67,9 @@ public final class ReviewHarnessClient implements AutoCloseable {
 
     /**
      * Start the harness in the workspace, send the review prompt and return the
-     * assistant's final text. An empty or unhealthy result is an IOException so
-     * the processor fails closed.
+     * assistant's final text. OpenCode event delivery is asynchronous, so a
+     * blank transcript waits for a terminal (idle/error) event. An empty or
+     * unhealthy result is an IOException so the processor fails closed.
      */
     public String review(Path workspace, String title, ReviewPromptBuilder.Request request)
         throws IOException {
@@ -73,8 +89,17 @@ public final class ReviewHarnessClient implements AutoCloseable {
         harness.start(workspace);
         String sessionId = harness.createSession(title == null ? "review" : title);
         Transcript transcript = new Transcript();
-        harness.subscribe(sessionId, transcript::accept);
+        CountDownLatch terminal = new CountDownLatch(1);
+        harness.subscribe(sessionId, event -> {
+            transcript.accept(event);
+            if (event != null && (event.isIdle() || event.isError())) {
+                terminal.countDown();
+            }
+        });
         harness.sendPrompt(sessionId, prompt);
+        if (transcript.text().isBlank()) {
+            awaitTerminal(terminal);
+        }
         if (!harness.isHealthy()) {
             throw new IOException("review harness is unhealthy after the prompt");
         }
@@ -83,6 +108,15 @@ public final class ReviewHarnessClient implements AutoCloseable {
             throw new IOException("reviewer returned no review text");
         }
         return text;
+    }
+
+    private void awaitTerminal(CountDownLatch terminal) throws IOException {
+        try {
+            terminal.await(terminalTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted while waiting for the review", error);
+        }
     }
 
     public boolean isHealthy() {
@@ -97,7 +131,8 @@ public final class ReviewHarnessClient implements AutoCloseable {
     /**
      * Collects assistant text parts from OpenCode SSE events. Events are
      * version-dependent, so both {@code properties.info}/{@code properties.part}
-     * and flat payload shapes are accepted.
+     * and flat payload shapes are accepted. The listener runs on the SSE thread,
+     * so every read/write is synchronized.
      */
     static final class Transcript {
 
@@ -105,9 +140,11 @@ public final class ReviewHarnessClient implements AutoCloseable {
         private final Map<String, String> partMessages = new HashMap<>();
         private final List<String> messageOrder = new ArrayList<>();
         private final Set<String> assistantMessages = new HashSet<>();
+        private final Set<String> userMessages = new HashSet<>();
+        private final Set<String> knownMessages = new HashSet<>();
         private String lastMessageId;
 
-        void accept(HarnessEvent event) {
+        synchronized void accept(HarnessEvent event) {
             if (event == null || event.payload() == null) {
                 return;
             }
@@ -118,8 +155,12 @@ public final class ReviewHarnessClient implements AutoCloseable {
                 String messageId = firstText(info, "id");
                 if (messageId != null) {
                     noteMessage(messageId);
-                    if ("assistant".equalsIgnoreCase(firstText(info, "role"))) {
+                    knownMessages.add(messageId);
+                    String role = firstText(info, "role");
+                    if ("assistant".equalsIgnoreCase(role)) {
                         assistantMessages.add(messageId);
+                    } else if ("user".equalsIgnoreCase(role)) {
+                        userMessages.add(messageId);
                     }
                 }
             }
@@ -136,7 +177,7 @@ public final class ReviewHarnessClient implements AutoCloseable {
                     noteMessage(messageId);
                     String partId = firstText(part, "id");
                     String key = partId == null
-                        ? messageId + "#" + partTexts.size()
+                        ? messageId + "#text"
                         : messageId + "/" + partId;
                     partTexts.put(key, text.asText());
                     partMessages.put(key, messageId);
@@ -144,10 +185,16 @@ public final class ReviewHarnessClient implements AutoCloseable {
             }
         }
 
-        String text() {
+        synchronized String text() {
             String chosen = lastAssistantMessage();
-            if (chosen == null && !messageOrder.isEmpty()) {
-                chosen = messageOrder.get(messageOrder.size() - 1);
+            if (chosen == null) {
+                if (!userMessages.isEmpty()) {
+                    // Fail closed: a user-only transcript is never the review.
+                    return "";
+                }
+                if (!messageOrder.isEmpty()) {
+                    chosen = messageOrder.get(messageOrder.size() - 1);
+                }
             }
             String text = join(chosen);
             if (!text.isBlank()) {

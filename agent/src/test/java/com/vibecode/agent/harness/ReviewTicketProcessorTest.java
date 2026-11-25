@@ -105,7 +105,8 @@ class ReviewTicketProcessorTest {
         FakeHarness harness = new FakeHarness(approveJson());
         harness.failStart = true;
         ReviewTicketProcessor processor = processor(
-            harness, new AtomicBoolean(), ReviewTicketProcessor.AttemptGate.none(), passingVerification());
+            harness, new AtomicBoolean(), ReviewTicketProcessor.AttemptGate.none(),
+            passingVerification());
 
         ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
 
@@ -118,7 +119,8 @@ class ReviewTicketProcessorTest {
     void failsClosedOnMalformedModelOutput() {
         ReviewTicketProcessor processor = processor(
             new FakeHarness("I cannot approve this."),
-            new AtomicBoolean(), ReviewTicketProcessor.AttemptGate.none(), passingVerification());
+            new AtomicBoolean(), ReviewTicketProcessor.AttemptGate.none(),
+            passingVerification());
 
         ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
 
@@ -139,7 +141,8 @@ class ReviewTicketProcessorTest {
         assertEquals(SHA, outcome.reviewedSha());
         assertEquals("approve", outcome.result().verdict());
         assertTrue(outcome.approved());
-        assertEquals(1, outcome.verification().size());
+        assertEquals(1, outcome.verification().commands().size());
+        assertTrue(outcome.verification().installs().isEmpty());
         assertNull(outcome.reason());
     }
 
@@ -147,8 +150,10 @@ class ReviewTicketProcessorTest {
     void downgradesApproveWhenVerificationFailsOrIsEmpty() {
         ReviewTicketProcessor failed = processor(
             new FakeHarness(approveJson()), new AtomicBoolean(),
-            ReviewTicketProcessor.AttemptGate.none(), ignored -> List.of(
-                new VerificationResult("npm test", 1, "failure", false)));
+            ReviewTicketProcessor.AttemptGate.none(),
+            ignored -> new ReviewTicketProcessor.VerificationOutcome(
+                List.of(),
+                List.of(new VerificationResult("npm test", 1, "failure", false))));
 
         ReviewTicketProcessor.Outcome failedOutcome = failed.process(job(reviewTicket(), SHA));
         assertEquals(ReviewTicketProcessor.Status.COMPLETED, failedOutcome.status());
@@ -158,11 +163,43 @@ class ReviewTicketProcessorTest {
 
         ReviewTicketProcessor empty = processor(
             new FakeHarness(approveJson()), new AtomicBoolean(),
-            ReviewTicketProcessor.AttemptGate.none(), ignored -> List.of());
+            ReviewTicketProcessor.AttemptGate.none(),
+            ignored -> new ReviewTicketProcessor.VerificationOutcome(List.of(), List.of()));
 
         ReviewTicketProcessor.Outcome emptyOutcome = empty.process(job(reviewTicket(), SHA));
         assertEquals("comment", emptyOutcome.result().verdict());
         assertFalse(emptyOutcome.approved());
+    }
+
+    @Test
+    void doesNotApproveOnAnInstallOnlyOutcome() {
+        ReviewTicketProcessor processor = processor(
+            new FakeHarness(approveJson()), new AtomicBoolean(),
+            ReviewTicketProcessor.AttemptGate.none(),
+            ignored -> new ReviewTicketProcessor.VerificationOutcome(
+                List.of(new VerificationResult("npm ci", 0, "ok", false)),
+                List.of()));
+
+        ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
+
+        assertEquals("comment", outcome.result().verdict());
+        assertFalse(outcome.approved());
+        assertTrue(outcome.result().summary().contains("verification did not pass"));
+    }
+
+    @Test
+    void doesNotApproveWhenAnInstallFails() {
+        ReviewTicketProcessor processor = processor(
+            new FakeHarness(approveJson()), new AtomicBoolean(),
+            ReviewTicketProcessor.AttemptGate.none(),
+            ignored -> new ReviewTicketProcessor.VerificationOutcome(
+                List.of(new VerificationResult("npm ci", 1, "install failed", false)),
+                List.of(new VerificationResult("npm test", 0, "ok", false))));
+
+        ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
+
+        assertEquals("comment", outcome.result().verdict());
+        assertFalse(outcome.approved());
     }
 
     @Test
@@ -184,6 +221,27 @@ class ReviewTicketProcessorTest {
         assertEquals(1, outcome.result().findings().size());
     }
 
+    @Test
+    void redactsSecretsInTheParsedResult() {
+        String secret = "sk-" + "a".repeat(24);
+        String text = """
+            {"verdict": "comment", "summary": "token %s", "findings": [
+              {"severity": "info", "message": "leaked %s"}],
+             "residual_risks": ["risk %s"]}
+            """.formatted(secret, secret, secret);
+        ReviewTicketProcessor processor = processor(
+            new FakeHarness(text), new AtomicBoolean(),
+            ReviewTicketProcessor.AttemptGate.none(), passingVerification());
+
+        ReviewTicketProcessor.Outcome outcome = processor.process(job(reviewTicket(), SHA));
+
+        assertEquals(ReviewTicketProcessor.Status.COMPLETED, outcome.status());
+        assertFalse(outcome.result().summary().contains(secret));
+        assertFalse(outcome.result().findings().get(0).message().contains(secret));
+        assertFalse(outcome.result().residualRisks().get(0).contains(secret));
+        assertTrue(outcome.result().summary().contains("[REDACTED]"));
+    }
+
     private ReviewTicketProcessor processor(
         FakeHarness harness,
         AtomicBoolean opened,
@@ -203,7 +261,9 @@ class ReviewTicketProcessorTest {
     }
 
     private static ReviewTicketProcessor.Verification passingVerification() {
-        return ignored -> List.of(new VerificationResult("npm test", 0, "ok", false));
+        return ignored -> new ReviewTicketProcessor.VerificationOutcome(
+            List.of(),
+            List.of(new VerificationResult("npm test", 0, "ok", false)));
     }
 
     private ReviewTicketProcessor.Job job(Ticket ticket, String sha) {

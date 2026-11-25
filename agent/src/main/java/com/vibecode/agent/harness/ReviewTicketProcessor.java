@@ -16,9 +16,10 @@ import java.util.Locale;
  * <p>The processor only starts when the ticket is in {@code review}, has a
  * {@code pr_url}, a valid 40/64-character head SHA and no completed attempt for
  * that SHA. The supervisor runs verification before the model; model output is
- * parsed strictly, and an {@code approve} is downgraded unless verification ran
- * at least one command and every command passed. Publishing, phase
- * reconciliation and the backend attempt writes are fg-31d.</p>
+ * parsed strictly, redacted and only then returned. An {@code approve} is
+ * downgraded unless verification ran at least one command and every install and
+ * verification command passed. Publishing, phase reconciliation and the
+ * backend attempt writes are fg-31d.</p>
  */
 public final class ReviewTicketProcessor {
 
@@ -86,10 +87,12 @@ public final class ReviewTicketProcessor {
             return Outcome.failed("idempotency check failed: " + safe(error), startedAt);
         }
 
-        List<VerificationResult> verificationResults;
+        VerificationOutcome verificationOutcome;
         try {
-            List<VerificationResult> results = verification.run(job.workspace());
-            verificationResults = results == null ? List.of() : List.copyOf(results);
+            VerificationOutcome outcome = verification.run(job.workspace());
+            verificationOutcome = outcome == null
+                ? new VerificationOutcome(List.of(), List.of())
+                : outcome;
         } catch (IOException | RuntimeException error) {
             return Outcome.failed("verification failed to run: " + safe(error), startedAt);
         }
@@ -103,16 +106,16 @@ public final class ReviewTicketProcessor {
 
         ReviewResultParser.Result parsed;
         try {
-            parsed = resultParser.parse(reviewText, changedFiles(job.prompt()));
-        } catch (ReviewResultParser.InvalidReviewException error) {
+            parsed = redact(resultParser.parse(reviewText, changedFiles(job.prompt())));
+        } catch (RuntimeException error) {
             return Outcome.failed("invalid review output: " + safe(error), startedAt);
         }
 
-        ReviewResultParser.Result guarded = enforceApprovalGuard(parsed, verificationResults);
+        ReviewResultParser.Result guarded = enforceApprovalGuard(parsed, verificationOutcome);
         return Outcome.completed(
             sha,
             guarded,
-            verificationResults,
+            verificationOutcome,
             System.currentTimeMillis() - startedAt
         );
     }
@@ -120,22 +123,37 @@ public final class ReviewTicketProcessor {
     /**
      * Production wiring for a trusted repository. Sandbox-owned verification is
      * wired by fg-31d/fg-34; this path reuses the supervisor's sanitized
-     * {@link VerificationRunner} and fails closed when no command is found.
+     * {@link VerificationRunner}. Installs and verification commands share one
+     * deadline, and install results are kept separate so a passing install
+     * alone can never approve a review.
      */
     public static Verification hostVerification(HarnessConfig config, Duration timeout) {
         VerificationRunner runner = new VerificationRunner(config);
         Duration effective = timeout == null ? DEFAULT_VERIFICATION_TIMEOUT : timeout;
         return workspace -> {
-            List<VerificationResult> results = new ArrayList<>();
-            results.addAll(runner.run(workspace, runner.resolveInstallCommands(workspace), effective));
-            results.addAll(runner.run(workspace, runner.resolveCommands(workspace), effective));
-            return results;
+            long deadline = System.nanoTime() + effective.toNanos();
+            List<VerificationResult> installs = runner.run(
+                workspace,
+                runner.resolveInstallCommands(workspace),
+                remaining(deadline)
+            );
+            List<VerificationResult> commands = runner.run(
+                workspace,
+                runner.resolveCommands(workspace),
+                remaining(deadline)
+            );
+            return new VerificationOutcome(installs, commands);
         };
+    }
+
+    private static Duration remaining(long deadlineNanos) {
+        long left = deadlineNanos - System.nanoTime();
+        return left <= 0 ? Duration.ZERO : Duration.ofNanos(left);
     }
 
     private static ReviewResultParser.Result enforceApprovalGuard(
         ReviewResultParser.Result result,
-        List<VerificationResult> verification
+        VerificationOutcome verification
     ) {
         if (!"approve".equals(result.verdict())) {
             return result;
@@ -147,7 +165,7 @@ public final class ReviewTicketProcessor {
                 "Approval withheld: critical findings.\n\n" + result.summary()
             );
         }
-        if (!verificationPassed(verification)) {
+        if (verification == null || !verification.approved()) {
             return withVerdict(
                 result,
                 "comment",
@@ -157,16 +175,24 @@ public final class ReviewTicketProcessor {
         return result;
     }
 
-    private static boolean verificationPassed(List<VerificationResult> verification) {
-        if (verification == null || verification.isEmpty()) {
-            return false;
+    private static ReviewResultParser.Result redact(ReviewResultParser.Result result) {
+        List<ReviewResultParser.Finding> findings = new ArrayList<>();
+        for (ReviewResultParser.Finding finding : result.findings()) {
+            findings.add(new ReviewResultParser.Finding(
+                finding.severity(),
+                finding.file(),
+                finding.line(),
+                REDACTOR.redact(finding.message()),
+                finding.suggestion() == null ? null : REDACTOR.redact(finding.suggestion())
+            ));
         }
-        for (VerificationResult result : verification) {
-            if (result == null || !result.passed()) {
-                return false;
-            }
-        }
-        return true;
+        return new ReviewResultParser.Result(
+            result.verdict(),
+            REDACTOR.redact(result.summary()),
+            findings,
+            result.residualRisks().stream().map(REDACTOR::redact).toList(),
+            result.humanQuestions().stream().map(REDACTOR::redact).toList()
+        );
     }
 
     private static ReviewResultParser.Result withVerdict(
@@ -238,16 +264,52 @@ public final class ReviewTicketProcessor {
     ) {
     }
 
+    public record VerificationOutcome(
+        List<VerificationResult> installs,
+        List<VerificationResult> commands
+    ) {
+        public VerificationOutcome {
+            installs = installs == null ? List.of() : List.copyOf(installs);
+            commands = commands == null ? List.of() : List.copyOf(commands);
+        }
+
+        /**
+         * A passing install is not verification evidence: at least one
+         * verification command must have run and every install/command must
+         * have passed.
+         */
+        public boolean approved() {
+            return !commands.isEmpty() && allPassed(installs) && allPassed(commands);
+        }
+
+        public List<VerificationResult> all() {
+            List<VerificationResult> all = new ArrayList<>(installs);
+            all.addAll(commands);
+            return List.copyOf(all);
+        }
+
+        private static boolean allPassed(List<VerificationResult> results) {
+            for (VerificationResult result : results) {
+                if (result == null || !result.passed()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
     public record Outcome(
         Status status,
         String reason,
         String reviewedSha,
         ReviewResultParser.Result result,
-        List<VerificationResult> verification,
+        VerificationOutcome verification,
         long durationMs
     ) {
         public Outcome {
-            verification = verification == null ? List.of() : List.copyOf(verification);
+            verification = verification == null
+                ? new VerificationOutcome(List.of(), List.of())
+                : verification;
         }
 
         public boolean approved() {
@@ -258,18 +320,20 @@ public final class ReviewTicketProcessor {
 
         static Outcome skipped(String reason, long startedAt) {
             return new Outcome(
-                Status.SKIPPED, reason, null, null, List.of(), elapsed(startedAt));
+                Status.SKIPPED, reason, null, null,
+                new VerificationOutcome(List.of(), List.of()), elapsed(startedAt));
         }
 
         static Outcome failed(String reason, long startedAt) {
             return new Outcome(
-                Status.FAILED, reason, null, null, List.of(), elapsed(startedAt));
+                Status.FAILED, reason, null, null,
+                new VerificationOutcome(List.of(), List.of()), elapsed(startedAt));
         }
 
         static Outcome completed(
             String reviewedSha,
             ReviewResultParser.Result result,
-            List<VerificationResult> verification,
+            VerificationOutcome verification,
             long durationMs
         ) {
             return new Outcome(
@@ -292,7 +356,7 @@ public final class ReviewTicketProcessor {
 
     @FunctionalInterface
     public interface Verification {
-        List<VerificationResult> run(Path workspace) throws IOException;
+        VerificationOutcome run(Path workspace) throws IOException;
     }
 
     @FunctionalInterface

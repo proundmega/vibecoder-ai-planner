@@ -2,12 +2,14 @@ package com.vibecode.agent.harness;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vibecode.agent.model.Ticket;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
@@ -94,6 +96,23 @@ class ReviewHarnessClientTest {
     }
 
     @Test
+    void replacesStreamedPartsWithoutAnId() throws Exception {
+        FakeHarness harness = new FakeHarness();
+        harness.events.add(event(
+            "{\"type\":\"message.part.updated\",\"properties\":"
+                + "{\"part\":{\"messageID\":\"msg_1\",\"type\":\"text\","
+                + "\"text\":\"par\"}}}"));
+        harness.events.add(event(
+            "{\"type\":\"message.part.updated\",\"properties\":"
+                + "{\"part\":{\"messageID\":\"msg_1\",\"type\":\"text\","
+                + "\"text\":\"partial\"}}}"));
+
+        String text = new ReviewHarnessClient(harness).review(workspace, "review", promptRequest());
+
+        assertEquals("partial", text);
+    }
+
+    @Test
     void fallsBackToTheLastMessageWhenNoRoleIsPresent() throws Exception {
         FakeHarness harness = new FakeHarness();
         harness.events.add(event(
@@ -108,6 +127,33 @@ class ReviewHarnessClientTest {
         String text = new ReviewHarnessClient(harness).review(workspace, "review", promptRequest());
 
         assertEquals("new", text);
+    }
+
+    @Test
+    void failsClosedOnAUserOnlyTranscript() throws Exception {
+        FakeHarness harness = new FakeHarness();
+        harness.events.add(event(
+            "{\"type\":\"message.updated\",\"properties\":"
+                + "{\"info\":{\"id\":\"msg_user\",\"role\":\"user\"}}}"));
+        harness.events.add(event(
+            "{\"type\":\"message.part.updated\",\"properties\":"
+                + "{\"part\":{\"id\":\"u1\",\"messageID\":\"msg_user\","
+                + "\"type\":\"text\",\"text\":\"Please review this.\"}}}"));
+
+        assertThrows(IOException.class,
+            () -> new ReviewHarnessClient(harness).review(workspace, "review", promptRequest()));
+    }
+
+    @Test
+    void waitsForAsynchronousAssistantEvents() throws Exception {
+        FakeHarness harness = new FakeHarness();
+        harness.asyncText = "Async review.";
+        ReviewHarnessClient client = new ReviewHarnessClient(
+            harness, new ReviewPromptBuilder(), Duration.ofSeconds(2));
+
+        String text = client.review(workspace, "review", promptRequest());
+
+        assertEquals("Async review.", text);
     }
 
     @Test
@@ -163,6 +209,7 @@ class ReviewHarnessClientTest {
         private Path startedWorkspace;
         private String sessionTitle;
         private String prompt = "";
+        private String asyncText;
         private boolean healthy = true;
         private boolean closed;
 
@@ -180,9 +227,20 @@ class ReviewHarnessClientTest {
         @Override
         public void sendPrompt(String sessionId, String prompt) {
             this.prompt = prompt;
+            if (asyncText != null) {
+                Thread thread = new Thread(() -> {
+                    sleep();
+                    listener.accept(textEvent(asyncText));
+                    listener.accept(idleEvent());
+                }, "async-review-fake");
+                thread.setDaemon(true);
+                thread.start();
+                return;
+            }
             for (HarnessEvent event : events) {
                 listener.accept(event);
             }
+            listener.accept(idleEvent());
         }
 
         @Override
@@ -203,6 +261,32 @@ class ReviewHarnessClientTest {
         @Override
         public void close() {
             closed = true;
+        }
+
+        private static void sleep() {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        private static HarnessEvent textEvent(String text) {
+            ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("type", "message.part.updated");
+            ObjectNode part = payload.putObject("properties").putObject("part");
+            part.put("id", "p_async");
+            part.put("messageID", "msg_async");
+            part.put("type", "text");
+            part.put("text", text);
+            return HarnessEvent.of("message.part.updated", payload);
+        }
+
+        private static HarnessEvent idleEvent() {
+            ObjectNode payload = MAPPER.createObjectNode();
+            payload.put("type", "session.idle");
+            payload.putObject("properties").put("sessionID", "ses_test");
+            return HarnessEvent.of("session.idle", payload);
         }
     }
 }
