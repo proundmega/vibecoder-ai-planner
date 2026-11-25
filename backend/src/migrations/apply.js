@@ -65,6 +65,7 @@ const SQL_FILES = [
   path.join(__dirname, './061_ticket_readiness.sql'),
   path.join(__dirname, './062_ticket_review_attempts.sql'),
   path.join(__dirname, './063_git_provider.sql'),
+  path.join(__dirname, './064_ticket_fix_requests.sql'),
 ];
 
 // 057 is the destructive clean cut and runs after 059. The migration ledger
