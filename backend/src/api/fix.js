@@ -15,7 +15,7 @@ function requireRuntimeIdentity(req, res, next) {
       success: false,
       error: {
         code: 'RUNTIME_REQUIRED',
-        message: 'A fix request must be claimed by a running agent runtime',
+        message: 'A running agent runtime is required for this fix endpoint',
       },
     });
   }

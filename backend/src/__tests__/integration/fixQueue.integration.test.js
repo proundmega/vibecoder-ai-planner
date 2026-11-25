@@ -192,6 +192,46 @@ describe('fg-32b1 fix queue and lease (real DB)', () => {
     }
   });
 
+  test('does not renew after the ticket leaves in_progress or is deleted', async () => {
+    const moved = await createFixture();
+    try {
+      await FixRequestService.createOrEnsure(
+        moved.ticketId, { attemptId: moved.attemptId });
+      await FixQueueService.claim(moved.ticketId, {
+        runtimeId: moved.runtimeIds[0], leaseSeconds: 120,
+      });
+      await global.db.query(
+        "UPDATE tickets SET status = 'review', phase = 'review' WHERE id = $1",
+        [moved.ticketId]
+      );
+
+      await expect(FixQueueService.renew(moved.ticketId, {
+        runtimeId: moved.runtimeIds[0], leaseSeconds: 120,
+      })).rejects.toThrow('No claimed fix request');
+    } finally {
+      await cleanup(moved);
+    }
+
+    const deleted = await createFixture();
+    try {
+      await FixRequestService.createOrEnsure(
+        deleted.ticketId, { attemptId: deleted.attemptId });
+      await FixQueueService.claim(deleted.ticketId, {
+        runtimeId: deleted.runtimeIds[0], leaseSeconds: 120,
+      });
+      await global.db.query(
+        'UPDATE tickets SET deleted_at = NOW() WHERE id = $1',
+        [deleted.ticketId]
+      );
+
+      await expect(FixQueueService.renew(deleted.ticketId, {
+        runtimeId: deleted.runtimeIds[0], leaseSeconds: 120,
+      })).rejects.toThrow('No claimed fix request');
+    } finally {
+      await cleanup(deleted);
+    }
+  });
+
   test('reclaims an expired lease and records an audit event', async () => {
     const fixture = await createFixture();
     try {
