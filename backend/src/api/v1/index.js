@@ -18,6 +18,7 @@ const usageRouter = require('../usage');
 const billingRouter = require('../billing');
 const memoryRouter = require('../memory');
 const reviewRouter = require('../review');
+const fixRouter = require('../fix');
 const ticketPlanningController = require('../../controllers/ticketPlanningController');
 const ticketAttachmentController = require('../../controllers/ticketAttachmentController');
 const templateController = require('../../controllers/templateController');
@@ -215,6 +216,8 @@ router.use('/usage', usageRouter);
 router.use('/billing', billingRouter);
 router.use('/memory', memoryRouter);
 router.use('/tickets', reviewRouter);
+// Fix queue/claim/renew routes (fg-32b1) are absolute-path routes.
+router.use(fixRouter);
 router.use('/harness', harnessObservabilityRouter);
 router.use('/harness', harnessRunsRouter);
 router.use('/harness', questionsRouter);

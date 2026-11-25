@@ -192,6 +192,27 @@ function requireTicketGrant(...roles) {
 }
 
 /**
+ * Require a runtime role plus an active grant on `?projectId=` (or a body
+ * project). Used by project-scoped agent queues that are not ticket-bound.
+ */
+function requireQueryProjectGrant(...roles) {
+  return async (req, res, next) => {
+    if (!(await checkRuntime(req, res, { roles }))) return;
+    if (!isNodeRequest(req)) return next();
+    const projectId = req.query.projectId ?? req.body?.projectId;
+    if (!validId(res, projectId, 'projectId', NUMERIC_ID)) return;
+    if (!(await hasGrant(req.node.id, projectId, req.runtime.role))) {
+      await auditDenial(req, 'auth.grant_denied', {
+        projectId,
+        metadata: { role: req.runtime.role, resource: 'project' },
+      });
+      return deny(res, 403, 'GRANT_REQUIRED', 'No active grant for this project/role');
+    }
+    return next();
+  };
+}
+
+/**
  * Require a runtime role plus an active grant on the project named by the
  * request body, a referenced ticket, or a referenced harness run.
  */
@@ -337,6 +358,7 @@ module.exports = {
   requireTicketGrant,
   requireBodyGrant,
   requireProjectGrant,
+  requireQueryProjectGrant,
   requireRunGrant,
   requireReviewEventGrant,
   recordAuthEvent,
