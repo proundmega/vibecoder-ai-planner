@@ -175,6 +175,41 @@ describe('Git provider contract', () => {
   });
 });
 
+describe('Local provider', () => {
+  it('registers and parses SSH and filesystem URLs', () => {
+    expect(git.registry.has('local')).toBe(true);
+    const provider = git.registry.get('local', {
+      credential: 'key',
+      authMode: 'ssh',
+    });
+
+    expect(provider.id).toBe('local');
+    expect(provider.capabilities.supportsReviewRequests).toBe(false);
+    expect(provider.parseRepoUrl('ssh://git@git.example.com/group/repo.git'))
+      .toMatchObject({ host: 'git.example.com', protocol: 'ssh' });
+    expect(provider.parseRepoUrl('git@git.example.com:group/repo.git'))
+      .toMatchObject({ host: 'git.example.com', protocol: 'ssh' });
+    expect(provider.parseRepoUrl('/srv/git/private-app.git'))
+      .toMatchObject({ protocol: 'file', path: '/srv/git/private-app.git' });
+    expect(provider.getCloneUrl('/srv/git/private-app.git'))
+      .toBe('/srv/git/private-app.git');
+  });
+
+  it('requires an SSH key and has no review API', async () => {
+    const provider = git.local.createProvider({ authMode: 'ssh' });
+
+    await expect(provider.validateRepoAccess('ssh://git@git.example.com/group/repo.git'))
+      .resolves.toMatchObject({ accessible: false });
+    await expect(provider.validateRepoAccess(
+      'ssh://git@git.example.com/group/repo.git', 'private-key'))
+      .resolves.toMatchObject({ accessible: true });
+    expect(() => provider.parseRepoUrl('https://git.example.com/group/repo'))
+      .toThrow('must use an SSH or filesystem');
+    await expect(provider.createReviewRequest()).resolves.toBeNull();
+    expect(await provider.listReviewRequests()).toEqual([]);
+  });
+});
+
 describe('GitHub provider adapter', () => {
   beforeEach(() => {
     jest.clearAllMocks();

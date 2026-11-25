@@ -111,9 +111,8 @@ describe('GitProjectService', () => {
       expect(result.accessToken).toBeUndefined();
     });
 
-    it('stores an encrypted SSH key for local providers', async () => {
-      const provider = fakeProvider();
-      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+    it('stores an encrypted SSH key for the registered local provider', async () => {
+      jest.spyOn(gitProviders.registry, 'get');
       pool.query.mockResolvedValue({
         rows: [{
           id: 1,
@@ -134,6 +133,11 @@ describe('GitProjectService', () => {
         authMode: 'ssh',
       }, 100);
 
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('local', {
+        credential: 'key',
+        baseUrl: null,
+        authMode: 'ssh',
+      });
       expect(encrypt).toHaveBeenCalledWith('key');
       expect(pool.query.mock.calls[0][1][3]).toBeNull();
       expect(pool.query.mock.calls[0][1][8]).toBe('enc:key');
