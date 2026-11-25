@@ -47,11 +47,13 @@ public final class CachePlan {
         ".env", ".npmrc", ".netrc", "credentials", "id_rsa", "id_ed25519",
         "id_ecdsa", "token", "secrets", ".git-credentials", ".pypirc",
         ".yarnrc", ".yarnrc.yml", "gradle.properties", "init.gradle",
-        "init.gradle.kts", "config.toml", "credentials.toml");
+        "init.gradle.kts", "config.toml", "credentials.toml", ".pgpass",
+        ".authinfo", ".gitconfig", ".terraformrc", ".vault-token");
     private static final Set<String> SENSITIVE_SUFFIXES = Set.of(
         ".pem", ".key", ".p12", ".pfx", ".keystore", ".jks");
     private static final Set<String> SENSITIVE_DIRECTORIES = Set.of(
-        "init.d", ".docker");
+        "init.d", ".docker", ".ssh", ".kube", ".aws", ".config", ".gnupg",
+        ".terraform.d");
     private static final long MAX_HASHED_LOCKFILE_BYTES = 16L * 1024 * 1024;
     private static final long DEFAULT_MAX_BYTES = 2048L * 1024 * 1024;
     private static final long DEFAULT_RETENTION_DAYS = 14L;

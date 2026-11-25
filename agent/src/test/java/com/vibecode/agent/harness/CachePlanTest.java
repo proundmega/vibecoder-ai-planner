@@ -157,6 +157,66 @@ class CachePlanTest {
     }
 
     @Test
+    void wiresEnvironmentForEveryCacheKind() throws Exception {
+        Path repo = repo();
+        Path cacheRoot = temp.resolve("cache");
+        assertEquals("/cache/npm",
+            envFor("npm", repo, cacheRoot).get("NPM_CONFIG_CACHE"));
+        assertEquals("/cache/pip",
+            envFor("pip", repo, cacheRoot).get("PIP_CACHE_DIR"));
+        assertTrue(envFor("maven", repo, cacheRoot).get("MAVEN_OPTS")
+            .contains("-Dmaven.repo.local=/cache/maven"));
+        assertEquals("/cache/go/mod", envFor("go", repo, cacheRoot).get("GOMODCACHE"));
+        assertEquals("/cache/go/build", envFor("go", repo, cacheRoot).get("GOCACHE"));
+        assertEquals("/tmp/.gradle", envFor("gradle", repo, cacheRoot).get("GRADLE_USER_HOME"));
+        assertEquals("/tmp/.cargo", envFor("cargo", repo, cacheRoot).get("CARGO_HOME"));
+    }
+
+    private java.util.Map<String, String> envFor(String kind, Path repo, Path cacheRoot)
+        throws Exception {
+        java.util.Map<String, String> env = new java.util.HashMap<>();
+        for (CachePlan.Mount mount : CachePlan.prepare(
+            profile(kind), "42", 7, repo, cacheRoot).mounts()) {
+            env.putAll(mount.env());
+        }
+        return env;
+    }
+
+    @Test
+    void scrubsCommonCredentialAndConfigLocations() throws Exception {
+        Path repo = repo();
+        Path cacheRoot = temp.resolve("cache");
+        CachePlan.Prepared prepared = CachePlan.prepare(
+            profile("npm"), "42", 7, repo, cacheRoot);
+        Path generation = prepared.mounts().get(0).source().getParent();
+        Files.writeString(generation.resolve(".pgpass"), "host:5432:db:user:pass");
+        Files.writeString(generation.resolve(".authinfo"), "machine x login y password z");
+        Files.writeString(generation.resolve(".gitconfig"), "[url \"x\"] insteadOf = y");
+        Files.writeString(generation.resolve(".terraformrc"), "credentials \"x\" {}");
+        Files.writeString(generation.resolve(".vault-token"), "token");
+        Files.createDirectories(generation.resolve(".ssh"));
+        Files.writeString(generation.resolve(".ssh").resolve("config"),
+            "Host *\n  ProxyCommand evil");
+        Files.createDirectories(generation.resolve(".kube"));
+        Files.writeString(generation.resolve(".kube").resolve("config"), "token: x");
+        Files.createDirectories(generation.resolve(".aws"));
+        Files.writeString(generation.resolve(".aws").resolve("config"), "secret");
+        Files.createDirectories(generation.resolve(".config").resolve("gh"));
+        Files.writeString(generation.resolve(".config").resolve("gh").resolve("hosts.yml"),
+            "oauth_token: x");
+        Files.createDirectories(generation.resolve(".gnupg"));
+        Files.writeString(generation.resolve(".gnupg").resolve("gpg.conf"), "x");
+
+        CachePlan.prepare(profile("npm"), "42", 7, repo, cacheRoot);
+
+        for (String name : new String[]{
+            ".pgpass", ".authinfo", ".gitconfig", ".terraformrc", ".vault-token",
+            ".ssh", ".kube", ".aws", ".config", ".gnupg"}) {
+            assertFalse(Files.exists(generation.resolve(name)), name + " should be scrubbed");
+        }
+    }
+
+    @Test
     void mountsOnlyGradleAndCargoCacheSubdirectories() throws Exception {
         Path repo = repo();
         Path cacheRoot = temp.resolve("cache");
