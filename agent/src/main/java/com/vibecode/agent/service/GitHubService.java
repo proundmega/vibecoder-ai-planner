@@ -9,7 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -309,6 +311,149 @@ public class GitHubService {
             }
             return objectMapper.readTree(response.body().string()).path("commit").path("sha").asText();
         }
+    }
+
+    /**
+     * Fetch the authenticated login. This is useful for PAT/user tokens;
+     * GitHub App installation tokens return 403 (or no login), so App wiring
+     * must take the bot login from the backend/app slug instead.
+     */
+    public String getAuthenticatedLogin() throws IOException {
+        Request request = new Request.Builder()
+            .url(apiBase + "/user")
+            .header("Authorization", "token " + token())
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = executeWithAuth(request)) {
+            if (!response.isSuccessful()) {
+                throw new IOException("Failed to get authenticated login: " + response.code());
+            }
+            String login = objectMapper.readTree(response.body().string())
+                .path("login").asText("");
+            if (login.isBlank()) {
+                throw new IOException("GitHub did not return an authenticated login");
+            }
+            return login;
+        }
+    }
+
+    /**
+     * Fetch the current head SHA of a pull request. Used to re-check the
+     * reviewed commit immediately before publishing a review.
+     */
+    public String getPullRequestHeadSha(int pullNumber) throws IOException {
+        Request request = new Request.Builder()
+            .url(apiBase + "/repos/" + owner + "/" + repo + "/pulls/" + pullNumber)
+            .header("Authorization", "token " + token())
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = executeWithAuth(request)) {
+            if (!response.isSuccessful()) {
+                throw new IOException(
+                    "Failed to get pull request " + pullNumber + ": " + response.code());
+            }
+            JsonNode root = objectMapper.readTree(response.body().string());
+            String sha = root.path("head").path("sha").asText("");
+            if (sha.isBlank()) {
+                throw new IOException("Pull request " + pullNumber + " has no head SHA");
+            }
+            return sha;
+        }
+    }
+
+    /**
+     * List the existing reviews on a pull request. Used to adopt a review that
+     * posted successfully before an attempt-completion write failed.
+     */
+    public List<PullRequestReview> listPullRequestReviews(int pullNumber) throws IOException {
+        Request request = new Request.Builder()
+            .url(apiBase + "/repos/" + owner + "/" + repo
+                + "/pulls/" + pullNumber + "/reviews?per_page=100")
+            .header("Authorization", "token " + token())
+            .header("Accept", "application/vnd.github+json")
+            .get()
+            .build();
+
+        try (Response response = executeWithAuth(request)) {
+            if (!response.isSuccessful()) {
+                throw new IOException(
+                    "Failed to list reviews for pull request " + pullNumber + ": "
+                        + response.code());
+            }
+            JsonNode root = objectMapper.readTree(response.body().string());
+            List<PullRequestReview> reviews = new ArrayList<>();
+            if (root.isArray()) {
+                for (JsonNode node : root) {
+                    long id = node.path("id").asLong(0);
+                    if (id <= 0) {
+                        continue;
+                    }
+                    reviews.add(new PullRequestReview(
+                        id,
+                        node.path("commit_id").asText(""),
+                        node.path("body").asText(""),
+                        node.path("user").path("login").asText(""),
+                        node.path("state").asText("")
+                    ));
+                }
+            }
+            return reviews;
+        }
+    }
+
+    /**
+     * Create a COMMENT-only pull request review attached to an exact commit.
+     * Phase 1 never sends APPROVE or REQUEST_CHANGES.
+     */
+    public long createPullRequestReview(int pullNumber, String commitId, String body)
+        throws IOException {
+        if (commitId == null || commitId.isBlank()) {
+            throw new IOException("A reviewed commit id is required");
+        }
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("commit_id", commitId);
+        payload.put("body", redactor.apply(body == null ? "" : body));
+        payload.put("event", "COMMENT");
+
+        String bodyJson = objectMapper.writeValueAsString(payload);
+        RequestBody requestBody = RequestBody.create(
+            bodyJson, MediaType.get("application/json"));
+
+        Request request = new Request.Builder()
+            .url(apiBase + "/repos/" + owner + "/" + repo
+                + "/pulls/" + pullNumber + "/reviews")
+            .header("Authorization", "token " + token())
+            .header("Accept", "application/vnd.github+json")
+            .post(requestBody)
+            .build();
+
+        try (Response response = executeWithAuth(request)) {
+            String responseBody = response.body() == null ? "" : response.body().string();
+            if (!response.isSuccessful()) {
+                throw new IOException(
+                    "Failed to create pull request review: " + response.code()
+                        + (responseBody.isBlank() ? "" : " " + redactor.apply(responseBody)));
+            }
+            JsonNode root = objectMapper.readTree(responseBody);
+            long id = root.path("id").asLong(0);
+            if (id <= 0) {
+                throw new IOException("GitHub did not return a review id");
+            }
+            return id;
+        }
+    }
+
+    public record PullRequestReview(
+        long id,
+        String commitId,
+        String body,
+        String author,
+        String state
+    ) {
     }
 
     private String createTree(String filePath, String content) throws IOException {

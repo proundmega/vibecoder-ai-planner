@@ -30,6 +30,7 @@ class GitHubServiceTest {
     private volatile String responseBody = "[]";
     private volatile String postResponseBody = "{}";
     private volatile int unauthorizedRequests = 0;
+    private volatile int errorStatus = 0;
     private volatile boolean unauthorizedOnPostOnly = false;
 
     @BeforeEach
@@ -49,12 +50,15 @@ class GitHubServiceTest {
             if (unauthorized) {
                 unauthorizedRequests -= 1;
             }
+            int code = unauthorized ? 401 : (errorStatus > 0 ? errorStatus : 200);
             String payload = unauthorized
                 ? "{}"
-                : (isPost ? postResponseBody : responseBody);
+                : (errorStatus > 0
+                    ? "{\"message\":\"request failed\"}"
+                    : (isPost ? postResponseBody : responseBody));
             byte[] body = payload.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(unauthorized ? 401 : 200, body.length);
+            exchange.sendResponseHeaders(code, body.length);
             exchange.getResponseBody().write(body);
             exchange.close();
         });
@@ -71,6 +75,64 @@ class GitHubServiceTest {
             server.stop(0);
         }
         RedactionRegistry.reset();
+    }
+
+    @Test
+    void fetchesPullRequestHeadSha() throws Exception {
+        responseBody = "{\"head\":{\"sha\":\"abc123\"},\"state\":\"open\"}";
+
+        assertEquals("abc123", service.getPullRequestHeadSha(7));
+    }
+
+    @Test
+    void listsPullRequestReviews() throws Exception {
+        responseBody = "[{\"id\":11,\"commit_id\":\"sha-1\",\"body\":\"marker\","
+            + "\"state\":\"COMMENTED\",\"user\":{\"login\":\"reviewer\"}}]";
+
+        List<GitHubService.PullRequestReview> reviews = service.listPullRequestReviews(7);
+
+        assertEquals(1, reviews.size());
+        assertEquals(11L, reviews.get(0).id());
+        assertEquals("sha-1", reviews.get(0).commitId());
+        assertEquals("marker", reviews.get(0).body());
+        assertEquals("reviewer", reviews.get(0).author());
+        assertEquals("COMMENTED", reviews.get(0).state());
+    }
+
+    @Test
+    void fetchesTheAuthenticatedLogin() throws Exception {
+        responseBody = "{\"login\":\"vibecode-reviewer\"}";
+
+        assertEquals("vibecode-reviewer", service.getAuthenticatedLogin());
+    }
+
+    @Test
+    void rejectsAForbiddenAuthenticatedLoginLookup() {
+        errorStatus = 403;
+
+        assertThrows(IOException.class, () -> service.getAuthenticatedLogin());
+    }
+
+    @Test
+    void rejectsABlankAuthenticatedLogin() throws Exception {
+        responseBody = "{\"login\":\"\"}";
+
+        assertThrows(IOException.class, () -> service.getAuthenticatedLogin());
+    }
+
+    @Test
+    void createsACommentOnlyReviewAtTheReviewedCommit() throws Exception {
+        postResponseBody = "{\"id\":42}";
+
+        long id = service.createPullRequestReview(7, "commit-1", "review body");
+
+        assertEquals(42L, id);
+        String body = postBodies.get(0);
+        assertTrue(body.contains("\"event\":\"COMMENT\""));
+        assertTrue(body.contains("\"commit_id\":\"commit-1\""));
+        assertTrue(body.contains("\"body\":\"review body\""));
+        assertFalse(body.contains("\"event\":\"APPROVE\""));
+        assertFalse(body.contains("\"event\":\"REQUEST_CHANGES\""));
     }
 
     @Test
