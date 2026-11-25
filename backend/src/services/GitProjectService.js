@@ -270,6 +270,9 @@ class GitProjectService {
         { repo: connected, provider }
       );
     } catch (error) {
+      if (error instanceof ValidationError) {
+        throw error;
+      }
       logger.warn(`Failed to delete branch ${ticket.branchName}:`, error.message);
     }
 

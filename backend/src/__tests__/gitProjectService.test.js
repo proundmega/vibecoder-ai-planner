@@ -21,6 +21,7 @@ const User = require('../models/user');
 const PermissionService = require('../services/PermissionService');
 const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const { encrypt, decrypt } = require('../utils/crypto');
+const { ValidationError } = require('../errors/HttpError');
 const gitProviders = require('../providers/git');
 
 function fakeProvider(overrides = {}) {
@@ -479,6 +480,28 @@ describe('GitProjectService', () => {
         .resolves.toEqual({ success: true });
       expect(provider.deleteBranch).toHaveBeenCalledWith(repo, 'vibecode/ticket-42-title');
       expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SET branch_name = NULL'),
+        [42]
+      );
+    });
+
+    it('does not clear ticket state when the provider refuses branch deletion', async () => {
+      const provider = fakeProvider({
+        deleteBranch: jest.fn().mockRejectedValue(
+          new ValidationError('Branch deletion is not available for local repositories')),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      await expect(GitProjectService.deleteBranch(1, 42, {
+        repo: {
+          provider: 'github',
+          repoUrl: 'owner/repo',
+          accessTokenEncrypted: 'enc:pat',
+        },
+      })).rejects.toThrow('not available for local repositories');
+
+      expect(pool.query).not.toHaveBeenCalledWith(
         expect.stringContaining('SET branch_name = NULL'),
         [42]
       );
