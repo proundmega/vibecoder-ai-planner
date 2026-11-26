@@ -501,6 +501,90 @@ public class WorkspaceManager {
     }
 
     /**
+     * Publish a fix commit with fast-forward semantics only (fg-32c1).
+     *
+     * <p>The remote branch must still point at {@code reviewedSha}. We fetch,
+     * verify the remote head, push without force, then re-read the remote head.
+     * A human push during the fix wins; this method never force-writes or
+     * rewrites the shared branch.</p>
+     */
+    public String publishFastForward(
+        String commitSha,
+        String branchName,
+        String reviewedSha
+    ) throws IOException {
+        if (commitSha == null || commitSha.isBlank()
+            || reviewedSha == null || reviewedSha.isBlank()) {
+            throw new IOException("commit and reviewed SHAs are required");
+        }
+        String branch = branchName == null ? "" : branchName.trim();
+        if (branch.isEmpty() || branch.startsWith("-") || branch.contains("..")) {
+            throw new IOException("A valid branch name is required");
+        }
+        if (dryRun) {
+            log.info("[DRY RUN] Would fast-forward publish {} to {}", commitSha, branch);
+            return commitSha;
+        }
+
+        hardenGitRepository();
+        String expected = reviewedSha.trim();
+        fetchRemoteBranch(branch);
+        String remoteSha = remoteBranchRef(branch);
+        if (!expected.equalsIgnoreCase(remoteSha)) {
+            throw new IOException(
+                "remote_head_moved: " + branch + " is at " + remoteSha
+                    + ", reviewed " + expected);
+        }
+
+        pushFastForward(commitSha.trim(), branch);
+
+        fetchRemoteBranch(branch);
+        String published = remoteBranchRef(branch);
+        if (!commitSha.trim().equalsIgnoreCase(published)) {
+            throw new IOException(
+                "remote_head_mismatch: " + branch + " is at " + published
+                    + " after publishing " + commitSha.trim());
+        }
+        return commitSha.trim();
+    }
+
+    private void fetchRemoteBranch(String branch) throws IOException {
+        runGit("fetch", "--no-tags", "origin", branch);
+    }
+
+    private String remoteBranchRef(String branch) throws IOException {
+        return runGitCommand("rev-parse", "refs/remotes/origin/" + branch).trim();
+    }
+
+    private void pushFastForward(String commitSha, String branchName) throws IOException {
+        String token = currentToken();
+        boolean authenticate = token != null && !token.isBlank();
+        if (authenticate) {
+            ensureAskPass(token);
+        }
+        try {
+            try {
+                pushFastForwardOnce(commitSha, branchName);
+            } catch (IOException first) {
+                if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
+                    throw first;
+                }
+                String refreshed = refreshToken(first);
+                cleanupAskPass();
+                ensureAskPass(refreshed);
+                pushFastForwardOnce(commitSha, branchName);
+            }
+        } finally {
+            cleanupAskPass();
+        }
+    }
+
+    private void pushFastForwardOnce(String commitSha, String branchName) throws IOException {
+        runGit("push", "--no-verify", "origin",
+            commitSha + ":refs/heads/" + branchName);
+    }
+
+    /**
      * Stage everything so the guard inspects the exact tree that will be
      * committed. Callers should close the harness before invoking this.
      */

@@ -1721,4 +1721,63 @@ class WorkspaceManagerTest {
         assertEquals(0, exit, "git " + String.join(" ", args) + " failed: " + output);
         return output.strip();
     }
+
+    @Test
+    void publishFastForwardPushesWhenTheRemoteIsStillAtTheReviewedSha() throws Exception {
+        Path source = initRepo("ff-source");
+        Path bare = initBare("ff.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+        runGit(source, "push", "origin", "HEAD:refs/heads/vibecode/fix");
+        String reviewedSha = gitOutput(source, "rev-parse", "HEAD");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "ff", false, null);
+        wm.cloneRepo(bare.toString(), "vibecode/fix");
+        Path repoDir = wm.getRepoDir();
+        runGit(repoDir, "config", "user.email", "fix@example.com");
+        runGit(repoDir, "config", "user.name", "Fixer");
+        Files.writeString(repoDir.resolve("fix.txt"), "fixed\n");
+        runGit(repoDir, "add", ".");
+        runGit(repoDir, "commit", "-m", "fix review findings");
+        String fixedSha = gitOutput(repoDir, "rev-parse", "HEAD");
+
+        assertEquals(fixedSha,
+            wm.publishFastForward(fixedSha, "vibecode/fix", reviewedSha));
+        assertEquals(fixedSha,
+            gitOutput(bare, "rev-parse", "refs/heads/vibecode/fix"));
+    }
+
+    @Test
+    void publishFastForwardAbortsWhenAHumanPushedTheBranch() throws Exception {
+        Path source = initRepo("ff-moved-source");
+        Path bare = initBare("ff-moved.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+        runGit(source, "push", "origin", "HEAD:refs/heads/vibecode/fix");
+        String reviewedSha = gitOutput(source, "rev-parse", "HEAD");
+
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "ff-moved", false, null);
+        wm.cloneRepo(bare.toString(), "vibecode/fix");
+        Path repoDir = wm.getRepoDir();
+        runGit(repoDir, "config", "user.email", "fix@example.com");
+        runGit(repoDir, "config", "user.name", "Fixer");
+        Files.writeString(repoDir.resolve("fix.txt"), "fixed\n");
+        runGit(repoDir, "add", ".");
+        runGit(repoDir, "commit", "-m", "fix review findings");
+        String fixedSha = gitOutput(repoDir, "rev-parse", "HEAD");
+
+        Files.writeString(source.resolve("human.txt"), "human\n");
+        runGit(source, "add", ".");
+        runGit(source, "commit", "-m", "human push");
+        runGit(source, "push", "origin", "HEAD:refs/heads/vibecode/fix");
+        String humanSha = gitOutput(source, "rev-parse", "HEAD");
+
+        IOException error = assertThrows(IOException.class,
+            () -> wm.publishFastForward(fixedSha, "vibecode/fix", reviewedSha));
+        assertTrue(error.getMessage().contains("remote_head_moved"));
+        assertEquals(humanSha,
+            gitOutput(bare, "rev-parse", "refs/heads/vibecode/fix"));
+    }
 }
