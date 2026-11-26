@@ -329,7 +329,7 @@ describe('RepoProfileEditor', () => {
     const older = { ...page[0], id: 'older', error: 'older dry run' }
     vi.mocked(listProfileValidations)
       .mockResolvedValueOnce(page as never)
-      .mockResolvedValueOnce([older] as never)
+      .mockResolvedValueOnce([page[0], older] as never)
 
     const wrapper = mount(RepoProfileEditor, {
       props: { projectId: '1' },
@@ -346,6 +346,7 @@ describe('RepoProfileEditor', () => {
       2, '1', { limit: 200, offset: 200 });
     expect(wrapper.text()).toContain('Showing 201 dry runs.');
     expect(wrapper.text()).toContain('older dry run');
+    expect(wrapper.findAll('.validation')).toHaveLength(201);
     expect(button(wrapper, 'Load older dry runs')).toBeUndefined()
   });
 
