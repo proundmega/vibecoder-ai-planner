@@ -33,10 +33,11 @@ if you already operate it.
    docker run -d --name forgejo-test \
      -p 3000:3000 -p 2222:22 \
      -v forgejo-test-data:/data \
-     codeberg.org/forgejo/forgejo:<pinned-release>
+     codeberg.org/forgejo/forgejo:9.0.3
    ```
 
-   For Gitea, use the `gitea/gitea:<pinned-release>` image with the same ports.
+   For Gitea, use the `gitea/gitea:1.22.6` image with the same ports. Replace
+   the tag with the release pinned for the test host.
 
 2. Create a test user and repository. Do not enable public registration on a
    host reachable from untrusted networks.
@@ -48,12 +49,23 @@ if you already operate it.
    - base URL: `http://<host>:3000`
    - auth mode: `project_token` or `pat`
    - token: the scoped token
-5. Create a throwaway ticket and run one worker. Verify:
+
+   The repository URL must match the base URL origin: same scheme, host and
+   port, or `ssh://git@<host>/...` / `git@<host>:...` with the same host. HTTP(S)
+   userinfo and `.`/`..` path segments are rejected. If the instance is served
+   from a sub-path (for example `https://<host>/forgejo`), connect with the
+   `owner/repo` shorthand so the base path is preserved.
+
+5. Verify the backend provider with the gated integration test
+   (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
+   branch, creates exactly one PR, reads the diff and cleans up.
+6. Run one worker once `fg-57f` wires the provider-scoped agent token; then
+   verify:
    - one branch is pushed;
    - exactly one PR is created;
    - a retry does not create a second PR;
    - the ticket moves to `review` with the PR URL.
-6. Clean up the PR/branch, repository, token and container.
+7. Clean up the PR/branch, repository, token and container.
 
 ## GitLab self-hosted
 

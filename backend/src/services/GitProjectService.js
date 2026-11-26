@@ -70,12 +70,18 @@ class GitProjectService {
       authMode,
     };
     const provider = gitProviders.registry.get(providerId, providerConfig);
+    let parsedRepo;
     try {
-      provider.parseRepoUrl(input.repoUrl);
+      parsedRepo = provider.parseRepoUrl(input.repoUrl);
     } catch (error) {
       throw new ValidationError(error.message);
     }
-    const validation = await provider.validateRepoAccess(input.repoUrl, token || sshKey);
+    // Self-hosted providers expand an `owner/repo` shorthand into a clone URL;
+    // store that canonical form so the agent receives a usable remote.
+    const repoUrl = capabilities.requiresBaseUrl && parsedRepo.cloneUrl
+      ? parsedRepo.cloneUrl
+      : input.repoUrl;
+    const validation = await provider.validateRepoAccess(repoUrl, token || sshKey);
     if (!validation.accessible) {
       throw new ValidationError(`Cannot access repository: ${validation.error}`);
     }
@@ -99,7 +105,7 @@ class GitProjectService {
       [
         projectId,
         providerId,
-        input.repoUrl,
+        repoUrl,
         token ? encrypt(token) : null,
         validation.defaultBranch || input.defaultBranch || 'main',
         baseUrl,
@@ -426,7 +432,8 @@ class GitProjectService {
   }
 
   _extractReviewNumber(prUrl) {
-    const match = prUrl.match(/\/pull\/(\d+)$/);
+    // GitHub uses /pull/<n>; Forgejo/Gitea use /pulls/<n>.
+    const match = String(prUrl || '').match(/\/(?:pull|pulls)\/(\d+)\/?$/);
     if (!match) throw new ValidationError(`Invalid PR URL: ${prUrl}`);
     return parseInt(match[1], 10);
   }

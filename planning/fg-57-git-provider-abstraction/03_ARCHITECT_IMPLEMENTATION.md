@@ -173,10 +173,17 @@ mvn test
 Provider integration (disposable):
 
 ```bash
-docker compose -f docker-compose.forgejo-test.yml up -d
+docker run -d --name forgejo-test -p 3000:3000 -p 2222:22 \
+  -v forgejo-test-data:/data codeberg.org/forgejo/forgejo:9.0.3
 cd backend
-FORGEJO_BASE_URL=http://localhost:3000 npm run test:integration -- forgejoProvider
+FORGEJO_BASE_URL=http://localhost:3000 \
+  FORGEJO_TOKEN=<repository-scoped-token> \
+  FORGEJO_REPO=<owner>/<repo> \
+  npm run test:integration -- forgejoProvider
 ```
+
+The test skips unless all three `FORGEJO_*` variables are set. Set
+`FORGEJO_PROVIDER=gitea` to run it against Gitea.
 
 ## Results
 
