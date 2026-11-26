@@ -143,8 +143,10 @@ GET    /api/v1/git/:projectId/reviews
 POST   /api/v1/git/:ticketId/review
 ```
 
-`/api/v1/github/...` remains mounted as an alias with the same handlers. The
-connect body gains `provider`, `baseUrl`, `authMode` and optional `sshKey`.
+`/api/v1/github/...` remains mounted as GitHub-only compatibility routes. The
+generic `/git` surface serves every provider and enforces owner/super-admin
+reads. The connect body gains `provider`, `baseUrl`, `authMode` and optional
+`sshKey`; `accessToken` remains a GitHub-compatible alias for `token`.
 `repoUrl` still identifies the repository and is validated per provider.
 
 ### Agent
@@ -262,7 +264,7 @@ No new provider secret is ever written to `agent.ini` or the prompt.
 5. **Existing GitHub evidence** — PR-only adoption is a real behaviour change;
    test failed-run release and duplicate-PR prevention.
 6. **SSH key distribution** — per-repo deploy keys, not a shared host key.
-7. **Backward compatibility** — `/github` aliases and existing tokens must keep
+7. **Backward compatibility** — `/github` compatibility routes and existing tokens must keep
    working for one release.
 8. **Model residency** — Git hosting is not model hosting; private code still
    reaches the configured provider.

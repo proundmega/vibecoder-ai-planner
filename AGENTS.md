@@ -340,6 +340,7 @@ See `planning/fg-30-autonomous-coding-harness/` and
 All responses: `{ success: boolean, data: ..., requestId?: string }` or `{ success: false, error: { code, message } }` (auth endpoints may diverge).
 
 - `/api/auth/me` returns `user.id` (DB row ID), **not** JWT `userId`.
+- `/api/v1/git/...` — provider-neutral Git routes (`:projectId/repo|repos|branches|reviews`, `:projectId/repo/connect|agent`, `:ticketId/branch|review|review/diff`); `/api/v1/github/...` stays a GitHub-only alias.
 - `/api/auth/register` rate-limited (3/60s), default role `project_admin`. Login: 5/60s, lockout after 10 failures (15 min). `/auth/me`: 30/60s.
 - `/api/docs` — Swagger UI; `/api/openapi.json` — raw spec (generated from JSDoc via swagger-jsdoc).
 - Agents auth via `X-API-Key` header. Mock keys: starts with `test-` or equals `mock-agent-key`.
