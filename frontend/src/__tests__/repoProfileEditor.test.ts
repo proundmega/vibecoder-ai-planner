@@ -326,7 +326,7 @@ describe('RepoProfileEditor', () => {
       status: 'succeeded',
       result: { commands: [] },
     }))
-    const older = { ...page[0], id: 'older' }
+    const older = { ...page[0], id: 'older', error: 'older dry run' }
     vi.mocked(listProfileValidations)
       .mockResolvedValueOnce(page as never)
       .mockResolvedValueOnce([older] as never)
@@ -338,11 +338,14 @@ describe('RepoProfileEditor', () => {
 
     expect(listProfileValidations).toHaveBeenNthCalledWith(
       1, '1', { limit: 200 });
+    expect(wrapper.text()).toContain('Showing 200 dry runs.');
     await button(wrapper, 'Load older dry runs')!.trigger('click')
     await flushPromises()
 
     expect(listProfileValidations).toHaveBeenNthCalledWith(
       2, '1', { limit: 200, offset: 200 });
+    expect(wrapper.text()).toContain('Showing 201 dry runs.');
+    expect(wrapper.text()).toContain('older dry run');
     expect(button(wrapper, 'Load older dry runs')).toBeUndefined()
   });
 

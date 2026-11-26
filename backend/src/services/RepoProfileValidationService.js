@@ -125,7 +125,7 @@ class RepoProfileValidationService {
     const result = await pool.query(
       `SELECT * FROM repo_profile_validations
        WHERE project_id = $1
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, id DESC
        LIMIT $2 OFFSET $3`,
       [projectId, pageSize, start]
     );

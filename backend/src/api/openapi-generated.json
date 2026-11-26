@@ -2362,11 +2362,33 @@
             "schema": {
               "$ref": "#/components/schemas/NumericId"
             }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 200
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "Validation history"
+          },
+          "400": {
+            "description": "Invalid pagination parameters"
           }
         }
       }

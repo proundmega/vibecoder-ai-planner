@@ -252,7 +252,11 @@ async function loadMoreValidations() {
       limit: VALIDATION_PAGE_SIZE,
       offset: validations.value.length,
     })
-    validations.value = [...validations.value, ...page]
+    const known = new Set(validations.value.map((item) => item.id))
+    validations.value = [
+      ...validations.value,
+      ...page.filter((item) => !known.has(item.id)),
+    ]
     hasMoreValidations.value = page.length === VALIDATION_PAGE_SIZE
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Could not load older dry runs'

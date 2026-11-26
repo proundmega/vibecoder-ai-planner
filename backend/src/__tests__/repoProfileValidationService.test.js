@@ -302,6 +302,7 @@ describe('RepoProfileValidationService', () => {
     pool.query.mockResolvedValueOnce({ rows: [validationRow()] });
     const rows = await RepoProfileValidationService.list(1, { userId: 7 });
     expect(rows).toHaveLength(1);
+    expect(pool.query.mock.calls[0][0]).toContain('ORDER BY created_at DESC, id DESC');
     expect(pool.query.mock.calls[0][0]).toContain('LIMIT $2 OFFSET $3');
     expect(pool.query.mock.calls[0][1]).toEqual([1, 200, 0]);
   });
