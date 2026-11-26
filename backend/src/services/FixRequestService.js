@@ -206,10 +206,14 @@ class FixRequestService {
 
     let branchResolution = options.branchResolution;
     if (branchResolution) {
-      if (branchResolution.reviewedSha !== resolved.reviewedSha
-          || branchResolution.round !== resolved.round) {
+      if (resolved.reviewedSha != null
+          && branchResolution.reviewedSha !== resolved.reviewedSha) {
         throw new ConflictError(
           'The review base changed while creating the fix request; retry');
+      }
+      if (branchResolution.round !== resolved.round) {
+        throw new ConflictError(
+          'The review round changed while creating the fix request; retry');
       }
       const lockedBranch = firstText(ticket.branch_name, ticket.fix_branch);
       if (lockedBranch && lockedBranch !== branchResolution.branch) {

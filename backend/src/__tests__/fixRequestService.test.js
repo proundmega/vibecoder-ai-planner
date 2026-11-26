@@ -245,6 +245,39 @@ describe('FixRequestService (fg-32a)', () => {
       query.sql.includes('INSERT INTO ticket_fix_requests'))).toBe(false);
   });
 
+  it('accepts a pre-resolved manual SHA when the cache is empty', async () => {
+    const inserted = fixRequest({
+      attempt_id: null,
+      source: 'human',
+      branch: BRANCH,
+      reviewed_sha: SHA,
+      feedback: 'fix it',
+    });
+    const { client, state } = fakeClient({
+      ticket: ticket({ branch_name: null, reviewed_sha: null }),
+      latestAttempt: null,
+      inserted,
+    });
+    const service = new FixRequestService();
+
+    const result = await service.createOrEnsureWithClient(
+      client,
+      TICKET_ID,
+      { feedback: 'fix it' },
+      {
+        branchResolution: {
+          branch: BRANCH,
+          reviewedSha: SHA,
+          round: 0,
+        },
+      }
+    );
+
+    expect(result.created).toBe(true);
+    const update = state.queries.find((query) => query.sql.includes('UPDATE tickets'));
+    expect(update.params).toEqual([TICKET_ID, 0, SHA, BRANCH]);
+  });
+
   it('supports a manual request from the latest completed review', async () => {
     const latest = { reviewed_sha: SHA, round: 2 };
     const inserted = fixRequest({ attempt_id: null, source: 'human', feedback: 'fix the filter' });
