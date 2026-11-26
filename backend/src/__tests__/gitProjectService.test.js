@@ -23,6 +23,7 @@ const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const { encrypt, decrypt } = require('../utils/crypto');
 const gitProviders = require('../providers/git');
 const { GitHubProvider } = require('../providers/github');
+const { GitHubGitProvider } = require('../providers/git/github');
 
 function fakeProvider(overrides = {}) {
   return {
@@ -70,7 +71,7 @@ describe('GitHubProvider review head', () => {
     });
   });
 
-  it('fails closed when the pull request has no head SHA', async () => {
+  it('returns null when the pull request has no head SHA', async () => {
     const provider = new GitHubProvider('token');
     provider.api = {
       retryWithBackoff: (fn) => fn(),
@@ -85,7 +86,27 @@ describe('GitHubProvider review head', () => {
 
     await expect(provider.getReviewRequest(
       { repoUrl: 'https://github.com/owner/repo' }, 9))
-      .rejects.toThrow('missing its head');
+      .resolves.toBeNull();
+  });
+
+  it('forwards the provider-neutral review head and handles a null provider result', async () => {
+    const wrapper = new GitHubGitProvider('token');
+    wrapper.provider = {
+      getReviewRequest: jest.fn().mockResolvedValue({
+        branch: 'feat/from-pr',
+        headSha: 'c'.repeat(40),
+      }),
+    };
+
+    await expect(wrapper.getReviewRequest({ repoUrl: 'owner/repo' }, 9))
+      .resolves.toEqual({
+        branch: 'feat/from-pr',
+        headSha: 'c'.repeat(40),
+      });
+
+    wrapper.provider = {};
+    await expect(wrapper.getReviewRequest({ repoUrl: 'owner/repo' }, 9))
+      .resolves.toBeNull();
   });
 });
 
@@ -652,6 +673,26 @@ describe('GitProjectService', () => {
           ticketId: 42,
         });
       expect(provider.getReviewRequest).toHaveBeenCalledWith(repo, 7);
+    });
+
+    it('returns null when the provider has no review-head data', async () => {
+      const provider = fakeProvider({
+        getReviewRequest: jest.fn().mockResolvedValue(null),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: 1,
+        prUrl: 'https://example.test/pull/7',
+      });
+      const repo = {
+        provider: 'github',
+        repoUrl: 'owner/repo',
+        accessTokenEncrypted: 'enc:pat',
+      };
+
+      await expect(GitProjectService.getReviewRequest(1, 42, { repo }))
+        .resolves.toBeNull();
     });
 
     it('extracts the review number from a Forgejo pull URL', async () => {

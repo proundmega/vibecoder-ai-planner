@@ -47,6 +47,13 @@ function reviewedSha(value) {
   return sha;
 }
 
+function firstText(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+  return null;
+}
+
 function optionalFeedback(value) {
   if (value == null || value === '') return null;
   if (typeof value !== 'string') {
@@ -197,11 +204,24 @@ class FixRequestService {
       throw new ConflictError('Ticket phase must be review before a fix request');
     }
 
-    const branchResolution = options.branchResolution
-      || await this.branchResolver.resolve(ticket, {
+    let branchResolution = options.branchResolution;
+    if (branchResolution) {
+      if (branchResolution.reviewedSha !== resolved.reviewedSha
+          || branchResolution.round !== resolved.round) {
+        throw new ConflictError(
+          'The review base changed while creating the fix request; retry');
+      }
+      const lockedBranch = firstText(ticket.branch_name, ticket.fix_branch);
+      if (lockedBranch && lockedBranch !== branchResolution.branch) {
+        throw new ConflictError(
+          'The ticket branch changed while creating the fix request; retry');
+      }
+    } else {
+      branchResolution = await this.branchResolver.resolve(ticket, {
         reviewedSha: resolved.reviewedSha,
         round: resolved.round,
       });
+    }
     const branch = branchResolution.branch;
     const finalReviewedSha = branchResolution.reviewedSha;
     const round = branchResolution.round;
