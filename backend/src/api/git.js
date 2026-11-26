@@ -4,7 +4,8 @@ const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { forProjectParam } = require('../middleware/agentProjectScope');
 const { requireRuntime, requireProjectGrant } = require('../middleware/agentRole');
 const { requireAnyPermission } = require('../middleware/permissions');
-const { validate } = require('../middleware/validate');
+const { validate, validatePathParams } = require('../middleware/validate');
+const { pathParams } = require('../validators/pathParams');
 const gitController = require('../controllers/gitController');
 const { connectRepoSchema, reviewRequestSchema } = require('../validators/git');
 
@@ -35,7 +36,7 @@ router.get('/providers', verifyToken, gitController.listProviders);
  *       200:
  *         description: Repository connections
  */
-router.get('/:projectId/repos', verifyToken, gitController.listRepos);
+router.get('/:projectId/repos', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.listRepos);
 
 /**
  * @openapi
@@ -55,7 +56,7 @@ router.get('/:projectId/repos', verifyToken, gitController.listRepos);
  *       200:
  *         description: Repository status or null
  */
-router.get('/:projectId/repo', verifyToken, gitController.getRepoStatus);
+router.get('/:projectId/repo', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.getRepoStatus);
 
 /**
  * @openapi
@@ -77,6 +78,7 @@ router.get('/:projectId/repo', verifyToken, gitController.getRepoStatus);
 router.get(
   '/:projectId/repo/agent',
   verifyTokenOrAgent,
+  validatePathParams({ projectId: pathParams.projectId }),
   requireRuntime('running'),
   forProjectParam(),
   requireProjectGrant('worker'),
@@ -114,6 +116,7 @@ router.get(
 router.post(
   '/:projectId/repo/connect',
   verifyToken,
+  validatePathParams({ projectId: pathParams.projectId }),
   requireAnyPermission('PROJECT_MANAGE_MEMBERS'),
   validate(connectRepoSchema),
   gitController.connectRepo
@@ -140,6 +143,7 @@ router.post(
 router.delete(
   '/:projectId/repo',
   verifyToken,
+  validatePathParams({ projectId: pathParams.projectId }),
   requireAnyPermission('PROJECT_MANAGE_MEMBERS'),
   gitController.disconnectRepo
 );
@@ -154,7 +158,7 @@ router.delete(
  *       200:
  *         description: Branch names
  */
-router.get('/:projectId/branches', verifyToken, gitController.listBranches);
+router.get('/:projectId/branches', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.listBranches);
 
 /**
  * @openapi
@@ -166,7 +170,7 @@ router.get('/:projectId/branches', verifyToken, gitController.listBranches);
  *       200:
  *         description: Review requests
  */
-router.get('/:projectId/reviews', verifyToken, gitController.listReviews);
+router.get('/:projectId/reviews', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.listReviews);
 
 /**
  * @openapi
@@ -184,8 +188,8 @@ router.get('/:projectId/reviews', verifyToken, gitController.listReviews);
  *       200:
  *         description: Branch deleted
  */
-router.post('/:ticketId/branch', verifyToken, gitController.createBranch);
-router.delete('/:ticketId/branch', verifyToken, gitController.deleteBranch);
+router.post('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), gitController.createBranch);
+router.delete('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), gitController.deleteBranch);
 
 /**
  * @openapi
@@ -200,6 +204,7 @@ router.delete('/:ticketId/branch', verifyToken, gitController.deleteBranch);
 router.post(
   '/:ticketId/review',
   verifyToken,
+  validatePathParams({ ticketId: pathParams.ticketId }),
   validate(reviewRequestSchema),
   gitController.createReview
 );
@@ -214,6 +219,6 @@ router.post(
  *       200:
  *         description: Review files
  */
-router.get('/:ticketId/review/diff', verifyToken, gitController.getReviewDiff);
+router.get('/:ticketId/review/diff', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), gitController.getReviewDiff);
 
 module.exports = router;

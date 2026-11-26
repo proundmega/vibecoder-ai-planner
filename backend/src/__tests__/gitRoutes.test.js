@@ -34,9 +34,9 @@ jest.mock('../models/ticket');
 
 const app = require('../index');
 const GitProjectService = require('../services/GitProjectService');
+const PermissionService = require('../services/PermissionService');
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
-const gitController = require('../controllers/gitController');
 
 function asUser(userId = 'user-1', role = 'project_admin') {
   jwt.verify.mockReturnValue({ userId, role });
@@ -50,8 +50,9 @@ describe('Generic Git routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     asUser();
+    PermissionService.hasAnyPermission.mockResolvedValue(true);
     Project.findById.mockResolvedValue({ id: 1, ownerId: 'user-1' });
-    Ticket.findById.mockResolvedValue({ id: 't1', projectId: 1 });
+    Ticket.findById.mockResolvedValue({ id: 42, projectId: 1 });
   });
 
   it('lists registered providers and their capabilities', async () => {
@@ -87,6 +88,86 @@ describe('Generic Git routes', () => {
       expect.objectContaining({ provider: 'forgejo', repoUrl: 'group/repo' }),
       'user-1'
     );
+  });
+
+  it('accepts accessToken as the GitHub token alias', async () => {
+    GitProjectService.connect.mockResolvedValue({ provider: 'github' });
+
+    const res = await auth(request(app).post('/api/v1/git/1/repo/connect')).send({
+      provider: 'github',
+      repoUrl: 'owner/repo',
+      accessToken: 'ghp_secret',
+    });
+
+    expect(res.statusCode).toBe(201);
+    const input = GitProjectService.connect.mock.calls[0][1];
+    expect(input.token).toBe('ghp_secret');
+    expect(input.accessToken).toBeUndefined();
+  });
+
+  it('normalizes provider casing before the service', async () => {
+    GitProjectService.connect.mockResolvedValue({ provider: 'forgejo' });
+
+    const res = await auth(request(app).post('/api/v1/git/1/repo/connect')).send({
+      provider: 'Forgejo',
+      repoUrl: 'group/repo',
+      baseUrl: 'https://git.example.com',
+      token: 'secret',
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(GitProjectService.connect.mock.calls[0][1].provider).toBe('forgejo');
+  });
+
+  it('lets a project admin who is not the owner connect', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 'someone-else' });
+    GitProjectService.connect.mockResolvedValue({ provider: 'forgejo' });
+
+    const res = await auth(request(app).post('/api/v1/git/1/repo/connect')).send({
+      provider: 'forgejo',
+      repoUrl: 'group/repo',
+      baseUrl: 'https://git.example.com',
+      token: 'secret',
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(GitProjectService.connect).toHaveBeenCalled();
+  });
+
+  it('lets a super admin connect a project they do not own', async () => {
+    asUser('user-2', 'super_admin');
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 'someone-else' });
+    GitProjectService.connect.mockResolvedValue({ provider: 'forgejo' });
+
+    const res = await auth(request(app).post('/api/v1/git/1/repo/connect')).send({
+      provider: 'forgejo',
+      repoUrl: 'group/repo',
+      baseUrl: 'https://git.example.com',
+      token: 'secret',
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('rejects connect without the manage-members permission', async () => {
+    PermissionService.hasAnyPermission.mockResolvedValue(false);
+
+    const res = await auth(request(app).post('/api/v1/git/1/repo/connect')).send({
+      provider: 'forgejo',
+      repoUrl: 'group/repo',
+      baseUrl: 'https://git.example.com',
+      token: 'secret',
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(GitProjectService.connect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed project id before the service', async () => {
+    const res = await auth(request(app).get('/api/v1/git/not-a-number/repo'));
+
+    expect(res.statusCode).toBe(400);
+    expect(GitProjectService.getRepo).not.toHaveBeenCalled();
   });
 
   it('rejects a connect request without a repository URL', async () => {
@@ -140,25 +221,25 @@ describe('Generic Git routes', () => {
     GitProjectService.createReviewRequest.mockResolvedValue({ url: 'pr', ticketId: 't1' });
     GitProjectService.getReviewDiff.mockResolvedValue({ files: [], prNumber: 3 });
 
-    const created = await auth(request(app).post('/api/v1/git/t1/branch'))
+    const created = await auth(request(app).post('/api/v1/git/42/branch'))
       .send({ provider: 'forgejo' });
-    const review = await auth(request(app).post('/api/v1/git/t1/review'))
+    const review = await auth(request(app).post('/api/v1/git/42/review'))
       .send({ provider: 'forgejo', description: 'desc' });
-    const diff = await auth(request(app).get('/api/v1/git/t1/review/diff'));
-    const removed = await auth(request(app).delete('/api/v1/git/t1/branch'));
+    const diff = await auth(request(app).get('/api/v1/git/42/review/diff'));
+    const removed = await auth(request(app).delete('/api/v1/git/42/branch'));
 
     expect(created.statusCode).toBe(201);
     expect(GitProjectService.createBranch).toHaveBeenCalledWith(
-      1, 't1', { provider: 'forgejo' });
+      1, '42', { provider: 'forgejo' });
     expect(review.statusCode).toBe(201);
     expect(GitProjectService.createReviewRequest).toHaveBeenCalledWith(
-      1, 't1', 'desc', { provider: 'forgejo' });
+      1, '42', 'desc', { provider: 'forgejo' });
     expect(diff.statusCode).toBe(200);
     expect(GitProjectService.getReviewDiff).toHaveBeenCalledWith(
-      1, 't1', { provider: null });
+      1, '42', { provider: null });
     expect(removed.statusCode).toBe(200);
     expect(GitProjectService.deleteBranch).toHaveBeenCalledWith(
-      1, 't1', { provider: null });
+      1, '42', { provider: null });
   });
 
   it('rejects a caller who does not own the project', async () => {
@@ -170,27 +251,22 @@ describe('Generic Git routes', () => {
     expect(GitProjectService.getRepo).not.toHaveBeenCalled();
   });
 
-  it('returns the provider-scoped credential to an agent', async () => {
+  it('serves the provider-scoped credential through the agent route', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
     const credential = {
-      provider: 'forgejo',
-      repoUrl: 'https://git.example.com/group/repo.git',
-      providerBaseUrl: 'https://git.example.com',
-      accessToken: 'secret',
-      authMode: 'pat',
+      repoUrl: 'owner/repo',
+      accessToken: null,
+      authMode: 'app',
     };
     GitProjectService.getAgentCredential.mockResolvedValue(credential);
-    const req = {
-      params: { projectId: '1' },
-      query: { provider: 'forgejo' },
-      agent: { owner_id: 'user-1' },
-      user: { userId: 'user-1', role: 'project_admin' },
-    };
-    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
 
-    await gitController.getRepoForAgent(req, res, jest.fn());
+    const res = await request(app)
+      .get('/api/v1/git/1/repo/agent')
+      .set('X-API-Key', 'test-agent-key');
 
+    expect(res.statusCode).toBe(200);
     expect(GitProjectService.getAgentCredential)
-      .toHaveBeenCalledWith('1', { provider: 'forgejo' });
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: credential });
+      .toHaveBeenCalledWith('1', { provider: null });
+    expect(res.body.data).toEqual({ provider: 'github', ...credential });
   });
 });

@@ -10,6 +10,17 @@ function requestedProvider(req) {
   return String(value).toLowerCase();
 }
 
+/**
+ * The legacy GitHub connect body uses `accessToken`; accept it as an alias for
+ * the provider-neutral `token` field.
+ */
+function connectInput(body = {}) {
+  const input = { ...body };
+  if (!input.token && input.accessToken) input.token = input.accessToken;
+  delete input.accessToken;
+  return input;
+}
+
 async function requireProjectAccess(req, projectId, message) {
   const project = await Project.findById(projectId);
   if (!project) throw new NotFoundError('Project not found');
@@ -42,12 +53,11 @@ async function listProviders(req, res, next) {
 async function connectRepo(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    await requireProjectAccess(
-      req,
+    const repo = await GitProjectService.connect(
       projectId,
-      'Only the project owner or an admin can connect a repository'
+      connectInput(req.body),
+      req.user.userId
     );
-    const repo = await GitProjectService.connect(projectId, req.body, req.user.userId);
     send(res, repo, 201);
   } catch (error) {
     next(error);
@@ -57,11 +67,6 @@ async function connectRepo(req, res, next) {
 async function disconnectRepo(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    await requireProjectAccess(
-      req,
-      projectId,
-      'Only the project owner or an admin can disconnect a repository'
-    );
     const result = await GitProjectService.disconnect(projectId, {
       provider: requestedProvider(req),
     });
@@ -74,7 +79,7 @@ async function disconnectRepo(req, res, next) {
 async function getRepoStatus(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    await requireProjectAccess(req, projectId, 'Only the project owner can read repository status');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can read repository status');
     const repo = await GitProjectService.getRepo(projectId, {
       provider: requestedProvider(req),
     });
@@ -87,7 +92,7 @@ async function getRepoStatus(req, res, next) {
 async function listRepos(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    await requireProjectAccess(req, projectId, 'Only the project owner can list repositories');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can list repositories');
     const repos = await GitProjectService.getRepos(projectId, {
       provider: requestedProvider(req),
     });
@@ -108,7 +113,12 @@ async function getRepoForAgent(req, res, next) {
     const credential = await GitProjectService.getAgentCredential(projectId, {
       provider: requestedProvider(req),
     });
-    send(res, credential);
+    // GitHub's legacy credential shape omits the provider; identify it here so
+    // the generic route is consistent for every provider.
+    send(res, credential && {
+      provider: credential.provider || 'github',
+      ...credential,
+    });
   } catch (error) {
     next(error);
   }
@@ -117,7 +127,7 @@ async function getRepoForAgent(req, res, next) {
 async function listBranches(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    await requireProjectAccess(req, projectId, 'Only the project owner can list branches');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can list branches');
     const branches = await GitProjectService.listBranches(projectId, {
       provider: requestedProvider(req),
     });
@@ -130,7 +140,7 @@ async function listBranches(req, res, next) {
 async function createBranch(req, res, next) {
   try {
     const projectId = await projectForTicket(req.params.ticketId);
-    await requireProjectAccess(req, projectId, 'Only project members can create a branch');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can create a branch');
     const result = await GitProjectService.createBranch(projectId, req.params.ticketId, {
       provider: requestedProvider(req),
     });
@@ -143,7 +153,7 @@ async function createBranch(req, res, next) {
 async function deleteBranch(req, res, next) {
   try {
     const projectId = await projectForTicket(req.params.ticketId);
-    await requireProjectAccess(req, projectId, 'Only project members can delete a branch');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can delete a branch');
     const result = await GitProjectService.deleteBranch(projectId, req.params.ticketId, {
       provider: requestedProvider(req),
     });
@@ -156,7 +166,7 @@ async function deleteBranch(req, res, next) {
 async function listReviews(req, res, next) {
   try {
     const projectId = req.params.projectId;
-    await requireProjectAccess(req, projectId, 'Only the project owner can list reviews');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can list reviews');
     const reviews = await GitProjectService.listReviewRequests(projectId, {
       provider: requestedProvider(req),
     });
@@ -169,7 +179,7 @@ async function listReviews(req, res, next) {
 async function createReview(req, res, next) {
   try {
     const projectId = await projectForTicket(req.params.ticketId);
-    await requireProjectAccess(req, projectId, 'Only project members can create a review');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can create a review');
     const result = await GitProjectService.createReviewRequest(
       projectId,
       req.params.ticketId,
@@ -185,7 +195,7 @@ async function createReview(req, res, next) {
 async function getReviewDiff(req, res, next) {
   try {
     const projectId = await projectForTicket(req.params.ticketId);
-    await requireProjectAccess(req, projectId, 'Only project members can read a review diff');
+    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can read a review diff');
     const diff = await GitProjectService.getReviewDiff(projectId, req.params.ticketId, {
       provider: requestedProvider(req),
     });
