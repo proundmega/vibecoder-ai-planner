@@ -3,11 +3,17 @@ const { PROVIDER_IDS } = require('../providers/git');
 
 const provider = Joi.string().lowercase().valid(...PROVIDER_IDS);
 
-// Path params stay strings, so require a canonical decimal ID instead of the
-// numeric conversion `Joi.number()` would accept and then discard.
-const idPathParam = Joi.string().pattern(/^\d+$/).messages({
-  'string.pattern.base': 'must be a positive integer id',
-});
+// Path params stay strings, so require a canonical positive bigint instead of
+// the numeric conversion `Joi.number()` would accept and then discard.
+const idPathParam = Joi.string()
+  .pattern(/^[1-9]\d{0,18}$/)
+  .custom((value, helpers) => (
+    BigInt(value) <= 9223372036854775807n ? value : helpers.error('any.invalid')
+  ))
+  .messages({
+    'string.pattern.base': 'must be a positive integer id',
+    'any.invalid': 'must be a positive integer id',
+  });
 
 const connectRepoSchema = Joi.object({
   provider: provider.default('github'),

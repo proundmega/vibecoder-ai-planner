@@ -165,7 +165,15 @@ describe('Generic Git routes', () => {
     expect(GitProjectService.connect).not.toHaveBeenCalled();
   });
 
-  it.each(['not-a-number', '1e2', '1.0', '+1'])(
+  it.each([
+    'not-a-number',
+    '1e2',
+    '1.0',
+    '+1',
+    '0',
+    '9223372036854775808',
+    '99999999999999999999',
+  ])(
     'rejects a malformed project id %s before the service',
     async (id) => {
       const res = await auth(request(app).get(`/api/v1/git/${id}/repo`));
