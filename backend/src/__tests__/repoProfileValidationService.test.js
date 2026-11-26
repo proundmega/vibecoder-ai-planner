@@ -302,7 +302,23 @@ describe('RepoProfileValidationService', () => {
     pool.query.mockResolvedValueOnce({ rows: [validationRow()] });
     const rows = await RepoProfileValidationService.list(1, { userId: 7 });
     expect(rows).toHaveLength(1);
-    expect(pool.query.mock.calls[0][0]).toContain('LIMIT 200');
+    expect(pool.query.mock.calls[0][0]).toContain('LIMIT $2 OFFSET $3');
+    expect(pool.query.mock.calls[0][1]).toEqual([1, 200, 0]);
+  });
+
+  it('pages past the first 200 validation rows', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [validationRow()] });
+    await RepoProfileValidationService.list(1, { userId: 7 }, { limit: 25, offset: 50 });
+    expect(pool.query.mock.calls[0][1]).toEqual([1, 25, 50]);
+  });
+
+  it('rejects invalid pagination bounds', async () => {
+    await expect(
+      RepoProfileValidationService.list(1, { userId: 7 }, { limit: 0 })
+    ).rejects.toThrow(/limit/);
+    await expect(
+      RepoProfileValidationService.list(1, { userId: 7 }, { offset: -1 })
+    ).rejects.toThrow(/offset/);
   });
 
   it('redacts credentials from a stored dry-run result and error', async () => {

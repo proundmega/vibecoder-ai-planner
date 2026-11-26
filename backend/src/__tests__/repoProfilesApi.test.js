@@ -182,13 +182,26 @@ describe('Repo profile API', () => {
 
     const list = await request(app)
       .get('/api/v1/projects/1/repo-profile/validations')
+      .query({ limit: 25, offset: 50 })
       .set('Authorization', 'Bearer mock-token');
     expect(list.statusCode).toBe(200);
+    expect(RepoProfileValidationService.list).toHaveBeenLastCalledWith(
+      '1', expect.any(Object), { limit: 25, offset: 50 });
 
     const one = await request(app)
       .get(`/api/v1/projects/1/repo-profile/validations/${VALIDATION_ID}`)
       .set('Authorization', 'Bearer mock-token');
     expect(one.statusCode).toBe(200);
+  });
+
+  it('rejects invalid validation pagination', async () => {
+    RepoProfileValidationService.list.mockClear();
+    const res = await request(app)
+      .get('/api/v1/projects/1/repo-profile/validations')
+      .query({ limit: 0 })
+      .set('Authorization', 'Bearer mock-token');
+    expect(res.statusCode).toBe(400);
+    expect(RepoProfileValidationService.list).not.toHaveBeenCalled();
   });
 
   it('serves the active profile to an agent', async () => {

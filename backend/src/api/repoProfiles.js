@@ -6,6 +6,8 @@ const { requireRuntime, requireProjectGrant } = require('../middleware/agentRole
 const RepoProfileService = require('../services/RepoProfileService');
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
 const { ForbiddenError, ValidationError } = require('../errors/HttpError');
+const { validate } = require('../middleware/validate');
+const { validationListQuerySchema } = require('../validators/repoProfiles');
 
 function requireAgent(req) {
   if (!req.agent || !req.agent.id) {
@@ -240,13 +242,23 @@ router.post('/:projectId/repo-profile/:profileId/validate', verifyToken, async (
  *         name: projectId
  *         required: true
  *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, minimum: 0, default: 0 }
  *     responses:
  *       200:
  *         description: Validation history
+ *       400:
+ *         description: Invalid pagination parameters
  */
-router.get('/:projectId/repo-profile/validations', verifyToken, async (req, res, next) => {
+router.get('/:projectId/repo-profile/validations', verifyToken,
+  validate({ query: validationListQuerySchema }), async (req, res, next) => {
   try {
-    const data = await RepoProfileValidationService.list(req.params.projectId, operator(req));
+    const data = await RepoProfileValidationService.list(
+      req.params.projectId, operator(req), req.query);
     res.json({ success: true, data });
   } catch (error) {
     next(error);

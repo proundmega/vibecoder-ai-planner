@@ -282,6 +282,11 @@ function caBundleIssue(b64) {
 }
 
 
+const validationListQuerySchema = Joi.object({
+  limit: Joi.number().integer().min(1).max(200).default(200),
+  offset: Joi.number().integer().min(0).default(0),
+});
+
 const serviceHealthcheckSchema = Joi.object({
   command: Joi.string().trim().min(1).max(500).pattern(COMMAND).required(),
   interval_seconds: Joi.number().integer().min(1).max(60).default(2),
@@ -532,4 +537,5 @@ module.exports = {
   CACHES,
   isSecretKey,
   RESERVED_ENV,
+  validationListQuerySchema,
 };
