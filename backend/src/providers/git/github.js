@@ -72,6 +72,11 @@ class GitHubGitProvider {
     return this.provider.listPRs(projectRepo);
   }
 
+  async getReviewRequest(projectRepo, reviewNumber) {
+    if (typeof this.provider.getReviewRequest !== 'function') return null;
+    return this.provider.getReviewRequest(projectRepo, reviewNumber);
+  }
+
   async getReviewDiff(projectRepo, reviewNumber) {
     return this.provider.getPRDiff(projectRepo, reviewNumber);
   }

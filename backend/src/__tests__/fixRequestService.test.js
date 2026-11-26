@@ -192,6 +192,33 @@ describe('FixRequestService (fg-32a)', () => {
       .rejects.toThrow('An active fix request already exists');
   });
 
+  it('uses the branch resolver fallback for an older row', async () => {
+    const branchResolver = {
+      resolve: jest.fn().mockResolvedValue({
+        branch: 'feat/from-pr',
+        reviewedSha: SHA,
+        round: 0,
+      }),
+    };
+    const { client, state } = fakeClient({
+      ticket: ticket({ branch_name: null, reviewed_sha: null }),
+      latestAttempt: { reviewed_sha: null, round: 0 },
+      inserted: fixRequest({ branch: 'feat/from-pr', attempt_id: null, source: 'human' }),
+    });
+    const service = new FixRequestService({ branchResolver });
+
+    const result = await service.createOrEnsureWithClient(
+      client, TICKET_ID, { feedback: 'fix it' });
+
+    expect(result.created).toBe(true);
+    expect(branchResolver.resolve).toHaveBeenCalledWith(
+      expect.objectContaining({ id: TICKET_ID }),
+      { reviewedSha: null, round: 0 }
+    );
+    const update = state.queries.find((query) => query.sql.includes('UPDATE tickets'));
+    expect(update.params).toEqual([TICKET_ID, 0, SHA, 'feat/from-pr']);
+  });
+
   it('supports a manual request from the latest completed review', async () => {
     const latest = { reviewed_sha: SHA, round: 2 };
     const inserted = fixRequest({ attempt_id: null, source: 'human', feedback: 'fix the filter' });

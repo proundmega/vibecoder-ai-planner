@@ -310,6 +310,29 @@ class GitProjectService {
     );
   }
 
+  async getReviewRequest(projectId, ticketId, { repo = null, provider = null } = {}) {
+    const connected = await this._requireRepo(projectId, repo, { provider });
+    const ticket = await this._ticketForProject(ticketId, projectId);
+    if (!ticket.prUrl) {
+      throw new ValidationError('No review request is linked to this ticket');
+    }
+    const reviewNumber = this._extractReviewNumber(ticket.prUrl);
+    if (!reviewNumber) {
+      throw new ValidationError('Could not resolve the review request number');
+    }
+    const review = await this._withProvider(
+      projectId,
+      (providerInstance) => (
+        typeof providerInstance.getReviewRequest === 'function'
+          ? providerInstance.getReviewRequest(connected, reviewNumber)
+          : null
+      ),
+      { repo: connected, provider }
+    );
+    if (!review || !review.branch || !review.headSha) return null;
+    return { ...review, ticketId };
+  }
+
   async getReviewDiff(projectId, ticketId, { repo = null, provider = null } = {}) {
     const connected = await this._requireRepo(projectId, repo, { provider });
     const ticket = await this._ticketForProject(ticketId, projectId);

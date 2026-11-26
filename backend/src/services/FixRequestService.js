@@ -1,4 +1,5 @@
 const { transaction } = require('../db');
+const FixBranchResolver = require('./FixBranchResolver');
 const {
   NotFoundError,
   ValidationError,
@@ -46,17 +47,6 @@ function reviewedSha(value) {
   return sha;
 }
 
-function branchName(value) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new ValidationError('Ticket branch is unavailable; cannot create a fix request');
-  }
-  const branch = value.trim();
-  if (branch.length > 255) {
-    throw new ValidationError('Ticket branch exceeds 255 characters');
-  }
-  return branch;
-}
-
 function optionalFeedback(value) {
   if (value == null || value === '') return null;
   if (typeof value !== 'string') {
@@ -82,6 +72,10 @@ function activePlaceholders() {
 }
 
 class FixRequestService {
+  constructor(options = {}) {
+    this.branchResolver = options.branchResolver || new FixBranchResolver();
+  }
+
   /**
    * Create or return the fix request for one attempt (or a manual request).
    *
@@ -138,7 +132,13 @@ class FixRequestService {
     const resolved = attemptId
       ? await this.resolveFromAttempt(client, id, attemptId)
       : await this.resolveManual(client, ticket);
-    const branch = branchName(ticket.branch_name);
+    const branchResolution = await this.branchResolver.resolve(ticket, {
+      reviewedSha: resolved.reviewedSha,
+      round: resolved.round,
+    });
+    const branch = branchResolution.branch;
+    const finalReviewedSha = branchResolution.reviewedSha;
+    const round = branchResolution.round;
 
     if (ticket.status !== 'review') {
       throw new ConflictError('Ticket must be in review before a fix request');
@@ -166,7 +166,7 @@ class FixRequestService {
               fix_branch = $4,
               updated_at = NOW()
         WHERE id = $1`,
-      [id, resolved.round, resolved.reviewedSha, branch]
+      [id, round, finalReviewedSha, branch]
     );
 
     await client.query(
@@ -188,7 +188,7 @@ class FixRequestService {
            (ticket_id, attempt_id, source, branch, reviewed_sha, state, feedback)
          VALUES ($1, $2, $3, $4, $5, 'queued', $6)
          RETURNING *`,
-        [id, attemptId, source, branch, resolved.reviewedSha, feedback]
+        [id, attemptId, source, branch, finalReviewedSha, feedback]
       );
       return { request: inserted.rows[0], created: true };
     } catch (error) {
@@ -263,8 +263,10 @@ class FixRequestService {
         round: roundValue(ticket.review_round),
       };
     }
-    throw new ValidationError(
-      'No completed review exists for this ticket; a manual fix request needs a reviewed SHA');
+    return {
+      reviewedSha: ticket.reviewed_sha ? reviewedSha(ticket.reviewed_sha) : null,
+      round: roundValue(ticket.review_round),
+    };
   }
 }
 
