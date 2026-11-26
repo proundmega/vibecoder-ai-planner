@@ -156,6 +156,11 @@ class FixRequestService {
     return { branchResolution };
   }
 
+  /**
+   * Caller-owned transaction path. A caller that already holds a transaction
+   * must preflight with {@link preResolve} and pass `branchResolution` so no
+   * provider lookup runs while the ticket row is locked.
+   */
   async createOrEnsureWithClient(client, ticketId, input = {}, options = {}) {
     const id = positiveId(ticketId, 'ticketId');
     const attemptId = input.attemptId == null || input.attemptId === ''
