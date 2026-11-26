@@ -36,6 +36,16 @@ class VerificationRunnerTest {
     }
 
     @Test
+    void capturesOutputWrittenShortlyBeforeTheShellExits() {
+        List<VerificationResult> results = new VerificationRunner()
+            .run(tempDir, List.of("sleep 0.1; echo late-output"), Duration.ofSeconds(5));
+
+        assertEquals(1, results.size());
+        assertTrue(results.get(0).passed());
+        assertTrue(results.get(0).output().contains("late-output"));
+    }
+
+    @Test
     void reportsNonZeroExitAndCapturesOutput() {
         List<VerificationResult> results = new VerificationRunner()
             .run(tempDir, List.of("exit 3"), Duration.ofSeconds(20));

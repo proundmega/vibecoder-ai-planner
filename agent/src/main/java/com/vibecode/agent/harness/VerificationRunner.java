@@ -381,6 +381,13 @@ public class VerificationRunner {
             boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
             int exitCode = finished ? process.exitValue() : -1;
 
+            // A forked setsid child can outlive the parent's waitFor and
+            // flush its output a moment later. Give an empty capture a short
+            // grace period before killing the group; background children still
+            // cannot hold the reader past the bounded joins.
+            if (finished && output.text().isEmpty()) {
+                reader.join(250);
+            }
             // Even a normally-exiting command can leave background children
             // behind. Kill the whole group before joining the reader: a
             // background child may hold the output pipe open for its lifetime.
