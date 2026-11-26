@@ -243,6 +243,25 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/sha256/);
     });
 
+    it('rejects userinfo and multiple digest separators in profile and service images', async () => {
+      const digest = 'a'.repeat(64);
+      for (const image of [
+        `user:pass@registry.example/node@sha256:${digest}`,
+        `registry.example/node@sha256:${digest}@sha256:${digest}`,
+      ]) {
+        await expect(
+          RepoProfileService.create(1, validProfile({ image }), owner())
+        ).rejects.toThrow(/sha256/);
+        await expect(
+          RepoProfileService.create(
+            1,
+            validProfile({ services: [validService({ image })] }),
+            owner()
+          )
+        ).rejects.toThrow(/sha256/);
+      }
+    });
+
     it('rejects unsafe base branch names', async () => {
       for (const branch of ['-main', 'feature//x', 'feature/', 'main..x', 'main.']) {
         await expect(

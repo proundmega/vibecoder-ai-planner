@@ -57,6 +57,33 @@ class RepoProfileTest {
     }
 
     @Test
+    void rejectsUserinfoAndMultipleDigestSeparatorsInImages() {
+        String digest = "a".repeat(64);
+        for (String image : new String[]{
+            "user:pass@registry.example/node@sha256:" + digest,
+            "registry.example/node@sha256:" + digest + "@sha256:" + digest,
+        }) {
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> parse("""
+                    {"schema_version":1,"verify":["npm test"],"image":"%s"}
+                    """.formatted(image)));
+            assertTrue(error.getMessage().contains("digest"));
+
+            IllegalArgumentException serviceError = assertThrows(
+                IllegalArgumentException.class,
+                () -> parse("""
+                    {"schema_version":1,"verify":["npm test"],"services":[{
+                      "name":"postgres","image":"%s",
+                      "connection_env":"DATABASE_URL",
+                      "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+                      "healthcheck":{"command":"pg_isready"}
+                    }]}
+                    """.formatted(image)));
+            assertTrue(serviceError.getMessage().contains("digest"));
+        }
+    }
+
+    @Test
     void rejectsASecretEnvKeyOrValue() {
         assertThrows(IllegalArgumentException.class, () -> parse("""
             {"schema_version":1,"verify":["npm test"],"env":{"GITHUB_TOKEN":"x"}}
