@@ -135,6 +135,7 @@ describe('RepoProfileService', () => {
       const client = clientWith([
         {}, // BEGIN
         { rows: [{ id: 1 }] }, // project lock
+        {}, // retire the current draft
         { rows: [{ version: 2 }] }, // max version
         { rows: [stored] }, // INSERT
         {}, // COMMIT
@@ -143,9 +144,10 @@ describe('RepoProfileService', () => {
       const result = await RepoProfileService.create(1, validProfile(), owner());
 
       expect(result).toEqual(expect.objectContaining({ id: 'p1', version: 2, status: 'draft' }));
-      expect(client.query.mock.calls[3][0]).toContain('INSERT INTO repo_profiles');
-      expect(client.query.mock.calls[3][1][1]).toBe(2);
-      expect(JSON.parse(client.query.mock.calls[3][1][2])).toEqual(
+      expect(client.query.mock.calls[2][0]).toContain("status = 'inactive'");
+      expect(client.query.mock.calls[4][0]).toContain('INSERT INTO repo_profiles');
+      expect(client.query.mock.calls[4][1][1]).toBe(2);
+      expect(JSON.parse(client.query.mock.calls[4][1][2])).toEqual(
         expect.objectContaining({ verify: ['npm test'] })
       );
       expect(client.release).toHaveBeenCalled();
@@ -182,6 +184,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -310,6 +313,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -327,6 +331,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -457,6 +462,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -955,6 +961,7 @@ describe('RepoProfileService', () => {
         query: jest.fn()
           .mockResolvedValueOnce({})
           .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+          .mockResolvedValueOnce({})
           .mockResolvedValueOnce({ rows: [{ version: 1 }] })
           .mockResolvedValueOnce({ rows: [{ id: 'p1', version: 1, status: 'draft', profile: {} }] })
           .mockResolvedValueOnce({}),

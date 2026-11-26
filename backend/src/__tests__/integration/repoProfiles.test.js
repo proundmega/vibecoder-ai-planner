@@ -185,6 +185,46 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     }
   });
 
+  test('enforces one draft per project', async () => {
+    const first = await RepoProfileService.create(projectId, profile(), {
+      userId: ownerId, role: 'project_admin',
+    });
+    const second = await RepoProfileService.create(projectId, profile({ verify: ['npm run lint'] }), {
+      userId: ownerId, role: 'project_admin',
+    });
+
+    const rows = await pool.query(
+      `SELECT id, status, version FROM repo_profiles
+       WHERE project_id = $1 ORDER BY version`,
+      [projectId]
+    );
+    expect(rows.rows).toEqual([
+      { id: first.id, status: 'inactive', version: first.version },
+      { id: second.id, status: 'draft', version: second.version },
+    ]);
+    const drafts = await pool.query(
+      `SELECT count(*)::int AS count FROM repo_profiles
+       WHERE project_id = $1 AND status = 'draft'`,
+      [projectId]
+    );
+    expect(drafts.rows[0].count).toBe(1);
+    await expect(RepoProfileService.activate(projectId, first.id, {
+      userId: ownerId, role: 'project_admin',
+    })).rejects.toThrow(/Only draft profiles can be activated/);
+    const index = await pool.query(
+      "SELECT 1 FROM pg_indexes WHERE indexname = 'uq_repo_profiles_draft'"
+    );
+    expect(index.rows).toHaveLength(1);
+    await expect(pool.query(
+      `INSERT INTO repo_profiles
+         (project_id, version, profile, profile_hash, status)
+       VALUES ($1, 99, '{}'::jsonb, 'h', 'draft')`,
+      [projectId]
+    )).rejects.toThrow(/duplicate key value violates unique constraint/);
+
+    await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+  });
+
   test('activation requires a successful dry run for the exact content', async () => {
     const draft = await RepoProfileService.create(projectId, profile(), {
       userId: ownerId, role: 'project_admin',

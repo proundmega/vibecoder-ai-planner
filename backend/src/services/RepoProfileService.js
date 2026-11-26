@@ -523,6 +523,15 @@ class RepoProfileService {
     try {
       await client.query('BEGIN');
       await client.query('SELECT id FROM projects WHERE id = $1 FOR UPDATE', [project.id]);
+      // The project lock serializes concurrent creates, so retiring the
+      // current draft and inserting the next one cannot race the partial
+      // unique index on (project_id) WHERE status = 'draft'.
+      await client.query(
+        `UPDATE repo_profiles
+         SET status = 'inactive', updated_at = NOW()
+         WHERE project_id = $1 AND status = 'draft'`,
+        [projectId]
+      );
       const next = await client.query(
         'SELECT COALESCE(MAX(version), 0) + 1 AS version FROM repo_profiles WHERE project_id = $1',
         [projectId]
@@ -610,6 +619,10 @@ class RepoProfileService {
       if (target.rows[0].status === 'active') {
         await client.query('COMMIT');
         return format({ ...target.rows[0], profile_hash: contentHash }, { redact: false });
+      }
+      if (target.rows[0].status !== 'draft') {
+        throw new ValidationError(
+          'Only draft profiles can be activated; create a new version');
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations
