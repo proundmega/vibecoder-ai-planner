@@ -162,7 +162,9 @@ This is an admin operation, not model-driven.
 ```
 
 - `schema_version` must be `1`; unknown fields are rejected.
-- `image` is optional; when present it must be digest-pinned (`@sha256:`).
+- `image` is optional; when present it must be digest-pinned (`@sha256:`) and
+  match the strict stack-image shape: no userinfo and exactly one digest
+  separator (registry ports and tags are allowed).
 - `setup` and `verify` are bounded shell command lists. `verify` must contain
   at least one command.
 - `env` keys must look like environment names and may not be secret-like

@@ -15,7 +15,9 @@ const SECRET_KEY_AUTH = /(?:^|_)auth$/i;
 const SECRET_KEY_SUFFIX = /(?:pass|pwd)$/i;
 const GITHUB_URL = /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/;
 const BRANCH = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.$)[A-Za-z0-9._/-]{1,255}$/;
-const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$/;
+// No userinfo and exactly one digest separator; registry ports and tags are allowed.
+// Keep this aligned with backend/src/config/stackImages.js and the agent regex.
+const IMAGE = /^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$/;
 const ENV_KEY = /^[A-Z_][A-Z0-9_]*$/;
 const COMMAND = /^[^\0\r\n]+$/;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;

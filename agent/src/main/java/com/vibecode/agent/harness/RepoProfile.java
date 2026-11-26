@@ -38,7 +38,7 @@ public class RepoProfile {
     private static final Pattern BRANCH = Pattern.compile(
         "^(?!-)(?!.*\\.\\.)(?!.*//)(?!.*/$)(?!.*\\.$)[A-Za-z0-9._/-]{1,255}$");
     private static final Pattern IMAGE = Pattern.compile(
-        "^[A-Za-z0-9][A-Za-z0-9._/:@-]*@sha256:[a-f0-9]{64}$");
+        "^[A-Za-z0-9][A-Za-z0-9._:/-]*@sha256:[a-f0-9]{64}$");
     private static final Pattern ENV_KEY = Pattern.compile("^[A-Z_][A-Z0-9_]*$");
     private static final Pattern ENV_REFERENCE = Pattern.compile(
         "^\\$(?:\\{[A-Za-z_][A-Za-z0-9_]*\\}|[A-Za-z_][A-Za-z0-9_]*)$");
