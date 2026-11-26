@@ -56,10 +56,18 @@ if you already operate it.
    from a sub-path (for example `https://<host>/forgejo`), connect with the
    `owner/repo` shorthand so the base path is preserved.
 
+   Provider-neutral API: `GET /api/v1/git/:projectId/repo` (status),
+   `GET /api/v1/git/:projectId/repo/agent` (agent credential),
+   `POST /api/v1/git/:projectId/repo/connect`,
+   `GET /api/v1/git/:projectId/branches|reviews`,
+   `POST /api/v1/git/:ticketId/branch|review` and
+   `GET /api/v1/git/:ticketId/review/diff`. The `/api/v1/github/...` routes
+   remain GitHub-only aliases.
+
 5. Verify the backend provider with the gated integration test
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
    branch, creates exactly one PR, reads the diff and cleans up.
-6. Run one worker once `fg-57f` wires the provider-scoped agent token; then
+6. Run one worker once `fg-57f2` wires the provider-scoped agent credential; then
    verify:
    - one branch is pushed;
    - exactly one PR is created;
