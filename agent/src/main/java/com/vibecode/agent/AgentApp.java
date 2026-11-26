@@ -171,14 +171,18 @@ public class AgentApp {
     }
 
     private GitHubTokenProvider createGitHubTokenProvider() {
+        // The deployment-wide GitHub mode only constrains GitHub; a self-hosted
+        // provider's auth mode comes from the project repo config.
+        boolean github = "github".equals(config.getRepoProvider());
+        String expectedMode = github ? config.getGitHubAuthMode() : null;
         GitHubTokenSource legacyFallback = null;
-        if ("pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
+        if (github && "pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
             legacyFallback = this::fetchLegacyPat;
         }
         return new GitHubTokenProvider(
             force -> apiService.requestGitHubToken(config.getProjectId(), force),
             legacyFallback,
-            config.getGitHubAuthMode(),
+            expectedMode,
             config.isAllowPat());
     }
 

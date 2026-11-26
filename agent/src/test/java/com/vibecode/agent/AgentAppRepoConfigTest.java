@@ -45,6 +45,20 @@ class AgentAppRepoConfigTest {
     }
 
     @Test
+    void appliesProviderAndAuthModeFromTheServerRepo() {
+        AgentConfig config = new AgentConfig();
+
+        boolean applied = AgentApp.applyRepoCoordinates(config, Map.of(
+            "repoUrl", "https://git.example.com/group/repo.git",
+            "provider", "Forgejo",
+            "authMode", "PAT"));
+
+        assertTrue(applied);
+        assertEquals("forgejo", config.getRepoProvider());
+        assertEquals("pat", config.getRepoAuthMode());
+    }
+
+    @Test
     void reviewModeNeverLoadsTheRepository() {
         ModeConfig config = new ModeConfig();
         config.review = true;

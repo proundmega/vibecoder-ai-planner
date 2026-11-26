@@ -821,8 +821,8 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
-     * Request a short-lived, repo-scoped GitHub credential for the project.
-     * The backend chooses App or PAT mode and enforces the fallback flag.
+     * Request a short-lived, provider-scoped Git credential for the project.
+     * The backend chooses App/self-hosted mode and enforces the fallback flag.
      */
     public Map<String, Object> requestGitHubToken(String projectId) throws IOException {
         return requestGitHubToken(projectId, false);
@@ -830,7 +830,7 @@ public class ApiService implements QuestionBridge.Transport {
 
     public Map<String, Object> requestGitHubToken(String projectId, boolean forceRefresh)
             throws IOException {
-        String url = baseUrl + "/github/" + projectId + "/token";
+        String url = baseUrl + "/git/" + projectId + "/token";
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("operation", "agent");
         body.put("forceRefresh", forceRefresh);
@@ -848,12 +848,11 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
-     * Get repository connection config (including GitHub PAT) for the project.
-     * PAT mode only; App mode returns no token and agents should use
-     * {@link #requestGitHubToken(String)}.
+     * Get the provider-neutral repository config (provider, URL, auth mode and
+     * any self-hosted credential) for the project.
      */
     public Map<String, Object> getRepoConfig(String projectId) throws IOException {
-        String url = baseUrl + "/github/" + projectId + "/repo/agent";
+        String url = baseUrl + "/git/" + projectId + "/repo/agent";
         ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
         
         if (response.hasError()) {

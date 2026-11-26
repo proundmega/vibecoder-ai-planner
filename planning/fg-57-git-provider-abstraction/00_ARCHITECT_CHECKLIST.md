@@ -91,9 +91,10 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D13 | Local filesystem repo paths with a configured repository root; local repo/default-branch existence validation and the 04 integration test | review | Security | fg-57d2 | open |
 | D14 | Forgejo/Gitea `getFileContent` for repo-profile detection (returns null in fg-57e) | review | Functionality | fg-57f / follow-up | open |
 | D15 | Paginate Forgejo/Gitea branch and review listings beyond the first 50 items | review | Reliability | follow-up | open |
-| D16 | Pass the allowed provider origin into the agent `WorkspaceManager` so HTTPS token auth is scoped to the connected provider | review | Security | fg-57f2 / follow-up | open |
-| D17 | Agent provider-neutral repo credential (clone/push) and backend-proxied Forgejo/Gitea review client | self | Functionality | fg-57f2 | open |
+| D16 | Pass the allowed provider origin into the agent `WorkspaceManager` so HTTPS token auth is scoped to the connected provider | review | Security | fg-57d2 / follow-up | open |
+| D17 | Agent provider-neutral repo credential for clone/push and the `/git/:projectId/token` route | self | Functionality | fg-57f2 | open |
 | D18 | Project settings provider picker and connection status UI | self | UX | fg-57f3 / follow-up | open |
+| D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b | open |
 
 ## Decisions needed from the user
 

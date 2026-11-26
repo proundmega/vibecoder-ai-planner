@@ -59,6 +59,7 @@ if you already operate it.
    Provider-neutral API: `GET /api/v1/git/:projectId/repo` (status),
    `GET /api/v1/git/:projectId/repos` (all connections),
    `GET /api/v1/git/:projectId/repo/agent` (agent credential),
+   `POST /api/v1/git/:projectId/token` (agent token),
    `POST /api/v1/git/:projectId/repo/connect`,
    `GET /api/v1/git/:projectId/branches|reviews`,
    `POST /api/v1/git/:ticketId/branch|review` and
@@ -74,12 +75,13 @@ if you already operate it.
 5. Verify the backend provider with the gated integration test
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
    branch, creates exactly one PR, reads the diff and cleans up.
-6. Run one worker once `fg-57f2` wires the provider-scoped agent credential; then
-   verify:
+6. Run one worker. The agent fetches the provider-scoped credential from
+   `/api/v1/git/:projectId/token`, clones/pushes over HTTPS and records the
+   branch. Forgejo/Gitea agent-side PR creation follows in `fg-57f2b`; until
+   then the ticket moves to `review` with the branch/SHA. Then verify:
    - one branch is pushed;
-   - exactly one PR is created;
-   - a retry does not create a second PR;
-   - the ticket moves to `review` with the PR URL.
+   - after `fg-57f2b`, exactly one PR is created and a retry does not duplicate it;
+   - the ticket moves to `review` with the PR URL or branch evidence.
 7. Clean up the PR/branch, repository, token and container.
 
 ## GitLab self-hosted

@@ -1,8 +1,11 @@
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
 const GitProjectService = require('../services/GitProjectService');
+const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const gitProviders = require('../providers/git');
-const { NotFoundError, ForbiddenError } = require('../errors/HttpError');
+const {
+  NotFoundError, ForbiddenError, ValidationError,
+} = require('../errors/HttpError');
 
 function requestedProvider(req) {
   const value = req.query?.provider ?? req.body?.provider;
@@ -124,6 +127,55 @@ async function getRepoForAgent(req, res, next) {
   }
 }
 
+/**
+ * Provider-neutral token endpoint used by the agent. GitHub App mode mints a
+ * short-lived installation token; every other mode/provider returns the stored
+ * scoped credential in the same `{ token, mode, expiresAt }` shape.
+ */
+async function requestToken(req, res, next) {
+  try {
+    const projectId = req.params.projectId;
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can request a Git token'
+    );
+    const repo = await GitProjectService.getRepo(projectId, {
+      provider: requestedProvider(req),
+    });
+    if (!repo) throw new NotFoundError('No repository connected to this project');
+    const providerId = repo.provider || 'github';
+
+    if (providerId === 'github' && GitHubAppAuthService.getAuthMode() === 'app') {
+      const minted = await GitHubAppAuthService.mintToken(projectId, {
+        operation: req.body?.operation || 'agent',
+        repo: req.body?.repo,
+        forceRefresh: req.body?.forceRefresh === true,
+      });
+      send(res, { provider: 'github', ...minted });
+      return;
+    }
+
+    const credential = await GitProjectService.getAgentCredential(projectId, {
+      provider: providerId,
+    });
+    if (!credential) {
+      throw new NotFoundError('No repository connected to this project');
+    }
+    if (!credential.accessToken) {
+      throw new ValidationError('This repository uses SSH and cannot return a bearer token');
+    }
+    send(res, {
+      provider: providerId,
+      token: credential.accessToken,
+      mode: credential.authMode || 'pat',
+      expiresAt: null,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function listBranches(req, res, next) {
   try {
     const projectId = req.params.projectId;
@@ -212,6 +264,7 @@ module.exports = {
   getRepoStatus,
   listRepos,
   getRepoForAgent,
+  requestToken,
   listBranches,
   createBranch,
   deleteBranch,

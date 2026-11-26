@@ -7,6 +7,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate, validatePathParams } = require('../middleware/validate');
 const gitController = require('../controllers/gitController');
 const { connectRepoSchema, reviewRequestSchema, idPathParam } = require('../validators/git');
+const { tokenRequestSchema } = require('../validators/github');
 
 /**
  * @openapi
@@ -82,6 +83,34 @@ router.get(
   forProjectParam(),
   requireProjectGrant('worker'),
   gitController.getRepoForAgent
+);
+
+/**
+ * @openapi
+ * /git/{projectId}/token:
+ *   post:
+ *     tags: [Git]
+ *     summary: Mint or return the provider-scoped Git credential for the agent
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     security:
+ *       - apiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Token, mode, expiry and provider
+ */
+router.post(
+  '/:projectId/token',
+  verifyTokenOrAgent,
+  validatePathParams({ projectId: idPathParam }),
+  requireRuntime('running'),
+  forProjectParam(),
+  requireProjectGrant('worker'),
+  validate(tokenRequestSchema),
+  gitController.requestToken
 );
 
 /**

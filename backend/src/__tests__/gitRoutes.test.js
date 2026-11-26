@@ -12,6 +12,10 @@ jest.mock('../services/PermissionService', () => ({
   hasAllPermissions: jest.fn().mockResolvedValue(true),
   hasPermission: jest.fn().mockResolvedValue(true),
 }));
+jest.mock('../services/GitHubAppAuthService', () => ({
+  getAuthMode: jest.fn().mockReturnValue('pat'),
+  mintToken: jest.fn(),
+}));
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockReturnValue({ userId: 'user-1', role: 'project_admin' }),
   sign: jest.fn().mockReturnValue('mock-token'),
@@ -34,6 +38,7 @@ jest.mock('../models/ticket');
 
 const app = require('../index');
 const GitProjectService = require('../services/GitProjectService');
+const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const PermissionService = require('../services/PermissionService');
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
@@ -51,6 +56,7 @@ describe('Generic Git routes', () => {
     jest.clearAllMocks();
     asUser();
     PermissionService.hasAnyPermission.mockResolvedValue(true);
+    GitHubAppAuthService.getAuthMode.mockReturnValue('pat');
     Project.findById.mockResolvedValue({ id: 1, ownerId: 'user-1' });
     Ticket.findById.mockResolvedValue({ id: 42, projectId: 1 });
   });
@@ -310,5 +316,87 @@ describe('Generic Git routes', () => {
     expect(GitProjectService.getAgentCredential)
       .toHaveBeenCalledWith('1', { provider: null });
     expect(res.body.data).toEqual({ provider: 'github', ...credential });
+  });
+
+  it('returns the stored provider token for a self-hosted agent', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'forgejo' });
+    GitProjectService.getAgentCredential.mockResolvedValue({
+      provider: 'forgejo',
+      accessToken: 'scoped-token',
+      authMode: 'pat',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({ operation: 'agent' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toEqual({
+      provider: 'forgejo',
+      token: 'scoped-token',
+      mode: 'pat',
+      expiresAt: null,
+    });
+  });
+
+  it('mints a GitHub App token through the generic route', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitHubAppAuthService.getAuthMode.mockReturnValue('app');
+    GitHubAppAuthService.mintToken.mockResolvedValue({
+      token: 'ghs_minted',
+      mode: 'app',
+      expiresAt: '2026-11-26T04:00:00Z',
+    });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'github' });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({});
+
+    expect(res.statusCode).toBe(200);
+    expect(GitHubAppAuthService.mintToken).toHaveBeenCalledWith('1', {
+      operation: 'agent',
+      repo: undefined,
+      forceRefresh: false,
+    });
+    expect(res.body.data).toMatchObject({
+      provider: 'github',
+      token: 'ghs_minted',
+      mode: 'app',
+    });
+  });
+
+  it('rejects a token request for an SSH repository', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'local' });
+    GitProjectService.getAgentCredential.mockResolvedValue({
+      provider: 'local',
+      accessToken: null,
+      sshKey: 'key',
+      authMode: 'ssh',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({});
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.message).toContain('SSH');
+  });
+
+  it('returns 404 when no repository is connected', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitProjectService.getRepo.mockResolvedValue(null);
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({});
+
+    expect(res.statusCode).toBe(404);
   });
 });
