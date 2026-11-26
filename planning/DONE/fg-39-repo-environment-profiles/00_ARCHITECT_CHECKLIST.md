@@ -54,7 +54,7 @@ D15) are tracked in the deferred register below.
 | Slice 4b caches | PR #237 (`607ebf1`); `CachePlanTest`, `SandboxConfigTest`, `RepoProfileService` detection and `repoProfileEditor` cache field; quota/GC and sanitize checks | ☑ |
 | D11 cache smoke | `smoke-sandbox-caches.sh` + `SandboxCacheSmokeScriptTest`: npm offline, Maven `-o`, Go `GOPROXY=off` against persisted caches | ☑ |
 | D16 image regex | Profile/validator/agent regex aligned with the stack catalog; userinfo and multiple digest separators rejected with regressions | ☑ |
-| D14 pagination | Validation history accepts `limit`/`offset` (max 200) and the editor loads older pages | ☑ |
+| D14 pagination | Validation history accepts `limit`/`offset` (max 200), orders by `created_at, id` and the editor loads/dedupes older pages | ☑ |
 | Verification results | `03` → Results | ☑ |
 | Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D10-D13 and D15 remain open | ☑ |
 
