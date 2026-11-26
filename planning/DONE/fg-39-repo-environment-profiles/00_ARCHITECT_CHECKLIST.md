@@ -40,7 +40,7 @@ environment failures, not coding failures.
 | 5 | Project settings profile editor | done (#167) |
 
 All slices are merged, including slice 4b (FR4/D9), which adds persistent
-per-project dependency caches. The remaining follow-ups (D1-D4 and D10-D16)
+per-project dependency caches. The remaining follow-ups (D1-D4 and D10-D15)
 are tracked in the deferred register below.
 
 ## Status evidence
@@ -53,8 +53,9 @@ are tracked in the deferred register below.
 | Slice 4a images | PR #232 (`8a38cb8`); all five stages build; Python/monorepo local-wheel + pytest smoke under the sanitized PATH | ☑ |
 | Slice 4b caches | PR #237 (`607ebf1`); `CachePlanTest`, `SandboxConfigTest`, `RepoProfileService` detection and `repoProfileEditor` cache field; quota/GC and sanitize checks | ☑ |
 | D11 cache smoke | `smoke-sandbox-caches.sh` + `SandboxCacheSmokeScriptTest`: npm offline, Maven `-o`, Go `GOPROXY=off` against persisted caches | ☑ |
+| D16 image regex | Profile/validator/agent regex aligned with the stack catalog; userinfo and multiple digest separators rejected with regressions | ☑ |
 | Verification results | `03` → Results | ☑ |
-| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4 and D10-D16 remain open | ☑ |
+| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4 and D10-D15 remain open | ☑ |
 
 ## Deferred register (canonical)
 
@@ -78,7 +79,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | open |
 | D14 | Dry-run history pagination beyond the latest 200 rows | fg-39 slice 5 review | UX | fg-39 follow-up | open |
 | D15 | One-time storage scrub/migration for legacy literal credentials in profile and validation rows (read-time redaction is in place) | fg-39 review | Security | fg-39 follow-up | open |
-| D16 | Align the profile/agent image regex with the strict stack catalog (reject userinfo and multiple digest separators) | fg-39 slice 4a review | Security | fg-39 follow-up | open |
+| D16 | Align the profile/agent image regex with the strict stack catalog (reject userinfo and multiple digest separators) | fg-39 slice 4a review | Security | fg-39 follow-up | done (#245, `ecb2f6a`) |
 
 ## User decisions
 
