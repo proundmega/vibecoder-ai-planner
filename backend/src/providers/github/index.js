@@ -46,6 +46,27 @@ class GitHubProvider {
     return listTicketPRs(this.api, projectRepo);
   }
 
+  async getReviewRequest(projectRepo, reviewNumber) {
+    const parsed = this.constructor.parseRepoUrl(projectRepo.repoUrl);
+    const { data } = await this.api.retryWithBackoff(() =>
+      this.api.octokit.pulls.get({
+        owner: parsed.owner,
+        repo: parsed.repo,
+        pull_number: reviewNumber,
+      }));
+    if (!data?.head?.ref || !data?.head?.sha) {
+      return null;
+    }
+    return {
+      number: data.number,
+      url: data.html_url,
+      state: data.state,
+      branch: data.head.ref,
+      headSha: data.head.sha,
+      baseBranch: data.base?.ref || null,
+    };
+  }
+
   async getPRDiff(projectRepo, prNumber) {
     const parsed = this.constructor.parseRepoUrl(projectRepo.repoUrl);
     const files = await this.api.listPRFiles(parsed.owner, parsed.repo, prNumber);

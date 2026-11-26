@@ -24,6 +24,10 @@ class Ticket {
     this.templateSchema = data.template_schema || null;
     this.phase = data.phase || 'draft';
     this.prUrl = data.pr_url || null;
+    this.branchName = data.branchName ?? data.branch_name ?? null;
+    this.fixBranch = data.fixBranch ?? data.fix_branch ?? null;
+    this.reviewedSha = data.reviewedSha ?? data.reviewed_sha ?? null;
+    this.reviewRound = data.reviewRound ?? data.review_round ?? 0;
     this.milestoneId = data.milestoneId ?? data.milestone_id ?? null;
     this.estimate = data.estimate ?? null;
     this.dependsOn = data.dependsOn ?? data.depends_on ?? [];
@@ -84,6 +88,10 @@ class Ticket {
       template_schema: row.template_schema,
       phase: row.phase,
       pr_url: row.pr_url,
+      branch_name: row.branch_name,
+      fix_branch: row.fix_branch,
+      reviewed_sha: row.reviewed_sha,
+      review_round: row.review_round,
       milestoneId: row.milestone_id,
       estimate: row.estimate,
       dependsOn: row.depends_on,

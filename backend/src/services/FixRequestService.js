@@ -1,4 +1,5 @@
-const { transaction } = require('../db');
+const { transaction, pool } = require('../db');
+const FixBranchResolver = require('./FixBranchResolver');
 const {
   NotFoundError,
   ValidationError,
@@ -46,15 +47,11 @@ function reviewedSha(value) {
   return sha;
 }
 
-function branchName(value) {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new ValidationError('Ticket branch is unavailable; cannot create a fix request');
+function firstText(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
   }
-  const branch = value.trim();
-  if (branch.length > 255) {
-    throw new ValidationError('Ticket branch exceeds 255 characters');
-  }
-  return branch;
+  return null;
 }
 
 function optionalFeedback(value) {
@@ -82,6 +79,10 @@ function activePlaceholders() {
 }
 
 class FixRequestService {
+  constructor(options = {}) {
+    this.branchResolver = options.branchResolver || new FixBranchResolver();
+  }
+
   /**
    * Create or return the fix request for one attempt (or a manual request).
    *
@@ -93,10 +94,73 @@ class FixRequestService {
     if (options.db) {
       return this.createOrEnsureWithClient(options.db, id, input, options);
     }
+    // Resolve the branch/SHA (including any provider lookup) before opening
+    // the transaction, so no pool client or ticket lock is held across
+    // provider latency/retries.
+    const preResolved = await this.preResolve(id, input);
+    if (preResolved.existing) {
+      return { request: preResolved.existing, created: false };
+    }
     return transaction((client) =>
-      this.createOrEnsureWithClient(client, id, input, options));
+      this.createOrEnsureWithClient(client, id, input, {
+        ...options,
+        branchResolution: preResolved.branchResolution,
+      }));
   }
 
+  async preResolve(ticketId, input = {}) {
+    const id = positiveId(ticketId, 'ticketId');
+    const attemptId = input.attemptId == null || input.attemptId === ''
+      ? null
+      : uuid(input.attemptId, 'attemptId');
+    if (!attemptId && !optionalFeedback(input.feedback)) {
+      throw new ValidationError('feedback is required for a manual fix request');
+    }
+
+    const ticketResult = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    );
+    if (ticketResult.rows.length === 0) {
+      throw new NotFoundError('Ticket not found');
+    }
+    const ticket = ticketResult.rows[0];
+
+    // Idempotent retries must win even after the first request moved the
+    // ticket to in_progress.
+    if (attemptId) {
+      const existing = await pool.query(
+        'SELECT * FROM ticket_fix_requests WHERE attempt_id = $1 AND ticket_id = $2',
+        [attemptId, id]
+      );
+      if (existing.rows[0]) return { existing: existing.rows[0] };
+    } else {
+      const active = await this.findActive(pool, id);
+      if (active) return { existing: active };
+    }
+
+    if (ticket.status !== 'review') {
+      throw new ConflictError('Ticket must be in review before a fix request');
+    }
+    if (ticket.phase !== 'review') {
+      throw new ConflictError('Ticket phase must be review before a fix request');
+    }
+
+    const resolved = attemptId
+      ? await this.resolveFromAttempt(pool, id, attemptId)
+      : await this.resolveManual(pool, ticket);
+    const branchResolution = await this.branchResolver.resolve(ticket, {
+      reviewedSha: resolved.reviewedSha,
+      round: resolved.round,
+    });
+    return { branchResolution };
+  }
+
+  /**
+   * Caller-owned transaction path. A caller that already holds a transaction
+   * must preflight with {@link preResolve} and pass `branchResolution` so no
+   * provider lookup runs while the ticket row is locked.
+   */
   async createOrEnsureWithClient(client, ticketId, input = {}, options = {}) {
     const id = positiveId(ticketId, 'ticketId');
     const attemptId = input.attemptId == null || input.attemptId === ''
@@ -138,14 +202,38 @@ class FixRequestService {
     const resolved = attemptId
       ? await this.resolveFromAttempt(client, id, attemptId)
       : await this.resolveManual(client, ticket);
-    const branch = branchName(ticket.branch_name);
-
     if (ticket.status !== 'review') {
       throw new ConflictError('Ticket must be in review before a fix request');
     }
     if (ticket.phase !== 'review') {
       throw new ConflictError('Ticket phase must be review before a fix request');
     }
+
+    let branchResolution = options.branchResolution;
+    if (branchResolution) {
+      if (resolved.reviewedSha != null
+          && branchResolution.reviewedSha !== resolved.reviewedSha) {
+        throw new ConflictError(
+          'The review base changed while creating the fix request; retry');
+      }
+      if (branchResolution.round !== resolved.round) {
+        throw new ConflictError(
+          'The review round changed while creating the fix request; retry');
+      }
+      const lockedBranch = firstText(ticket.branch_name, ticket.fix_branch);
+      if (lockedBranch && lockedBranch !== branchResolution.branch) {
+        throw new ConflictError(
+          'The ticket branch changed while creating the fix request; retry');
+      }
+    } else {
+      branchResolution = await this.branchResolver.resolve(ticket, {
+        reviewedSha: resolved.reviewedSha,
+        round: resolved.round,
+      });
+    }
+    const branch = branchResolution.branch;
+    const finalReviewedSha = branchResolution.reviewedSha;
+    const round = branchResolution.round;
 
     const active = await this.findActive(client, id);
     if (active) {
@@ -166,7 +254,7 @@ class FixRequestService {
               fix_branch = $4,
               updated_at = NOW()
         WHERE id = $1`,
-      [id, resolved.round, resolved.reviewedSha, branch]
+      [id, round, finalReviewedSha, branch]
     );
 
     await client.query(
@@ -188,7 +276,7 @@ class FixRequestService {
            (ticket_id, attempt_id, source, branch, reviewed_sha, state, feedback)
          VALUES ($1, $2, $3, $4, $5, 'queued', $6)
          RETURNING *`,
-        [id, attemptId, source, branch, resolved.reviewedSha, feedback]
+        [id, attemptId, source, branch, finalReviewedSha, feedback]
       );
       return { request: inserted.rows[0], created: true };
     } catch (error) {
@@ -263,8 +351,10 @@ class FixRequestService {
         round: roundValue(ticket.review_round),
       };
     }
-    throw new ValidationError(
-      'No completed review exists for this ticket; a manual fix request needs a reviewed SHA');
+    return {
+      reviewedSha: ticket.reviewed_sha ? reviewedSha(ticket.reviewed_sha) : null,
+      round: roundValue(ticket.review_round),
+    };
   }
 }
 
