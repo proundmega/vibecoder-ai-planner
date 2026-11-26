@@ -57,6 +57,23 @@ class RepoProfileTest {
     }
 
     @Test
+    void acceptsRegistryPortsAndTagsWithOneDigestInImages() throws Exception {
+        String image = "registry.example:5000/team/image:tag@sha256:" + "a".repeat(64);
+        RepoProfile profile = parse("""
+            {"schema_version":1,"verify":["npm test"],"image":"%s","services":[{
+              "name":"postgres","image":"%s",
+              "env":{"POSTGRES_USER":"vibecode","POSTGRES_DB":"test"},
+              "password_env":"POSTGRES_PASSWORD",
+              "connection_env":"DATABASE_URL",
+              "connection_url":"postgresql://vibecode:${password}@${host}:5432/test",
+              "healthcheck":{"command":"pg_isready"}
+            }]}
+            """.formatted(image, image));
+        assertEquals(image, profile.image());
+        assertEquals(image, profile.services().get(0).image());
+    }
+
+    @Test
     void rejectsUserinfoAndMultipleDigestSeparatorsInImages() {
         String digest = "a".repeat(64);
         for (String image : new String[]{

@@ -243,6 +243,17 @@ describe('RepoProfileService', () => {
       ).rejects.toThrow(/sha256/);
     });
 
+    it('accepts registry ports, tags and one digest in profile and service images', () => {
+      const image = `registry.example:5000/team/image:tag@sha256:${'a'.repeat(64)}`;
+      const result = validateRepoProfile(validProfile({
+        image,
+        services: [validService({ image })],
+      }));
+      expect(result.error).toBeUndefined();
+      expect(result.value.image).toBe(image);
+      expect(result.value.services[0].image).toBe(image);
+    });
+
     it('rejects userinfo and multiple digest separators in profile and service images', async () => {
       const digest = 'a'.repeat(64);
       for (const image of [
