@@ -16,6 +16,14 @@ function text(value) {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
 }
 
+function firstText(...values) {
+  for (const value of values) {
+    const resolved = text(value);
+    if (resolved) return resolved;
+  }
+  return null;
+}
+
 function normalizeSha(value) {
   const sha = text(value);
   if (!sha || !SHA_RE.test(sha)) {
@@ -43,18 +51,25 @@ class FixBranchResolver {
     const projectId = ticket.projectId ?? ticket.project_id;
     const ticketId = ticket.id;
     const prUrl = ticket.prUrl ?? ticket.pr_url;
-    let branch = text(ticket.branchName ?? ticket.branch_name
-      ?? ticket.fixBranch ?? ticket.fix_branch);
-    let sha = text(reviewedSha ?? ticket.reviewedSha ?? ticket.reviewed_sha);
+    let branch = firstText(
+      ticket.branchName,
+      ticket.branch_name,
+      ticket.fixBranch,
+      ticket.fix_branch
+    );
+    let sha = firstText(reviewedSha, ticket.reviewedSha, ticket.reviewed_sha);
     let review = null;
 
-    if (prUrl && (!branch || !sha)) {
+    if (prUrl) {
+      // Always verify against the review head when one is linked, even when
+      // the ticket cache already has a branch/SHA (fg-32b2 mismatch guard).
       review = await this.getReviewRequest(projectId, ticketId);
-      if (!review) {
+      if (review) {
+        if (!branch) branch = text(review.branch);
+        if (!sha) sha = text(review.headSha);
+      } else if (!branch || !sha) {
         throw new ValidationError('Could not resolve the review request head');
       }
-      if (!branch) branch = text(review.branch);
-      if (!sha) sha = text(review.headSha);
     }
 
     if (!branch) {

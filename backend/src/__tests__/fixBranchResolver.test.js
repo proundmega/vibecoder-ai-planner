@@ -15,18 +15,18 @@ function ticket(overrides = {}) {
 }
 
 describe('FixBranchResolver (fg-32b2)', () => {
-  it('uses the stored ticket branch and reviewed SHA without a provider call', async () => {
+  it('verifies a stored ticket branch against the review head', async () => {
     let calls = 0;
     const resolver = new FixBranchResolver({
       getReviewRequest: async () => {
         calls++;
-        return null;
+        return { branch: 'feat/ticket-42', headSha: SHA };
       },
     });
 
     const resolved = await resolver.resolve(ticket(), { round: 1 });
 
-    expect(calls).toBe(0);
+    expect(calls).toBe(1);
     expect(resolved).toEqual({
       branch: 'feat/ticket-42',
       reviewedSha: SHA,
@@ -70,6 +70,18 @@ describe('FixBranchResolver (fg-32b2)', () => {
     expect(resolved.round).toBe(2);
   });
 
+  it('fails closed on a mismatch even when the SHA is cached', async () => {
+    const resolver = new FixBranchResolver({
+      getReviewRequest: async () => ({
+        branch: 'feat/other',
+        headSha: SHA,
+      }),
+    });
+
+    await expect(resolver.resolve(ticket(), { round: 1 }))
+      .rejects.toThrow('does not match the PR head branch');
+  });
+
   it('fails closed when the stored branch disagrees with the review head', async () => {
     const resolver = new FixBranchResolver({
       getReviewRequest: async () => ({
@@ -102,13 +114,22 @@ describe('FixBranchResolver (fg-32b2)', () => {
     )).rejects.toThrow('No reviewed SHA is available');
   });
 
+  it('falls through an empty branchName to fix_branch', async () => {
+    const resolved = await new FixBranchResolver().resolve(
+      ticket({ branchName: '', branch_name: null, fix_branch: 'feat/fix-cache', pr_url: null }),
+      { round: 0 }
+    );
+
+    expect(resolved.branch).toBe('feat/fix-cache');
+  });
+
   it('rejects an invalid SHA and an oversized branch', async () => {
     await expect(new FixBranchResolver().resolve(
-      ticket({ reviewed_sha: 'abc1234' }), { round: 0 }
+      ticket({ reviewed_sha: 'abc1234', pr_url: null }), { round: 0 }
     )).rejects.toThrow('No valid reviewed SHA');
 
     await expect(new FixBranchResolver().resolve(
-      ticket({ branch_name: 'b'.repeat(256) }), { round: 0 }
+      ticket({ branch_name: 'b'.repeat(256), pr_url: null }), { round: 0 }
     )).rejects.toThrow('exceeds 255');
   });
 });

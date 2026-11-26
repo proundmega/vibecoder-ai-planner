@@ -22,6 +22,7 @@ const PermissionService = require('../services/PermissionService');
 const GitHubAppAuthService = require('../services/GitHubAppAuthService');
 const { encrypt, decrypt } = require('../utils/crypto');
 const gitProviders = require('../providers/git');
+const { GitHubProvider } = require('../providers/github');
 
 function fakeProvider(overrides = {}) {
   return {
@@ -33,6 +34,60 @@ function fakeProvider(overrides = {}) {
     ...overrides,
   };
 }
+
+describe('GitHubProvider review head', () => {
+  it('maps head.ref and head.sha from the GitHub pull request', async () => {
+    const provider = new GitHubProvider('token');
+    const get = jest.fn().mockResolvedValue({
+      data: {
+        number: 9,
+        html_url: 'https://github.com/owner/repo/pull/9',
+        state: 'open',
+        head: { ref: 'feat/from-pr', sha: 'b'.repeat(40) },
+        base: { ref: 'main' },
+      },
+    });
+    provider.api = {
+      retryWithBackoff: (fn) => fn(),
+      octokit: { pulls: { get } },
+    };
+
+    const review = await provider.getReviewRequest(
+      { repoUrl: 'https://github.com/owner/repo' }, 9);
+
+    expect(review).toEqual({
+      number: 9,
+      url: 'https://github.com/owner/repo/pull/9',
+      state: 'open',
+      branch: 'feat/from-pr',
+      headSha: 'b'.repeat(40),
+      baseBranch: 'main',
+    });
+    expect(get).toHaveBeenCalledWith({
+      owner: 'owner',
+      repo: 'repo',
+      pull_number: 9,
+    });
+  });
+
+  it('fails closed when the pull request has no head SHA', async () => {
+    const provider = new GitHubProvider('token');
+    provider.api = {
+      retryWithBackoff: (fn) => fn(),
+      octokit: {
+        pulls: {
+          get: jest.fn().mockResolvedValue({
+            data: { number: 9, head: { ref: 'feat' } },
+          }),
+        },
+      },
+    };
+
+    await expect(provider.getReviewRequest(
+      { repoUrl: 'https://github.com/owner/repo' }, 9))
+      .rejects.toThrow('missing its head');
+  });
+});
 
 describe('GitProjectService', () => {
   beforeEach(() => {
@@ -561,6 +616,42 @@ describe('GitProjectService', () => {
         expect.stringContaining('SET branch_name = NULL'),
         [42]
       );
+    });
+
+    it('resolves the review head branch and SHA', async () => {
+      const provider = fakeProvider({
+        getReviewRequest: jest.fn().mockResolvedValue({
+          number: 7,
+          url: 'https://example.test/pull/7',
+          state: 'open',
+          branch: 'feat/from-pr',
+          headSha: 'a'.repeat(40),
+          baseBranch: 'main',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: 1,
+        prUrl: 'https://example.test/pull/7',
+      });
+      const repo = {
+        provider: 'github',
+        repoUrl: 'owner/repo',
+        accessTokenEncrypted: 'enc:pat',
+      };
+
+      await expect(GitProjectService.getReviewRequest(1, 42, { repo }))
+        .resolves.toEqual({
+          number: 7,
+          url: 'https://example.test/pull/7',
+          state: 'open',
+          branch: 'feat/from-pr',
+          headSha: 'a'.repeat(40),
+          baseBranch: 'main',
+          ticketId: 42,
+        });
+      expect(provider.getReviewRequest).toHaveBeenCalledWith(repo, 7);
     });
 
     it('extracts the review number from a Forgejo pull URL', async () => {

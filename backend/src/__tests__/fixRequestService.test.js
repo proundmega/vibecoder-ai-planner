@@ -1,8 +1,9 @@
 jest.mock('../db', () => ({
+  pool: { query: jest.fn() },
   transaction: jest.fn(),
 }));
 
-const { transaction } = require('../db');
+const { pool, transaction } = require('../db');
 const { FixRequestService } = require('../services/FixRequestService');
 
 const TICKET_ID = 42;
@@ -260,6 +261,7 @@ describe('FixRequestService (fg-32a)', () => {
 
   it('runs inside the transaction helper when no client is supplied', async () => {
     const { client } = fakeClient();
+    pool.query.mockImplementation((sql, params) => client.query(sql, params));
     transaction.mockImplementation(async (fn) => fn(client));
     const service = new FixRequestService();
 

@@ -1,4 +1,4 @@
-const { transaction } = require('../db');
+const { transaction, pool } = require('../db');
 const FixBranchResolver = require('./FixBranchResolver');
 const {
   NotFoundError,
@@ -87,8 +87,66 @@ class FixRequestService {
     if (options.db) {
       return this.createOrEnsureWithClient(options.db, id, input, options);
     }
+    // Resolve the branch/SHA (including any provider lookup) before opening
+    // the transaction, so no pool client or ticket lock is held across
+    // provider latency/retries.
+    const preResolved = await this.preResolve(id, input);
+    if (preResolved.existing) {
+      return { request: preResolved.existing, created: false };
+    }
     return transaction((client) =>
-      this.createOrEnsureWithClient(client, id, input, options));
+      this.createOrEnsureWithClient(client, id, input, {
+        ...options,
+        branchResolution: preResolved.branchResolution,
+      }));
+  }
+
+  async preResolve(ticketId, input = {}) {
+    const id = positiveId(ticketId, 'ticketId');
+    const attemptId = input.attemptId == null || input.attemptId === ''
+      ? null
+      : uuid(input.attemptId, 'attemptId');
+    if (!attemptId && !optionalFeedback(input.feedback)) {
+      throw new ValidationError('feedback is required for a manual fix request');
+    }
+
+    const ticketResult = await pool.query(
+      'SELECT * FROM tickets WHERE id = $1 AND deleted_at IS NULL',
+      [id]
+    );
+    if (ticketResult.rows.length === 0) {
+      throw new NotFoundError('Ticket not found');
+    }
+    const ticket = ticketResult.rows[0];
+
+    // Idempotent retries must win even after the first request moved the
+    // ticket to in_progress.
+    if (attemptId) {
+      const existing = await pool.query(
+        'SELECT * FROM ticket_fix_requests WHERE attempt_id = $1 AND ticket_id = $2',
+        [attemptId, id]
+      );
+      if (existing.rows[0]) return { existing: existing.rows[0] };
+    } else {
+      const active = await this.findActive(pool, id);
+      if (active) return { existing: active };
+    }
+
+    if (ticket.status !== 'review') {
+      throw new ConflictError('Ticket must be in review before a fix request');
+    }
+    if (ticket.phase !== 'review') {
+      throw new ConflictError('Ticket phase must be review before a fix request');
+    }
+
+    const resolved = attemptId
+      ? await this.resolveFromAttempt(pool, id, attemptId)
+      : await this.resolveManual(pool, ticket);
+    const branchResolution = await this.branchResolver.resolve(ticket, {
+      reviewedSha: resolved.reviewedSha,
+      round: resolved.round,
+    });
+    return { branchResolution };
   }
 
   async createOrEnsureWithClient(client, ticketId, input = {}, options = {}) {
@@ -132,20 +190,21 @@ class FixRequestService {
     const resolved = attemptId
       ? await this.resolveFromAttempt(client, id, attemptId)
       : await this.resolveManual(client, ticket);
-    const branchResolution = await this.branchResolver.resolve(ticket, {
-      reviewedSha: resolved.reviewedSha,
-      round: resolved.round,
-    });
-    const branch = branchResolution.branch;
-    const finalReviewedSha = branchResolution.reviewedSha;
-    const round = branchResolution.round;
-
     if (ticket.status !== 'review') {
       throw new ConflictError('Ticket must be in review before a fix request');
     }
     if (ticket.phase !== 'review') {
       throw new ConflictError('Ticket phase must be review before a fix request');
     }
+
+    const branchResolution = options.branchResolution
+      || await this.branchResolver.resolve(ticket, {
+        reviewedSha: resolved.reviewedSha,
+        round: resolved.round,
+      });
+    const branch = branchResolution.branch;
+    const finalReviewedSha = branchResolution.reviewedSha;
+    const round = branchResolution.round;
 
     const active = await this.findActive(client, id);
     if (active) {

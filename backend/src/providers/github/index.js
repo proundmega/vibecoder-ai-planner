@@ -54,13 +54,16 @@ class GitHubProvider {
         repo: parsed.repo,
         pull_number: reviewNumber,
       }));
+    if (!data?.head?.ref || !data?.head?.sha) {
+      throw new Error('Review request is missing its head branch/SHA');
+    }
     return {
       number: data.number,
       url: data.html_url,
       state: data.state,
       branch: data.head.ref,
       headSha: data.head.sha,
-      baseBranch: data.base.ref,
+      baseBranch: data.base?.ref || null,
     };
   }
 
