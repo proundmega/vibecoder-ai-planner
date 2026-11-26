@@ -67,7 +67,9 @@ if you already operate it.
 
    Connect/disconnect require `PROJECT_MANAGE_MEMBERS`; the read and ticket
    routes require the project owner or a super admin (stricter than the legacy
-   `/github` reads).
+   `/github` reads). `PROJECT_MANAGE_MEMBERS` is deployment-wide, not
+   project-scoped, so a project admin can manage any project's connection while
+   the read routes stay owner/super-admin only.
 
 5. Verify the backend provider with the gated integration test
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a

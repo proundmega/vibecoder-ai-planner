@@ -5,9 +5,8 @@ const { forProjectParam } = require('../middleware/agentProjectScope');
 const { requireRuntime, requireProjectGrant } = require('../middleware/agentRole');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate, validatePathParams } = require('../middleware/validate');
-const { pathParams } = require('../validators/pathParams');
 const gitController = require('../controllers/gitController');
-const { connectRepoSchema, reviewRequestSchema } = require('../validators/git');
+const { connectRepoSchema, reviewRequestSchema, idPathParam } = require('../validators/git');
 
 /**
  * @openapi
@@ -36,7 +35,7 @@ router.get('/providers', verifyToken, gitController.listProviders);
  *       200:
  *         description: Repository connections
  */
-router.get('/:projectId/repos', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.listRepos);
+router.get('/:projectId/repos', verifyToken, validatePathParams({ projectId: idPathParam }), gitController.listRepos);
 
 /**
  * @openapi
@@ -56,7 +55,7 @@ router.get('/:projectId/repos', verifyToken, validatePathParams({ projectId: pat
  *       200:
  *         description: Repository status or null
  */
-router.get('/:projectId/repo', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.getRepoStatus);
+router.get('/:projectId/repo', verifyToken, validatePathParams({ projectId: idPathParam }), gitController.getRepoStatus);
 
 /**
  * @openapi
@@ -78,7 +77,7 @@ router.get('/:projectId/repo', verifyToken, validatePathParams({ projectId: path
 router.get(
   '/:projectId/repo/agent',
   verifyTokenOrAgent,
-  validatePathParams({ projectId: pathParams.projectId }),
+  validatePathParams({ projectId: idPathParam }),
   requireRuntime('running'),
   forProjectParam(),
   requireProjectGrant('worker'),
@@ -108,6 +107,7 @@ router.get(
  *               baseUrl: { type: string }
  *               authMode: { type: string }
  *               token: { type: string }
+ *               accessToken: { type: string, description: 'GitHub-compatible alias for token' }
  *               sshKey: { type: string }
  *     responses:
  *       201:
@@ -116,7 +116,7 @@ router.get(
 router.post(
   '/:projectId/repo/connect',
   verifyToken,
-  validatePathParams({ projectId: pathParams.projectId }),
+  validatePathParams({ projectId: idPathParam }),
   requireAnyPermission('PROJECT_MANAGE_MEMBERS'),
   validate(connectRepoSchema),
   gitController.connectRepo
@@ -143,7 +143,7 @@ router.post(
 router.delete(
   '/:projectId/repo',
   verifyToken,
-  validatePathParams({ projectId: pathParams.projectId }),
+  validatePathParams({ projectId: idPathParam }),
   requireAnyPermission('PROJECT_MANAGE_MEMBERS'),
   gitController.disconnectRepo
 );
@@ -158,7 +158,7 @@ router.delete(
  *       200:
  *         description: Branch names
  */
-router.get('/:projectId/branches', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.listBranches);
+router.get('/:projectId/branches', verifyToken, validatePathParams({ projectId: idPathParam }), gitController.listBranches);
 
 /**
  * @openapi
@@ -170,7 +170,7 @@ router.get('/:projectId/branches', verifyToken, validatePathParams({ projectId: 
  *       200:
  *         description: Review requests
  */
-router.get('/:projectId/reviews', verifyToken, validatePathParams({ projectId: pathParams.projectId }), gitController.listReviews);
+router.get('/:projectId/reviews', verifyToken, validatePathParams({ projectId: idPathParam }), gitController.listReviews);
 
 /**
  * @openapi
@@ -188,8 +188,8 @@ router.get('/:projectId/reviews', verifyToken, validatePathParams({ projectId: p
  *       200:
  *         description: Branch deleted
  */
-router.post('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), gitController.createBranch);
-router.delete('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), gitController.deleteBranch);
+router.post('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: idPathParam }), gitController.createBranch);
+router.delete('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: idPathParam }), gitController.deleteBranch);
 
 /**
  * @openapi
@@ -204,7 +204,7 @@ router.delete('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: p
 router.post(
   '/:ticketId/review',
   verifyToken,
-  validatePathParams({ ticketId: pathParams.ticketId }),
+  validatePathParams({ ticketId: idPathParam }),
   validate(reviewRequestSchema),
   gitController.createReview
 );
@@ -219,6 +219,6 @@ router.post(
  *       200:
  *         description: Review files
  */
-router.get('/:ticketId/review/diff', verifyToken, validatePathParams({ ticketId: pathParams.ticketId }), gitController.getReviewDiff);
+router.get('/:ticketId/review/diff', verifyToken, validatePathParams({ ticketId: idPathParam }), gitController.getReviewDiff);
 
 module.exports = router;

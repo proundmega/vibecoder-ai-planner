@@ -112,11 +112,13 @@ describe('Generic Git routes', () => {
       provider: 'Forgejo',
       repoUrl: 'group/repo',
       baseUrl: 'https://git.example.com',
+      authMode: 'PAT',
       token: 'secret',
     });
 
     expect(res.statusCode).toBe(201);
-    expect(GitProjectService.connect.mock.calls[0][1].provider).toBe('forgejo');
+    expect(GitProjectService.connect.mock.calls[0][1])
+      .toMatchObject({ provider: 'forgejo', authMode: 'pat' });
   });
 
   it('lets a project admin who is not the owner connect', async () => {
@@ -163,11 +165,23 @@ describe('Generic Git routes', () => {
     expect(GitProjectService.connect).not.toHaveBeenCalled();
   });
 
-  it('rejects a malformed project id before the service', async () => {
-    const res = await auth(request(app).get('/api/v1/git/not-a-number/repo'));
+  it.each(['not-a-number', '1e2', '1.0', '+1'])(
+    'rejects a malformed project id %s before the service',
+    async (id) => {
+      const res = await auth(request(app).get(`/api/v1/git/${id}/repo`));
+
+      expect(res.statusCode).toBe(400);
+      expect(GitProjectService.getRepo).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects a malformed ticket id before the ticket lookup', async () => {
+    const res = await auth(request(app).post('/api/v1/git/1.0/branch'))
+      .send({ provider: 'forgejo' });
 
     expect(res.statusCode).toBe(400);
-    expect(GitProjectService.getRepo).not.toHaveBeenCalled();
+    expect(Ticket.findById).not.toHaveBeenCalled();
+    expect(GitProjectService.createBranch).not.toHaveBeenCalled();
   });
 
   it('rejects a connect request without a repository URL', async () => {
@@ -240,6 +254,26 @@ describe('Generic Git routes', () => {
     expect(removed.statusCode).toBe(200);
     expect(GitProjectService.deleteBranch).toHaveBeenCalledWith(
       1, '42', { provider: null });
+  });
+
+  it('rejects disconnect without the manage-members permission', async () => {
+    PermissionService.hasAnyPermission.mockResolvedValue(false);
+
+    const res = await auth(request(app).delete('/api/v1/git/1/repo?provider=forgejo'));
+
+    expect(res.statusCode).toBe(403);
+    expect(GitProjectService.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('lets a super admin read a project they do not own', async () => {
+    asUser('user-2', 'super_admin');
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 'someone-else' });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'forgejo' });
+
+    const res = await auth(request(app).get('/api/v1/git/1/repo'));
+
+    expect(res.statusCode).toBe(200);
+    expect(GitProjectService.getRepo).toHaveBeenCalledWith('1', { provider: null });
   });
 
   it('rejects a caller who does not own the project', async () => {

@@ -3,6 +3,12 @@ const { PROVIDER_IDS } = require('../providers/git');
 
 const provider = Joi.string().lowercase().valid(...PROVIDER_IDS);
 
+// Path params stay strings, so require a canonical decimal ID instead of the
+// numeric conversion `Joi.number()` would accept and then discard.
+const idPathParam = Joi.string().pattern(/^\d+$/).messages({
+  'string.pattern.base': 'must be a positive integer id',
+});
+
 const connectRepoSchema = Joi.object({
   provider: provider.default('github'),
   repoUrl: Joi.string().trim().min(1).max(2000).required().messages({
@@ -26,4 +32,5 @@ const reviewRequestSchema = Joi.object({
 module.exports = {
   connectRepoSchema,
   reviewRequestSchema,
+  idPathParam,
 };

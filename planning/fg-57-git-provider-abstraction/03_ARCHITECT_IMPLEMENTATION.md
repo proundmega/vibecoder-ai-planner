@@ -35,7 +35,7 @@ green. Do not rename `pr_url` or `project_github_installations`.
    - Test against a GitLab API fake or disposable instance.
 
 4. **API, UI and documentation**
-   - Add `/api/v1/git/:projectId/...`; keep `/github` aliases.
+   - Add `/api/v1/git/:projectId/...`; keep the GitHub-only `/github` compatibility routes.
    - Provider picker and connection status in project settings.
    - Ticket/run view shows PR/MR URL or branch + SHA.
    - Update `05_RUNBOOK.md`, `AGENTS.md` and indexes.
@@ -121,8 +121,11 @@ Files:
 
 ### `backend/src/api/git.js` (CREATE) and `api/github.js` (MODIFY)
 
-- Generic routes mounted at `/api/v1/git`; `/api/v1/github` aliases the same
-  handlers for compatibility.
+- Generic routes mounted at `/api/v1/git` for every provider. `/api/v1/github`
+  keeps its GitHub-only handlers for compatibility.
+- `/git` reads require the project owner or a super admin; `/github` reads keep
+  their existing token-only behaviour. The divergence is intentional (the
+  generic surface is stricter) and documented in `05_RUNBOOK.md`.
 
 ## Dependencies
 
@@ -144,7 +147,7 @@ Files:
 | FR4 | E6 | GitLab connect and create MR | GitLab fake/integration | MR created once; default branch correct |
 | FR5 | E7 | Local bare/SSH publish | Agent/integration | Branch pushed; run succeeds; no review URL |
 | FR6 | E8 | Branch-only reconcile | Backend integration | Run adopted to review; failed/no-evidence run still released |
-| FR7 | E9 | `/git` route and `/github` alias | Backend HTTP | Both return the same result |
+| FR7 | E9 | `/git` route and `/github` compatibility | Backend HTTP | `/git` serves GitHub and other providers; `/github` stays GitHub-only; `/git` reads require owner/super-admin |
 | FR8 | E10 | Credential storage and redaction | Unit/security | Encrypted at rest; absent from logs/argv/prompt |
 | FR9 | E11 | Provider config validation | Backend HTTP | Clear 4xx; no base-branch write |
 | FR10 | E12 | UI provider selection/status | Frontend/e2e | Provider and review/branch shown |
