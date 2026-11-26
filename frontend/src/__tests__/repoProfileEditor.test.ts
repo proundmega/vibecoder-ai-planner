@@ -315,6 +315,41 @@ describe('RepoProfileEditor', () => {
     expect(activateRepoProfile).toHaveBeenCalledWith('1', 'p1')
   })
 
+  it('loads dry runs older than the first 200', async () => {
+    const page = Array.from({ length: 200 }, (_, index) => ({
+      id: `v${index}`,
+      project_id: '1',
+      profile_id: 'p1',
+      profile_version: 1,
+      profile: row.profile,
+      profile_hash: 'h1',
+      status: 'succeeded',
+      result: { commands: [] },
+    }))
+    const older = { ...page[0], id: 'older', error: 'older dry run' }
+    vi.mocked(listProfileValidations)
+      .mockResolvedValueOnce(page as never)
+      .mockResolvedValueOnce([page[0], older] as never)
+
+    const wrapper = mount(RepoProfileEditor, {
+      props: { projectId: '1' },
+    })
+    await flushPromises()
+
+    expect(listProfileValidations).toHaveBeenNthCalledWith(
+      1, '1', { limit: 200 });
+    expect(wrapper.text()).toContain('Showing 200 dry runs.');
+    await button(wrapper, 'Load older dry runs')!.trigger('click')
+    await flushPromises()
+
+    expect(listProfileValidations).toHaveBeenNthCalledWith(
+      2, '1', { limit: 200, offset: 200 });
+    expect(wrapper.text()).toContain('Showing 201 dry runs.');
+    expect(wrapper.text()).toContain('older dry run');
+    expect(wrapper.findAll('.validation')).toHaveLength(201);
+    expect(button(wrapper, 'Load older dry runs')).toBeUndefined()
+  });
+
   it('polls a queued dry run and reports success', async () => {
     vi.useFakeTimers()
     vi.mocked(requestProfileValidation).mockResolvedValueOnce({

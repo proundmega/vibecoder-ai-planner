@@ -195,7 +195,7 @@ This is an admin operation, not model-driven.
 | `POST /projects/:id/repo-profile/:profileId/activate` | owner/super admin | Activate one version after a successful dry run of the exact `profile_hash` |
 | `POST /projects/:id/repo-profile/detect` | owner/super admin | Propose a profile from GitHub manifests |
 | `POST /projects/:id/repo-profile/:profileId/validate` | owner/super admin | Queue a dry run |
-| `GET /projects/:id/repo-profile/validations` | project member | Dry-run history |
+| `GET /projects/:id/repo-profile/validations` | project member | Dry-run history (`limit` 1-200, `offset`) |
 | `GET /projects/:id/repo-profile/validations/:validationId` | project member | Dry-run status/result |
 | `POST /projects/:id/repo-profile/credentials/mtls` | owner/super admin | Store a scoped mTLS client certificate/key |
 | `GET /projects/:id/repo-profile/credentials/mtls` | project member | List mTLS credential metadata (no keys) |
@@ -311,7 +311,7 @@ existing GitHub agent config route.
 - Shows the active/latest version, status, exact-content validation requirement
   and read-only state for non-owners.
 - Supports detect, draft create/save, command/env/timeout/service/egress fields,
-  dry-run polling, activation and version/validation history.
+  dry-run polling, activation, paginated validation history and version history.
 - Only the current draft is editable. Viewing any other version, including an
   older draft, is read-only, and Save/Validate/Activate always target the
   current draft. Detection asks before replacing unsaved form content.

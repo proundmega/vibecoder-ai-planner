@@ -19,6 +19,7 @@ import {
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ projectId: string }>()
+const VALIDATION_PAGE_SIZE = 200
 
 interface EnvRow { key: string; value: string }
 interface ServiceRow {
@@ -39,6 +40,8 @@ const auth = useAuthStore()
 const project = ref<Project | null>(null)
 const current = ref<RepoProfileCurrent | null>(null)
 const validations = ref<RepoProfileValidation[]>([])
+const hasMoreValidations = ref(false)
+const loadingMoreValidations = ref(false)
 const loading = ref(false)
 const busy = ref('')
 const error = ref('')
@@ -225,13 +228,40 @@ async function load() {
   try {
     project.value = await fetchProjectById(props.projectId)
     current.value = await getRepoProfile(props.projectId)
-    validations.value = await listProfileValidations(props.projectId).catch(() => [])
+    const firstPage = await listProfileValidations(
+      props.projectId,
+      { limit: VALIDATION_PAGE_SIZE },
+    ).catch(() => [])
+    validations.value = firstPage
+    hasMoreValidations.value = firstPage.length === VALIDATION_PAGE_SIZE
     viewingVersion.value = null
     populate(selectedProfile.value)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Could not load the repo profile'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMoreValidations() {
+  if (loadingMoreValidations.value || !hasMoreValidations.value) return
+  loadingMoreValidations.value = true
+  error.value = ''
+  try {
+    const page = await listProfileValidations(props.projectId, {
+      limit: VALIDATION_PAGE_SIZE,
+      offset: validations.value.length,
+    })
+    const known = new Set(validations.value.map((item) => item.id))
+    validations.value = [
+      ...validations.value,
+      ...page.filter((item) => !known.has(item.id)),
+    ]
+    hasMoreValidations.value = page.length === VALIDATION_PAGE_SIZE
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Could not load older dry runs'
+  } finally {
+    loadingMoreValidations.value = false
   }
 }
 
@@ -619,7 +649,9 @@ onBeforeUnmount(() => {
         </div>
         <div>
           <h3>Dry runs</h3>
-          <p class="muted">Showing the latest 200 dry runs.</p>
+          <p class="muted">
+            Showing {{ validations.length }} dry run{{ validations.length === 1 ? '' : 's' }}.
+          </p>
           <div v-if="!validations.length" class="muted">No dry runs yet.</div>
           <div v-for="validation in validations" :key="validation.id" class="validation">
             <div class="validation-header">
@@ -634,6 +666,15 @@ exit {{ command.exitCode ?? '—' }}<template v-if="command.output"> — {{ comm
               Command output is visible to the project owner or a super admin.
             </p>
           </div>
+          <button
+            v-if="hasMoreValidations"
+            class="btn small"
+            type="button"
+            :disabled="loadingMoreValidations"
+            @click="loadMoreValidations"
+          >
+            {{ loadingMoreValidations ? 'Loading…' : 'Load older dry runs' }}
+          </button>
         </div>
       </div>
     </template>

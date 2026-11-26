@@ -111,15 +111,23 @@ class RepoProfileValidationService {
     }
   }
 
-  async list(projectId, user) {
+  async list(projectId, user, { limit = 200, offset = 0 } = {}) {
+    const pageSize = Number(limit);
+    const start = Number(offset);
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+      throw new ValidationError('limit must be an integer between 1 and 200');
+    }
+    if (!Number.isInteger(start) || start < 0) {
+      throw new ValidationError('offset must be a non-negative integer');
+    }
     await RepoProfileService.assertCanRead(projectId, user);
     const includeResult = await RepoProfileService.canWrite(projectId, user);
     const result = await pool.query(
       `SELECT * FROM repo_profile_validations
        WHERE project_id = $1
-       ORDER BY created_at DESC
-       LIMIT 200`,
-      [projectId]
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2 OFFSET $3`,
+      [projectId, pageSize, start]
     );
     return result.rows.map((row) => format(row, { includeResult }));
   }

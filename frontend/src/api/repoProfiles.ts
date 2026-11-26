@@ -131,9 +131,21 @@ export function requestProfileValidation(
   )
 }
 
-export function listProfileValidations(projectId: string): Promise<RepoProfileValidation[]> {
+export interface ValidationListOptions {
+  limit?: number
+  offset?: number
+}
+
+export function listProfileValidations(
+  projectId: string,
+  options: ValidationListOptions = {},
+): Promise<RepoProfileValidation[]> {
+  const params = new URLSearchParams()
+  if (options.limit !== undefined) params.set('limit', String(options.limit))
+  if (options.offset !== undefined) params.set('offset', String(options.offset))
+  const query = params.toString()
   return get<RepoProfileValidation[]>(
-    `/api/v1/projects/${projectId}/repo-profile/validations`,
+    `/api/v1/projects/${projectId}/repo-profile/validations${query ? `?${query}` : ''}`,
   )
 }
 

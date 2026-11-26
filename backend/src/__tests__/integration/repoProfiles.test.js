@@ -139,6 +139,52 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
   });
 
+  test('paginates validation history with a stable id tie-breaker', async () => {
+    const draft = await RepoProfileService.create(projectId, profile(), {
+      userId: ownerId, role: 'project_admin',
+    });
+    try {
+      await pool.query(
+        `INSERT INTO repo_profile_validations
+           (project_id, profile_id, profile_version, profile, profile_hash,
+            status, requested_by, result, created_at)
+         SELECT $1, $2, $3, $4, $5, 'succeeded', $6, '{}'::jsonb,
+                NOW() - (i || ' seconds')::interval
+         FROM generate_series(0, 200) AS i`,
+        [projectId, draft.id, draft.version, draft.profile, draft.profile_hash, ownerId]
+      );
+      await pool.query(
+        `UPDATE repo_profile_validations
+         SET created_at = NOW()
+         WHERE id IN (
+           SELECT id FROM repo_profile_validations
+           WHERE project_id = $1
+           ORDER BY created_at DESC, id DESC
+           LIMIT 5
+         )`,
+        [projectId]
+      );
+
+      const first = await RepoProfileValidationService.list(
+        projectId, { userId: ownerId, role: 'project_admin' },
+        { limit: 200, offset: 0 });
+      const second = await RepoProfileValidationService.list(
+        projectId, { userId: ownerId, role: 'project_admin' },
+        { limit: 200, offset: 200 });
+
+      expect(first).toHaveLength(200);
+      expect(second).toHaveLength(1);
+      expect(first.some((row) => row.id === second[0].id)).toBe(false);
+      expect(new Date(second[0].created_at).getTime())
+        .toBeLessThanOrEqual(new Date(first[199].created_at).getTime());
+
+      const tied = first.slice(0, 5).map((row) => String(row.id));
+      expect(tied).toEqual([...tied].sort().reverse());
+    } finally {
+      await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+    }
+  });
+
   test('activation requires a successful dry run for the exact content', async () => {
     const draft = await RepoProfileService.create(projectId, profile(), {
       userId: ownerId, role: 'project_admin',
