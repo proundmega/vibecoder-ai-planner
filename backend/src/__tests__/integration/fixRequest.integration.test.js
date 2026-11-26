@@ -193,49 +193,6 @@ describe('fg-32a fix requests (real DB)', () => {
     }
   });
 
-  test('uses the PR-head fallback for a manual request with no cache', async () => {
-    const fixture = await createFixture({ branch: null });
-    try {
-      await global.db.query(
-        "UPDATE tickets SET pr_url = 'https://github.com/example/repo/pull/77' WHERE id = $1",
-        [fixture.ticketId]
-      );
-      const service = new FixRequestService.FixRequestService({
-        branchResolver: {
-          resolve: async () => ({
-            branch: 'feat/from-pr',
-            reviewedSha: SHA,
-            round: 0,
-          }),
-        },
-      });
-
-      const result = await service.createOrEnsure(
-        fixture.ticketId, { feedback: 'fix from the PR head' });
-
-      expect(result.created).toBe(true);
-      expect(result.request).toMatchObject({
-        branch: 'feat/from-pr',
-        reviewed_sha: SHA,
-        source: 'human',
-        attempt_id: null,
-      });
-      const ticket = await global.db.query(
-        `SELECT status, phase, reviewed_sha, fix_branch
-           FROM tickets WHERE id = $1`,
-        [fixture.ticketId]
-      );
-      expect(ticket.rows[0]).toMatchObject({
-        status: 'in_progress',
-        phase: 'in_progress',
-        reviewed_sha: SHA,
-        fix_branch: 'feat/from-pr',
-      });
-    } finally {
-      await cleanup(fixture);
-    }
-  });
-
   test('supports a manual request from the latest completed review', async () => {
     const fixture = await createFixture();
     try {

@@ -278,6 +278,38 @@ describe('FixRequestService (fg-32a)', () => {
     expect(update.params).toEqual([TICKET_ID, 0, SHA, BRANCH]);
   });
 
+  it('accepts the PR-head SHA for a manual request through createOrEnsure', async () => {
+    const inserted = fixRequest({
+      attempt_id: null,
+      source: 'human',
+      branch: 'feat/from-pr',
+      reviewed_sha: SHA,
+      feedback: 'fix it',
+    });
+    const { client, state } = fakeClient({
+      ticket: ticket({ branch_name: null, reviewed_sha: null }),
+      latestAttempt: null,
+      inserted,
+    });
+    pool.query.mockImplementation((sql, params) => client.query(sql, params));
+    transaction.mockImplementation(async (fn) => fn(client));
+    const branchResolver = {
+      resolve: jest.fn().mockResolvedValue({
+        branch: 'feat/from-pr',
+        reviewedSha: SHA,
+        round: 0,
+      }),
+    };
+    const service = new FixRequestService({ branchResolver });
+
+    const result = await service.createOrEnsure(TICKET_ID, { feedback: 'fix it' });
+
+    expect(result.created).toBe(true);
+    expect(branchResolver.resolve).toHaveBeenCalledTimes(1);
+    const updates = state.queries.filter((query) => query.sql.includes('UPDATE tickets'));
+    expect(updates.at(-1).params).toEqual([TICKET_ID, 0, SHA, 'feat/from-pr']);
+  });
+
   it('supports a manual request from the latest completed review', async () => {
     const latest = { reviewed_sha: SHA, round: 2 };
     const inserted = fixRequest({ attempt_id: null, source: 'human', feedback: 'fix the filter' });
