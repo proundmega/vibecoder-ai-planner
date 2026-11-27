@@ -77,6 +77,40 @@ router.get('/:projectId/repo-profile/versions', verifyToken, async (req, res, ne
 
 /**
  * @openapi
+ * /projects/{projectId}/repo-profile/events:
+ *   get:
+ *     tags: [Repo Profiles]
+ *     summary: List repo profile lifecycle events
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+ *       - in: query
+ *         name: offset
+ *         schema: { type: integer, minimum: 0, default: 0 }
+ *     responses:
+ *       200:
+ *         description: Profile lifecycle events
+ *       400:
+ *         description: Invalid pagination parameters
+ */
+router.get('/:projectId/repo-profile/events', verifyToken,
+  validate({ query: validationListQuerySchema }), async (req, res, next) => {
+  try {
+    const data = await RepoProfileService.listEvents(
+      req.params.projectId, operator(req), req.query);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @openapi
  * /projects/{projectId}/repo-profile:
  *   post:
  *     tags: [Repo Profiles]
