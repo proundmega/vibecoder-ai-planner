@@ -3805,6 +3805,19 @@
                     "type": "integer",
                     "minimum": 1,
                     "nullable": true
+                  },
+                  "purpose": {
+                    "type": "string",
+                    "enum": [
+                      "build",
+                      "fix"
+                    ],
+                    "default": "build"
+                  },
+                  "fixRequestId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-fA-F-]{36}$",
+                    "nullable": true
                   }
                 }
               }

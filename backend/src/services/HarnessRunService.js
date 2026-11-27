@@ -71,6 +71,33 @@ function actorOwnerId(actor) {
   return actor.runtimeId;
 }
 
+const RUN_PURPOSES = new Set(['build', 'fix']);
+
+function normalisePurpose(value) {
+  if (value == null) return 'build';
+  if (typeof value !== 'string') {
+    throw new ValidationError("purpose must be 'build' or 'fix'");
+  }
+  const purpose = value.trim().toLowerCase();
+  if (!RUN_PURPOSES.has(purpose)) {
+    throw new ValidationError("purpose must be 'build' or 'fix'");
+  }
+  return purpose;
+}
+
+function normaliseFixRequestId(value, purpose) {
+  if (purpose === 'build') {
+    if (value != null) {
+      throw new ValidationError('fixRequestId is only valid with purpose=fix');
+    }
+    return null;
+  }
+  if (value == null || value === '') {
+    throw new ValidationError('fixRequestId is required for a fix run');
+  }
+  return requiredUuid(value, 'fixRequestId');
+}
+
 function requiredUuid(value, field) {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
     throw new ValidationError(`${field} must be a UUID`);
@@ -127,11 +154,19 @@ class HarnessRunService {
     attempt = 1,
     repoProfileId = null,
     repoProfileVersion = null,
+    purpose = 'build',
+    fixRequestId = null,
   } = {}) {
     const normalisedTicketId = positiveInteger(ticketId, 'ticketId');
     const actor = normaliseActor({ runtimeId });
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
+    const normalisedPurpose = normalisePurpose(purpose);
+    const normalisedFixRequestId = normaliseFixRequestId(fixRequestId, normalisedPurpose);
+    const normalisedBaseSha = baseSha == null ? null : String(baseSha).trim();
+    if (normalisedPurpose === 'fix' && !normalisedBaseSha) {
+      throw new ValidationError('baseSha is required for a fix run');
+    }
     if ((repoProfileId == null) !== (repoProfileVersion == null)) {
       throw new ValidationError(
         'repoProfileId and repoProfileVersion must be provided together');
@@ -152,6 +187,38 @@ class HarnessRunService {
     try {
       await client.query('BEGIN');
 
+      // Lock order: fix request before ticket. FixQueueService.claim locks the
+      // request with FOR UPDATE and then updates the ticket via markFixing, so
+      // taking the ticket first here would deadlock under the reclaim race.
+      // Holding the request row also freezes the claim for the insert below.
+      if (normalisedPurpose === 'fix') {
+        // The database clock decides staleness: a claim whose lease expired is
+        // not returned, so no second in-process clock can disagree with it.
+        const claim = await client.query(
+          `SELECT id, branch, reviewed_sha
+             FROM ticket_fix_requests
+            WHERE id = $1
+              AND ticket_id = $2
+              AND claimed_by = $3
+              AND state IN ('claimed', 'fixing')
+              AND lease_expires_at > NOW()
+            FOR UPDATE`,
+          [normalisedFixRequestId, normalisedTicketId, actor.runtimeId]
+        );
+        const fixClaim = claim.rows[0];
+        if (!fixClaim) {
+          throw new ForbiddenError(
+            'Fix request is missing, unclaimed or stale for this runtime');
+        }
+        if (String(fixClaim.branch) !== normalisedBranch) {
+          throw new ConflictError('Fix request branch does not match the run branch');
+        }
+        if (String(fixClaim.reviewed_sha).toLowerCase() !== normalisedBaseSha.toLowerCase()) {
+          throw new ConflictError(
+            'Fix request reviewed SHA does not match the run base SHA');
+        }
+      }
+
       const ownership = await client.query(
         `SELECT status, assigned_runtime_id, project_id
          FROM tickets
@@ -168,6 +235,8 @@ class HarnessRunService {
         && ownedTicket.status === 'in_progress'
         && String(ownedTicket.assigned_runtime_id) === String(actor.runtimeId)
       ) {
+        // Fix runs pass this gate too: a dependency reopened during a fix must
+        // stop the run rather than publish on a stale basis.
         await DependencyService.assertReady(normalisedTicketId, {
           client,
           lock: true,
@@ -242,19 +311,13 @@ class HarnessRunService {
         }
       }
 
-      const result = await client.query(
-        `INSERT INTO harness_runs
-           (ticket_id, runtime_id, project_id, branch, base_sha,
-            workspace_path, session_id, provider, model, attempt,
-            repo_profile_id, repo_profile_version, budget_reserved_usd,
-            provider_base_url, provider_region)
-         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9,
-                $10, $11, $12, $13, $14
-         FROM tickets t
-         WHERE t.id = $1
-           AND t.status = 'in_progress'
-           AND t.assigned_runtime_id = $2
-           AND NULLIF(BTRIM(t.pr_url), '') IS NULL
+      // A fix run is authorised by the claimed fix request above, not by the
+      // build publish-evidence guard: the ticket already has a reviewed PR.
+      // The current remote head is revalidated by the publish path, so a claim
+      // never authorises a non-fast-forward write on its own.
+      const publishEvidenceGuard = normalisedPurpose === 'fix'
+        ? ''
+        : `AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs existing
              WHERE existing.ticket_id = t.id
@@ -262,13 +325,27 @@ class HarnessRunService {
                  NULLIF(BTRIM(existing.pr_url), '') IS NOT NULL
                  OR NULLIF(BTRIM(existing.head_sha), '') IS NOT NULL
                )
-           )
+           )`;
+
+      const result = await client.query(
+        `INSERT INTO harness_runs
+           (ticket_id, runtime_id, project_id, branch, base_sha,
+            workspace_path, session_id, provider, model, attempt,
+            repo_profile_id, repo_profile_version, budget_reserved_usd,
+            provider_base_url, provider_region, purpose, fix_request_id)
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9,
+                $10, $11, $12, $13, $14, $15, $16
+         FROM tickets t
+         WHERE t.id = $1
+           AND t.status = 'in_progress'
+           AND t.assigned_runtime_id = $2
+           ${publishEvidenceGuard}
          RETURNING *`,
         [
           normalisedTicketId,
           actor.runtimeId,
           normalisedBranch,
-          baseSha,
+          normalisedBaseSha,
           workspacePath,
           sessionId,
           provider,
@@ -279,6 +356,8 @@ class HarnessRunService {
           reservedCostUsd,
           privacyPolicy?.resolvedProviderBaseUrl ?? providerBaseUrl ?? null,
           privacyPolicy?.resolvedProviderRegion ?? providerRegion ?? null,
+          normalisedPurpose,
+          normalisedFixRequestId,
         ]
       );
 
@@ -305,6 +384,10 @@ class HarnessRunService {
         const ticket = context.rows[0];
         if (!ticket) {
           throw new ForbiddenError('Ticket is not assigned to this runtime');
+        }
+        if (normalisedPurpose === 'fix') {
+          throw new ConflictError(
+            'Fix run could not be started; the ticket or fix claim changed');
         }
         if (ticket.pr_url || ticket.has_publish_evidence) {
           throw new ConflictError(
@@ -336,6 +419,10 @@ class HarnessRunService {
       // database backstop for the lease.
       if (error.code === '23505') {
         throw new ConflictError('Ticket already has an active harness run');
+      }
+      // A deadlock abort is retryable; surface it as a conflict instead of 500.
+      if (error.code === '40P01') {
+        throw new ConflictError('Concurrent run start or fix claim; retry');
       }
       throw error;
     } finally {

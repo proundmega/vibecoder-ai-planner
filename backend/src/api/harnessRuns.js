@@ -141,6 +141,8 @@ async function assertCanWriteRun(req, run) {
  *               attempt: { type: integer, minimum: 1 }
  *               repoProfileId: { type: string, pattern: '^[0-9a-fA-F-]{36}$', nullable: true }
  *               repoProfileVersion: { type: integer, minimum: 1, nullable: true }
+ *               purpose: { type: string, enum: [build, fix], default: build }
+ *               fixRequestId: { type: string, pattern: '^[0-9a-fA-F-]{36}$', nullable: true }
  *     responses:
  *       201:
  *         description: Harness run created
@@ -167,6 +169,8 @@ router.post('/runs', verifyTokenOrAgent, requireRuntime('running'), forBodyTicke
       attempt,
       repoProfileId,
       repoProfileVersion,
+      purpose,
+      fixRequestId,
     } = req.body || {};
 
     const run = await HarnessRunService.startRun({
@@ -183,6 +187,8 @@ router.post('/runs', verifyTokenOrAgent, requireRuntime('running'), forBodyTicke
       attempt,
       repoProfileId,
       repoProfileVersion,
+      purpose,
+      fixRequestId,
     });
 
     // The supervisor needs the budget/routing policy before it creates the

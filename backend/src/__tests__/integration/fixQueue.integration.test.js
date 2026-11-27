@@ -173,6 +173,46 @@ describe('fg-32b1 fix queue and lease (real DB)', () => {
     }
   });
 
+  test('fix runs reference their request with ON DELETE CASCADE', async () => {
+    const { rows } = await global.db.query(
+      `SELECT confdeltype FROM pg_constraint
+        WHERE conname = 'harness_runs_fix_request_id_fkey'`
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].confdeltype).toBe('c');
+  });
+
+  test('cascades a fixer run when its request or attempt is deleted', async () => {
+    const fixture = await createFixture();
+    try {
+      await FixRequestService.createOrEnsure(
+        fixture.ticketId, { attemptId: fixture.attemptId });
+      const claimed = await FixQueueService.claim(fixture.ticketId, {
+        runtimeId: fixture.runtimeIds[0], leaseSeconds: 120,
+      });
+      const run = await global.db.query(
+        `INSERT INTO harness_runs
+           (ticket_id, runtime_id, branch, base_sha, purpose, fix_request_id)
+         VALUES ($1, $2, 'feat/fix-queue', $3, 'fix', $4) RETURNING id`,
+        [fixture.ticketId, fixture.runtimeIds[0], SHA, claimed.request.id]
+      );
+
+      // Deleting the attempt cascades request -> run. With ON DELETE SET NULL
+      // this failed the purpose/fix_request_id check instead.
+      await global.db.query(
+        'DELETE FROM ticket_review_attempts WHERE id = $1', [fixture.attemptId]);
+
+      const remainingRun = await global.db.query(
+        'SELECT id FROM harness_runs WHERE id = $1', [run.rows[0].id]);
+      expect(remainingRun.rows).toHaveLength(0);
+      const remainingRequest = await global.db.query(
+        'SELECT id FROM ticket_fix_requests WHERE id = $1', [claimed.request.id]);
+      expect(remainingRequest.rows).toHaveLength(0);
+    } finally {
+      await cleanup(fixture);
+    }
+  });
+
   test('does not queue or claim a ticket that left in_progress', async () => {
     const fixture = await createFixture();
     try {
