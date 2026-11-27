@@ -343,6 +343,7 @@ describe('PhaseService', () => {
         toPhase: 'in_progress',
         status: 'in_progress',
         fixRequest: request,
+        created: true,
       });
       expect(mockClient.query.mock.calls.some(
         ([sql]) => String(sql).includes('UPDATE tickets SET phase'))).toBe(false);

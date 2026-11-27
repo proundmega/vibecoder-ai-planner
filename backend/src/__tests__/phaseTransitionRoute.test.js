@@ -110,6 +110,27 @@ describe('POST /tickets/:id/phases/transition actor identity', () => {
       '42', 'in_progress', 'agent', 3, null);
   });
 
+  test('rejects a malformed ticket id before the membership lookup', async () => {
+    const response = await request(app)
+      .post('/api/v1/tickets/abc/phases/transition')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ toPhase: 'in_progress' });
+
+    expect(response.statusCode).toBe(400);
+    expect(Ticket.findById).not.toHaveBeenCalled();
+    expect(phaseService.transition).not.toHaveBeenCalled();
+  });
+
+  test('rejects the retired system actor type', async () => {
+    const response = await transitionRequest({
+      toPhase: 'in_progress',
+      actorType: 'system',
+    }).set('Authorization', 'Bearer mock-token');
+
+    expect(response.statusCode).toBe(400);
+    expect(phaseService.transition).not.toHaveBeenCalled();
+  });
+
   test('requires TICKET_STATUS_CHANGE from a human', async () => {
     PermissionService.hasAnyPermission.mockResolvedValue(false);
 

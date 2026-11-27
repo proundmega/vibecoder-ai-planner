@@ -78,7 +78,7 @@ const phaseTransitionSchema = Joi.object({
   }),
   // Derived from the credential by the route; a body value is only allowed to
   // match it, never to override it.
-  actorType: Joi.string().valid('human', 'agent', 'system').optional(),
+  actorType: Joi.string().valid('human', 'agent').optional(),
   metadata: Joi.object().optional(),
 });
 

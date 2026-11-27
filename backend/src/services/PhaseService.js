@@ -36,6 +36,15 @@ class PhaseService {
     };
   }
 
+  /**
+   * Apply one phase transition.
+   *
+   * `actorType` is trusted input: the HTTP route derives it from the
+   * credential (and rejects a body mismatch) and only internal callers may
+   * pass 'system'. Any new caller that accepts untrusted input must derive
+   * the actor itself; in particular, `actorType: 'human'` is what enables the
+   * manual fix dispatch below.
+   */
   async transition(ticketId, toPhase, actorType = 'system', actorId = null, metadata = null) {
     // fg-32c2b: a human `review -> in_progress` with feedback is a manual fix
     // dispatch. The branch/provider preflight runs before the transaction so
@@ -96,6 +105,7 @@ class PhaseService {
       }
 
       let fixRequest = null;
+      let fixRequestCreated = false;
       if (manualFix && manualFix.branchResolution) {
         // The fix service owns the review -> in_progress transition, its phase
         // history row and the request insert, in this transaction.
@@ -112,6 +122,7 @@ class PhaseService {
           }
         );
         fixRequest = result.request;
+        fixRequestCreated = result.created;
       } else {
         await client.query(
           'UPDATE tickets SET phase = $1, status = $2, updated_at = NOW() WHERE id = $3',
@@ -132,6 +143,7 @@ class PhaseService {
       const result = { ticketId, fromPhase: currentPhase, toPhase, status: newStatus };
       if (fixRequest) {
         result.fixRequest = fixRequest;
+        result.created = fixRequestCreated;
       } else if (manualFix?.existing) {
         // Retry of an already-queued request: the ticket only needed moving.
         result.fixRequest = manualFix.existing;

@@ -59,16 +59,19 @@ router.post(
       // dispatch a fix. Reviewer agents need `auto`; humans need manual/auto.
       const source = req.agent ? 'reviewer' : 'human';
       await FixDispatchService.assertCanCreate(req.params.ticketId, source);
+      const feedback = req.body?.feedback ?? null;
 
       const result = await FixRequestService.createOrEnsure(
         req.params.ticketId,
         {
           attemptId,
-          feedback: req.body?.feedback ?? null,
+          feedback,
         },
         {
           actorId: req.runtime?.id ?? req.agent?.id
             ?? req.user?.userId ?? req.user?.id ?? null,
+          // Keep the human's reason on the phase-history row.
+          phaseMetadata: feedback ? { feedback } : null,
         }
       );
       res.status(result.created ? 201 : 200).json({

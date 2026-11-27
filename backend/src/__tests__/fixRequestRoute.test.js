@@ -84,7 +84,7 @@ describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
     expect(FixRequestService.createOrEnsure).toHaveBeenCalledWith(
       '42',
       { attemptId: ATTEMPT_ID, feedback: null },
-      { actorId: 3 }
+      { actorId: 3, phaseMetadata: null }
     );
   });
 
@@ -115,7 +115,7 @@ describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
     expect(FixRequestService.createOrEnsure).toHaveBeenCalledWith(
       '42',
       { attemptId: null, feedback: 'Please fix this' },
-      { actorId: 7 }
+      { actorId: 7, phaseMetadata: { feedback: 'Please fix this' } }
     );
   });
 
@@ -212,7 +212,7 @@ describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
     expect(FixRequestService.createOrEnsure).toHaveBeenCalledWith(
       '42',
       { attemptId: null, feedback: 'Please fix this' },
-      { actorId: 7 }
+      { actorId: 7, phaseMetadata: { feedback: 'Please fix this' } }
     );
   });
 

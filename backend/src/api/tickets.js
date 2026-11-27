@@ -664,7 +664,7 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, forTicketParam(), va
  *             required: [toPhase]
  *             properties:
  *               toPhase: { type: string }
- *               actorType: { type: string, enum: [human, agent, system] }
+ *               actorType: { type: string, enum: [human, agent] }
  *               metadata: { type: object }
  *     responses:
  *       200:
@@ -676,7 +676,7 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, forTicketParam(), va
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:ticketId/phases/transition', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), requireHumanStatusPermission, requireHumanProjectMembership, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
+router.post('/:ticketId/phases/transition', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), validatePathParams({ ticketId: pathParams.ticketId }), requireTicketGrant('worker'), requireHumanStatusPermission, requireHumanProjectMembership, validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
   try {
     const { toPhase, actorType, metadata } = req.body;
     // The actor type is a property of the credential, never of the body: a

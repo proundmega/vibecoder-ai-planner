@@ -1495,8 +1495,7 @@
                     "type": "string",
                     "enum": [
                       "human",
-                      "agent",
-                      "system"
+                      "agent"
                     ]
                   },
                   "metadata": {
