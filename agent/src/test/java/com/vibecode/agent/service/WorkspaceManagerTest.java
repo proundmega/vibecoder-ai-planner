@@ -1794,7 +1794,20 @@ class WorkspaceManagerTest {
         assertEquals(repo.reviewedSha(), gitOutput(repoDir, "rev-parse", "HEAD"));
         assertEquals("vibecode/fix",
             gitOutput(repoDir, "rev-parse", "--abbrev-ref", "HEAD"));
+        assertEquals("origin/vibecode/fix",
+            gitOutput(repoDir, "rev-parse", "--abbrev-ref", "vibecode/fix@{upstream}"));
         assertEquals(repo.reviewedSha(), wm.getBaseCommit());
+    }
+
+    @Test
+    void cloneExistingBranchReportsAMissingRemoteBranch() throws Exception {
+        FixRepo repo = initWithFixBranch("existing-missing");
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "existing-missing", false, null);
+
+        IOException error = assertThrows(IOException.class, () -> wm.cloneExistingBranch(
+            repo.bare().toString(), "vibecode/missing", repo.reviewedSha()));
+        assertTrue(error.getMessage().contains("reviewed_sha_mismatch"), error.getMessage());
     }
 
     @Test

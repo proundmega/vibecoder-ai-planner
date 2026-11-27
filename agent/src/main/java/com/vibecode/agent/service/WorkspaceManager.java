@@ -382,15 +382,21 @@ public class WorkspaceManager {
 
         cloneWithCredentials(repoUrl, cloneTimeout);
 
-        String remoteSha = runGitCommand(
+        String remoteSha = runGitCommandAllowFailure(
             "rev-parse", "--verify", "refs/remotes/origin/" + branch).trim();
+        if (remoteSha.isEmpty()) {
+            throw new IOException(
+                "reviewed_sha_mismatch: branch " + branch
+                    + " is not present in the clone, reviewed " + expected);
+        }
         if (!expected.equalsIgnoreCase(remoteSha)) {
             throw new IOException(
                 "reviewed_sha_mismatch: " + branch + " is at " + remoteSha
                     + ", reviewed " + expected);
         }
-        // -B tracks the existing remote branch; it never forks a new branch.
-        runGit("checkout", "-B", branch, remoteSha);
+        // Track the existing remote branch (no new branch is forked), then
+        // pin HEAD to the exact reviewed commit.
+        runGit("checkout", "-B", branch, "--track", "origin/" + branch);
         String head = runGitCommand("rev-parse", "HEAD").trim();
         if (!expected.equalsIgnoreCase(head)) {
             throw new IOException(
