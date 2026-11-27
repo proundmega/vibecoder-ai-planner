@@ -88,6 +88,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
         new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> quotaFlags = new ConcurrentHashMap<>();
     private final Map<String, ScheduledExecutorService> watchdogs = new ConcurrentHashMap<>();
+    private final Map<String, AtomicBoolean> serviceQuotaFlags = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledExecutorService> serviceWatchdogs =
+        new ConcurrentHashMap<>();
     private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
     private final Map<String, EgressRuntime> egress = new ConcurrentHashMap<>();
     private final Map<String, ServiceRuntime> services = new ConcurrentHashMap<>();
@@ -282,8 +285,20 @@ public final class DockerSandboxRunner implements SandboxRunner {
         artifactLimits.put(name, spec.artifactMaxBytes());
         AtomicBoolean quotaExceeded = new AtomicBoolean(false);
         quotaFlags.put(name, quotaExceeded);
+        AtomicBoolean serviceQuotaExceeded = new AtomicBoolean(false);
+        if (serviceRuntime != null) {
+            serviceQuotaFlags.put(name, serviceQuotaExceeded);
+        }
         ScheduledExecutorService watchdog;
+        ScheduledExecutorService serviceWatchdog = null;
         try {
+            if (serviceRuntime != null) {
+                serviceWatchdog = startServiceDiskWatchdog(
+                    name, serviceRuntime.containers(), serviceQuotaExceeded);
+                if (serviceWatchdog != null) {
+                    serviceWatchdogs.put(name, serviceWatchdog);
+                }
+            }
             watchdog = startDiskWatchdog(name, workspace, quotaExceeded);
         } catch (RuntimeException e) {
             // Never leave a container running because its watchdog could not
@@ -300,6 +315,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             artifactLimits.remove(name);
             execEnvironments.remove(name);
             quotaFlags.remove(name);
+            serviceQuotaFlags.remove(name);
             throw new IOException("Could not start the sandbox watchdog", e);
         }
         if (watchdog != null) {
@@ -374,9 +390,21 @@ public final class DockerSandboxRunner implements SandboxRunner {
 
         AtomicBoolean quotaExceeded =
             quotaFlags.getOrDefault(handle.id(), new AtomicBoolean(false));
+        AtomicBoolean serviceQuotaExceeded =
+            serviceQuotaFlags.getOrDefault(handle.id(), new AtomicBoolean(false));
         try {
             DockerResult result = runDockerStreaming(
                 command, effective.timeout(), effective.maxOutputBytes(), handle.id(), listener);
+            if (serviceQuotaExceeded.get()) {
+                stopVerified(handle, "the service disk quota was exceeded");
+                return new ExecResult(
+                    request.command(),
+                    -1,
+                    result.output() + "\nservice disk quota exceeded",
+                    true,
+                    result.truncated()
+                );
+            }
             if (quotaExceeded.get()) {
                 // The watchdog stops the container, but verify it here too so
                 // the post-exec sweep never runs against a half-stopped
@@ -522,6 +550,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
         artifactLimits.remove(handle.id());
         execEnvironments.remove(handle.id());
         quotaFlags.remove(handle.id());
+        serviceQuotaFlags.remove(handle.id());
         runningProcesses.remove(handle.id());
         forgetExecLock(handle.id());
         // A compromised flag is terminal: it is retained until close() so any
@@ -549,6 +578,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
         for (ScheduledExecutorService watchdog : new ArrayList<>(watchdogs.values())) {
             watchdog.shutdownNow();
         }
+        for (ScheduledExecutorService watchdog : new ArrayList<>(serviceWatchdogs.values())) {
+            watchdog.shutdownNow();
+        }
         for (String name : new ArrayList<>(egress.keySet())) {
             stopEgress(name);
         }
@@ -558,6 +590,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
         execEnvironments.clear();
         quotaFlags.clear();
         watchdogs.clear();
+        serviceQuotaFlags.clear();
+        serviceWatchdogs.clear();
         runningProcesses.clear();
         egress.clear();
         if (!services.isEmpty()) {
@@ -1091,6 +1125,86 @@ public final class DockerSandboxRunner implements SandboxRunner {
         return executor;
     }
 
+    /**
+     * Watch the writable layers of a sandbox's service containers. The total
+     * is capped at the same limit as the workspace; a measurement failure
+     * fails closed.
+     */
+    private ScheduledExecutorService startServiceDiskWatchdog(
+        String name,
+        List<String> containers,
+        AtomicBoolean exceeded
+    ) {
+        long limit = config.limits().diskBytes();
+        if (limit <= 0 || containers.isEmpty()) {
+            return null;
+        }
+        long interval = Math.max(1, config.diskCheckInterval().toSeconds());
+        ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "service-disk-" + name);
+            thread.setDaemon(true);
+            return thread;
+        });
+        executor.scheduleAtFixedRate(
+            () -> checkServiceQuota(name, containers, exceeded),
+            interval,
+            interval,
+            TimeUnit.SECONDS
+        );
+        return executor;
+    }
+
+    /** Package-visible for tests: checked by the service disk watchdog. */
+    void checkServiceQuota(String name, List<String> containers, AtomicBoolean exceeded) {
+        if (exceeded.get()) {
+            return;
+        }
+        long limit = config.limits().diskBytes();
+        try {
+            long size = serviceWasteSize(containers);
+            if (size > limit) {
+                exceeded.set(true);
+                log.warn(
+                    "Sandbox {} exceeded the service disk quota ({} > {} bytes); killing it",
+                    name, size, limit);
+                killRunningProcess(name);
+                stopContainer(name);
+                stopServices(name);
+            }
+        } catch (IOException | RuntimeException e) {
+            exceeded.set(true);
+            log.warn("Sandbox {} service disk check failed; failing closed: {}",
+                name, e.getMessage());
+            killRunningProcess(name);
+            stopContainer(name);
+            stopServices(name);
+        }
+    }
+
+    /** Package-visible for tests: total writable-layer size of service containers. */
+    long serviceWasteSize(List<String> containers) throws IOException {
+        long total = 0;
+        for (String container : containers) {
+            DockerResult result = runDocker(
+                List.of(config.dockerBinary(), "inspect", "--size",
+                    "-f", "{{.SizeRw}}", container),
+                INSPECT_TIMEOUT,
+                1_024
+            );
+            if (result.timedOut() || result.exitCode() != 0) {
+                throw new IOException("Could not measure service container '"
+                    + container + "': " + result.output());
+            }
+            try {
+                total += Long.parseLong(result.output().trim());
+            } catch (NumberFormatException e) {
+                throw new IOException("Invalid service disk size for '"
+                    + container + "': " + result.output(), e);
+            }
+        }
+        return total;
+    }
+
     /** Package-visible for tests: total size of regular files under the workspace. */
     static long workspaceSize(Path root) {
         AtomicLong total = new AtomicLong();
@@ -1462,6 +1576,17 @@ public final class DockerSandboxRunner implements SandboxRunner {
                     "--health-timeout", service.healthcheck().timeoutSeconds() + "s",
                     "--health-retries", String.valueOf(service.healthcheck().retries())
                 ));
+                if (config.limits().diskBytes() > 0) {
+                    // Match the sandbox's per-file burst guard; the total
+                    // writable-layer quota is enforced by the service watchdog.
+                    command.add("--ulimit");
+                    command.add("fsize=" + config.limits().diskBytes());
+                }
+                if (config.limits().diskEnforced()) {
+                    // Same opt-in storage-driver quota the sandbox uses.
+                    command.add("--storage-opt");
+                    command.add("size=" + config.limits().diskBytes());
+                }
                 if (service.healthcheck().startPeriodSeconds() > 0) {
                     command.add("--health-start-period");
                     command.add(service.healthcheck().startPeriodSeconds() + "s");
@@ -1519,6 +1644,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
      *     clean sandbox.
      */
     private boolean stopServices(String name) {
+        ScheduledExecutorService serviceWatchdog = serviceWatchdogs.remove(name);
+        if (serviceWatchdog != null) {
+            serviceWatchdog.shutdownNow();
+        }
         ServiceRuntime runtime = services.get(name);
         if (runtime == null) {
             return true;
