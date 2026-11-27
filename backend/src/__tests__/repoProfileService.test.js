@@ -135,6 +135,7 @@ describe('RepoProfileService', () => {
       const client = clientWith([
         {}, // BEGIN
         { rows: [{ id: 1 }] }, // project lock
+        {}, // retire the current draft
         { rows: [{ version: 2 }] }, // max version
         { rows: [stored] }, // INSERT
         {}, // COMMIT
@@ -143,9 +144,10 @@ describe('RepoProfileService', () => {
       const result = await RepoProfileService.create(1, validProfile(), owner());
 
       expect(result).toEqual(expect.objectContaining({ id: 'p1', version: 2, status: 'draft' }));
-      expect(client.query.mock.calls[3][0]).toContain('INSERT INTO repo_profiles');
-      expect(client.query.mock.calls[3][1][1]).toBe(2);
-      expect(JSON.parse(client.query.mock.calls[3][1][2])).toEqual(
+      expect(client.query.mock.calls[2][0]).toContain("status = 'inactive'");
+      expect(client.query.mock.calls[4][0]).toContain('INSERT INTO repo_profiles');
+      expect(client.query.mock.calls[4][1][1]).toBe(2);
+      expect(JSON.parse(client.query.mock.calls[4][1][2])).toEqual(
         expect.objectContaining({ verify: ['npm test'] })
       );
       expect(client.release).toHaveBeenCalled();
@@ -182,6 +184,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -310,6 +313,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -327,6 +331,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -457,6 +462,7 @@ describe('RepoProfileService', () => {
       clientWith([
         {},
         { rows: [{ id: 1 }] },
+        {}, // retire the current draft
         { rows: [{ version: 1 }] },
         { rows: [stored] },
         {},
@@ -604,6 +610,48 @@ describe('RepoProfileService', () => {
       expect(client.query.mock.calls[3][0]).toContain("status = 'succeeded'");
     });
 
+    it('reactivates a previously active version for rollback', async () => {
+      const target = {
+        id: 'p1', project_id: 1, version: 1, profile: validProfile(),
+        profile_hash: 'h1', status: 'inactive',
+        activated_at: new Date('2026-01-01T00:00:00Z'),
+      };
+      const activated = { ...target, status: 'active' };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        { rows: [{ exists: true }] }, // exact-content validation
+        { rows: [] }, // deactivate old
+        { rows: [activated] }, // activate target
+        {}, // COMMIT
+      ]);
+
+      const result = await RepoProfileService.activate(1, 'p1', owner());
+
+      expect(result.status).toBe('active');
+      expect(client.query.mock.calls[2][0]).toContain("status = 'succeeded'");
+      expect(client.query.mock.calls[3][0]).toContain("status = 'inactive'");
+      expect(client.query.mock.calls[4][0]).toContain("status = 'active'");
+      expect(client.release).toHaveBeenCalled();
+    });
+
+    it('refuses to activate a retired draft that was never active', async () => {
+      const target = {
+        id: 'p1', project_id: 1, version: 1, profile: validProfile(),
+        profile_hash: 'h1', status: 'inactive', activated_at: null,
+      };
+      const client = clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        {}, // ROLLBACK
+      ]);
+
+      await expect(RepoProfileService.activate(1, 'p1', owner()))
+        .rejects.toThrow(/Only draft or previously active profiles/);
+      expect(client.query.mock.calls[2][0]).toBe('ROLLBACK');
+      expect(client.release).toHaveBeenCalled();
+    });
+
     it('refuses to activate a profile without a successful exact-content validation', async () => {
       const target = {
         id: 'p2', project_id: 1, version: 2, profile: validProfile(),
@@ -637,6 +685,22 @@ describe('RepoProfileService', () => {
       expect(result.active.id).toBe('a');
       expect(result.latest.id).toBe('a');
       expect(result.versions).toHaveLength(2);
+    });
+
+    it('returns the editable draft as latest when an active profile exists', async () => {
+      pool.query.mockResolvedValueOnce({
+        rows: [
+          { id: 'a', version: 1, status: 'active', profile: validProfile() },
+          { id: 'b', version: 2, status: 'draft', profile: validProfile() },
+        ],
+      });
+
+      const result = await RepoProfileService.getCurrent(1, owner());
+
+      expect(result.active.id).toBe('a');
+      expect(result.latest.id).toBe('b');
+      expect(result.latest.status).toBe('draft');
+      expect(result.versions.map((row) => row.id)).toEqual(['a', 'b']);
     });
   });
 
@@ -955,6 +1019,7 @@ describe('RepoProfileService', () => {
         query: jest.fn()
           .mockResolvedValueOnce({})
           .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+          .mockResolvedValueOnce({})
           .mockResolvedValueOnce({ rows: [{ version: 1 }] })
           .mockResolvedValueOnce({ rows: [{ id: 'p1', version: 1, status: 'draft', profile: {} }] })
           .mockResolvedValueOnce({}),

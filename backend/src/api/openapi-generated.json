@@ -2309,6 +2309,9 @@
         "responses": {
           "200": {
             "description": "Activated profile"
+          },
+          "400": {
+            "description": "Retired draft, missing successful dry run or invalid profile"
           }
         }
       }
@@ -2341,6 +2344,9 @@
         "responses": {
           "201": {
             "description": "Validation queued"
+          },
+          "400": {
+            "description": "Retired draft or invalid profile"
           },
           "409": {
             "description": "A validation is already queued/running"
@@ -4909,6 +4915,263 @@
         "responses": {
           "200": {
             "description": "PR created"
+          }
+        }
+      }
+    },
+    "/git/providers": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "List Git providers and their capabilities",
+        "responses": {
+          "200": {
+            "description": "Providers with capability flags and registration state"
+          }
+        }
+      }
+    },
+    "/git/{projectId}/repos": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "List repository connections for a project",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository connections"
+          }
+        }
+      }
+    },
+    "/git/{projectId}/repo": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Get repository connection status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository status or null"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Disconnect a repository (optionally scoped to one provider)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          },
+          {
+            "in": "query",
+            "name": "provider",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository disconnected"
+          }
+        }
+      }
+    },
+    "/git/{projectId}/repo/agent": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Get the provider-scoped repository credential for the agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider, clone URL, auth mode and credential (or SSH key)"
+          }
+        }
+      }
+    },
+    "/git/{projectId}/repo/connect": {
+      "post": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Connect a repository using any registered provider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/NumericId"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "repoUrl"
+                ],
+                "properties": {
+                  "provider": {
+                    "type": "string"
+                  },
+                  "repoUrl": {
+                    "type": "string"
+                  },
+                  "baseUrl": {
+                    "type": "string"
+                  },
+                  "authMode": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "accessToken": {
+                    "type": "string",
+                    "description": "GitHub-compatible alias for token"
+                  },
+                  "sshKey": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Repository connected"
+          }
+        }
+      }
+    },
+    "/git/{projectId}/branches": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "List ticket branches for a project",
+        "responses": {
+          "200": {
+            "description": "Branch names"
+          }
+        }
+      }
+    },
+    "/git/{projectId}/reviews": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "List open review requests for a project",
+        "responses": {
+          "200": {
+            "description": "Review requests"
+          }
+        }
+      }
+    },
+    "/git/{ticketId}/branch": {
+      "post": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Create the ticket branch through the connected provider",
+        "responses": {
+          "201": {
+            "description": "Branch created"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Delete the ticket branch",
+        "responses": {
+          "200": {
+            "description": "Branch deleted"
+          }
+        }
+      }
+    },
+    "/git/{ticketId}/review": {
+      "post": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Create or reuse the ticket review request",
+        "responses": {
+          "201": {
+            "description": "Review request created or reused"
+          }
+        }
+      }
+    },
+    "/git/{ticketId}/review/diff": {
+      "get": {
+        "tags": [
+          "Git"
+        ],
+        "summary": "Read the ticket review diff",
+        "responses": {
+          "200": {
+            "description": "Review files"
           }
         }
       }

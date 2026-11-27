@@ -49,7 +49,7 @@ persistent per-project dependency caches (`fg-39c`).
 
 | # | Assumption | Impact if wrong |
 |---|---|---|
-| A1 | A project has one active profile and may have multiple draft/inactive versions. | Activating a profile deactivates the previous active row in the same transaction. |
+| A1 | A project has one active profile, at most one editable draft and multiple inactive versions. | Activating a profile deactivates the previous active row in the same transaction. Creating a new draft retires the previous draft, while an inactive version that was previously active can be reactivated for rollback. |
 | A2 | Profiles are authored by a project owner/super admin, not by repo content or the model. | Writes are owner/super-admin only; the agent re-validates every field it consumes. |
 | A3 | The GitHub token used for stack detection and dry-run cloning already has repo access. | Detection falls back to a warning and the admin enters commands manually; dry-run reports a clone failure. |
 | A4 | The agent's `SANDBOX_ALLOWED_HOSTS` remains the network authority. | A profile origin-CA host not already allowlisted fails closed before sandbox creation. |

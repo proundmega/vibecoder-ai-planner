@@ -40,8 +40,8 @@ environment failures, not coding failures.
 | 5 | Project settings profile editor | done (#167) |
 
 All slices are merged, including slice 4b (FR4/D9), which adds persistent
-per-project dependency caches. The remaining follow-ups (D1-D4, D10-D13 and
-D15) are tracked in the deferred register below.
+per-project dependency caches. The remaining follow-ups (D1-D4, D10-D12, D15
+and D17) are tracked in the deferred register below.
 
 ## Status evidence
 
@@ -55,8 +55,9 @@ D15) are tracked in the deferred register below.
 | D11 cache smoke | `smoke-sandbox-caches.sh` + `SandboxCacheSmokeScriptTest`: npm offline, Maven `-o`, Go `GOPROXY=off` against persisted caches | ☑ |
 | D16 image regex | Profile/validator/agent regex aligned with the stack catalog; userinfo and multiple digest separators rejected with regressions | ☑ |
 | D14 pagination | Validation history accepts `limit`/`offset` (max 200), orders by `created_at, id` and the editor loads/dedupes older pages | ☑ |
+| D13 single draft | Migration 065 retires older drafts and adds a partial unique index; create retires the current draft; retired drafts cannot queue validation or activate; previous active versions still roll back | ☑ |
 | Verification results | `03` → Results | ☑ |
-| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D10-D13 and D15 remain open | ☑ |
+| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D10-D12, D15 and D17 remain open | ☑ |
 
 ## Deferred register (canonical)
 
@@ -77,10 +78,11 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | open |
 | D11 | Real-Docker/real-repo profile dry-run e2e, including npm install, mvn test and go test (cache real-Docker package-manager coverage is now in `smoke-sandbox-caches.sh`) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | partial: cache smoke done; profile dry-run e2e open |
 | D12 | Service container disk quota and egress-governed image pulls; image pulls currently use the Docker daemon directly | fg-39 slice 2 review | Security | fg-39 slice 4 | open |
-| D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | open |
+| D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | done (#251, `e226324`); retired drafts are inert, previously active versions still roll back |
 | D14 | Dry-run history pagination beyond the latest 200 rows | fg-39 slice 5 review | UX | fg-39 follow-up | done (#248, `1b77d96`) |
 | D15 | One-time storage scrub/migration for legacy literal credentials in profile and validation rows (read-time redaction is in place) | fg-39 review | Security | fg-39 follow-up | open |
 | D16 | Align the profile/agent image regex with the strict stack catalog (reject userinfo and multiple digest separators) | fg-39 slice 4a review | Security | fg-39 follow-up | done (#245, `ecb2f6a`) |
+| D17 | Version-history rollback activation in the profile editor; the API supports reactivating a previous active version but the editor only offers View | fg-39 D13 review | UX | fg-39 follow-up | open |
 
 ## User decisions
 

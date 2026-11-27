@@ -484,7 +484,10 @@ class RepoProfileService {
     const rows = result.rows.map((row) => format(row, { redact: !raw }));
     return {
       active: rows.find((row) => row.status === 'active') || null,
-      latest: rows[0] || null,
+      // The query orders active rows first, so `rows[0]` is the active profile
+      // whenever one exists. The editor needs the editable draft (at most one
+      // per project); fall back to `rows[0]` when there is no draft.
+      latest: rows.find((row) => row.status === 'draft') || rows[0] || null,
       versions: rows,
     };
   }
@@ -523,6 +526,15 @@ class RepoProfileService {
     try {
       await client.query('BEGIN');
       await client.query('SELECT id FROM projects WHERE id = $1 FOR UPDATE', [project.id]);
+      // The project lock serializes concurrent creates, so retiring the
+      // current draft and inserting the next one cannot race the partial
+      // unique index on (project_id) WHERE status = 'draft'.
+      await client.query(
+        `UPDATE repo_profiles
+         SET status = 'inactive', updated_at = NOW()
+         WHERE project_id = $1 AND status = 'draft'`,
+        [projectId]
+      );
       const next = await client.query(
         'SELECT COALESCE(MAX(version), 0) + 1 AS version FROM repo_profiles WHERE project_id = $1',
         [projectId]
@@ -610,6 +622,13 @@ class RepoProfileService {
       if (target.rows[0].status === 'active') {
         await client.query('COMMIT');
         return format({ ...target.rows[0], profile_hash: contentHash }, { redact: false });
+      }
+      // Inactive rows are either retired drafts (never activated) or previous
+      // active versions. Only the latter may be activated again, which keeps
+      // rollback to a previous version while retired drafts stay inert.
+      if (target.rows[0].status !== 'draft' && !target.rows[0].activated_at) {
+        throw new ValidationError(
+          'Only draft or previously active profiles can be activated; create a new version');
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations

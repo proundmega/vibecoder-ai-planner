@@ -190,9 +190,9 @@ This is an admin operation, not model-driven.
 |---|---|---|
 | `GET /projects/:id/repo-profile` | project member | Active profile plus latest draft |
 | `GET /projects/:id/repo-profile/versions` | project member | Version history |
-| `POST /projects/:id/repo-profile` | owner/super admin | Create a draft version |
+| `POST /projects/:id/repo-profile` | owner/super admin | Create a draft version (retires the previous draft) |
 | `PUT /projects/:id/repo-profile/:profileId` | owner/super admin | Edit a draft |
-| `POST /projects/:id/repo-profile/:profileId/activate` | owner/super admin | Activate one version after a successful dry run of the exact `profile_hash` |
+| `POST /projects/:id/repo-profile/:profileId/activate` | owner/super admin | Activate a draft or a previously active version (rollback) after a successful dry run of the exact `profile_hash` |
 | `POST /projects/:id/repo-profile/detect` | owner/super admin | Propose a profile from GitHub manifests |
 | `POST /projects/:id/repo-profile/:profileId/validate` | owner/super admin | Queue a dry run |
 | `GET /projects/:id/repo-profile/validations` | project member | Dry-run history (`limit` 1-200, `offset`) |
@@ -314,7 +314,11 @@ existing GitHub agent config route.
   dry-run polling, activation, paginated validation history and version history.
 - Only the current draft is editable. Viewing any other version, including an
   older draft, is read-only, and Save/Validate/Activate always target the
-  current draft. Detection asks before replacing unsaved form content.
+  current draft. A partial unique index enforces one draft per project; creating
+  a new draft retires the previous one as inactive, and retired drafts cannot
+  queue new validation or be activated. A dry run already queued before
+  retirement may finish but remains inert. Version-history rollback activation
+  is D17. Detection asks before replacing unsaved form content.
 - Does not expose deferred fields (`caches`, `flaky_tests`).
 
 ## Persistent caches (deferred)
@@ -416,6 +420,9 @@ CREATE TABLE repo_profiles (
 
 CREATE UNIQUE INDEX uq_repo_profiles_active
   ON repo_profiles(project_id) WHERE status = 'active';
+
+CREATE UNIQUE INDEX uq_repo_profiles_draft
+  ON repo_profiles(project_id) WHERE status = 'draft';
 
 CREATE TABLE repo_profile_validations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

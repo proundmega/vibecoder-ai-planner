@@ -125,6 +125,17 @@ describe('RepoProfileValidationService', () => {
     expect(pool.query).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects validation of a retired draft that was never active', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [profileRow({ status: 'inactive', activated_at: null })],
+    });
+
+    await expect(
+      RepoProfileValidationService.request(1, PROFILE_ID, { userId: 7 })
+    ).rejects.toThrow(/Retired drafts cannot queue a new validation/);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects a duplicate queued/running validation', async () => {
     pool.query
       .mockResolvedValueOnce({ rows: [profileRow()] })
