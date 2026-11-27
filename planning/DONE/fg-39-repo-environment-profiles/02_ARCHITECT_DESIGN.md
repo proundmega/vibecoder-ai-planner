@@ -325,6 +325,12 @@ existing GitHub agent config route.
   **Reactivate** from version history and the historical banner; retired drafts
   stay actionless, and the backend still requires the exact successful dry run.
   Detection asks before replacing unsaved form content.
+- Profile lifecycle changes append `repo_profile_events` entries (`created`,
+  `updated` with `changed_fields`, `activated`/`reactivated` with the previous
+  active id, and `retired` with the superseded version). Reads are restricted
+  to the project owner/super admin. Writes are best-effort and
+  non-transactional, with no append-only guard or retention policy; D18 tracks
+  audit-grade hardening.
 - Does not expose deferred fields (`caches`, `flaky_tests`).
 
 ## Persistent caches (deferred)
