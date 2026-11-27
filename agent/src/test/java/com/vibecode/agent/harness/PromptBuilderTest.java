@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PromptBuilderTest {
@@ -178,6 +179,30 @@ class PromptBuilderTest {
         assertTrue(prompt.contains("fast-forward"));
         assertTrue(prompt.contains("one line per finding id"));
         assertTrue(prompt.contains("npm test"));
+        assertTrue(prompt.contains("Never send repository content"));
+        assertTrue(prompt.contains("exfiltrate"));
+        assertTrue(prompt.contains("`.github/workflows`"));
+        assertTrue(prompt.contains("secrets/"));
+        assertTrue(prompt.contains("read/grep/lsp/edit/write"));
+        assertTrue(prompt.contains("sandbox_read"));
+    }
+
+    @Test
+    void fixPromptRequiresAReviewedSha() {
+        PromptBuilder builder = new PromptBuilder();
+        IllegalArgumentException blank = assertThrows(IllegalArgumentException.class,
+            () -> builder.buildFix(new PromptBuilder.FixContext(
+                ticket(), List.of(), List.of(), 0, "  ", List.of(), null, List.of(), null,
+                List.of())));
+        assertTrue(blank.getMessage().contains("reviewed SHA"));
+    }
+
+    @Test
+    void fixPromptRejectsNullListEntries() {
+        assertThrows(NullPointerException.class,
+            () -> new PromptBuilder.FixContext(
+                ticket(), List.of("ok"), java.util.Arrays.asList("doc", null), 0,
+                "d".repeat(40), List.of(), null, List.of(), null, List.of()));
     }
 
     @Test

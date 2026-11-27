@@ -63,6 +63,14 @@ public class WorkspaceManager {
         "-c", "advice.detachedHead=false"
     );
 
+    /**
+     * Private ref namespace for the supervisor's own fetches. Resolving the
+     * remote head through this ref works for a {@code --single-branch} clone of
+     * a different branch, where {@code refs/remotes/origin/<branch>} is never
+     * created.
+     */
+    private static final String FETCHED_REF_PREFIX = "refs/vibecode/fetched/";
+
     private static final int MAX_COUNTED_LINES = 1_000_000;
     private static final long MAX_COUNTED_BYTES = 10L * 1024 * 1024;
     /**
@@ -503,60 +511,114 @@ public class WorkspaceManager {
     /**
      * Publish a fix commit with fast-forward semantics only (fg-32c1).
      *
-     * <p>The remote branch must still point at {@code reviewedSha}. We fetch,
-     * verify the remote head, push without force, then re-read the remote head.
-     * A human push during the fix wins; this method never force-writes or
-     * rewrites the shared branch.</p>
+     * <p>The remote branch must still point at {@code reviewedSha} and
+     * {@code commitSha} must descend from it. The fetches and the push share the
+     * same transient askpass credentials as a clone, so authenticated remotes
+     * work; without a credential, git fails closed instead of prompting. The
+     * push is not forced, so a human push during the fix wins.</p>
+     *
+     * <p>A failure after the push is ambiguous: the commit may already be on the
+     * remote. Those errors carry the {@code possibly_published} marker, and a
+     * retry is safe because an already-published commit is not pushed again.</p>
+     *
+     * @return the full commit object id that was published
      */
     public String publishFastForward(
         String commitSha,
         String branchName,
         String reviewedSha
     ) throws IOException {
-        if (commitSha == null || commitSha.isBlank()
-            || reviewedSha == null || reviewedSha.isBlank()) {
-            throw new IOException("commit and reviewed SHAs are required");
-        }
-        String branch = branchName == null ? "" : branchName.trim();
-        if (branch.isEmpty() || branch.startsWith("-") || branch.contains("..")) {
-            throw new IOException("A valid branch name is required");
+        String branch = validateBranch(branchName);
+        String expected = validateCommitSha(reviewedSha, "reviewed");
+        if (commitSha == null || commitSha.isBlank()) {
+            throw new IOException("A commit SHA is required");
         }
         if (dryRun) {
             log.info("[DRY RUN] Would fast-forward publish {} to {}", commitSha, branch);
-            return commitSha;
+            return commitSha.trim();
         }
 
         hardenGitRepository();
-        String expected = reviewedSha.trim();
+        // Resolve a short or ref name to the full object id so the comparison
+        // against the remote head below compares like with like.
+        String commit = runGitCommand(
+            "rev-parse", "--verify", commitSha.trim() + "^{commit}").trim();
+
+        runWithCredentials(() -> {
+            publishOnce(branch, expected, commit);
+            verifyPublished(branch, commit);
+        });
+        return commit;
+    }
+
+    /**
+     * Fetch, confirm the remote is still at the reviewed SHA, confirm the fix
+     * descends from it, then push without force. Re-running it after an
+     * ambiguous push success is a no-op rather than a second push.
+     */
+    private void publishOnce(String branch, String expected, String commit) throws IOException {
         fetchRemoteBranch(branch);
         String remoteSha = remoteBranchRef(branch);
+        if (commit.equalsIgnoreCase(remoteSha)) {
+            return;
+        }
         if (!expected.equalsIgnoreCase(remoteSha)) {
             throw new IOException(
                 "remote_head_moved: " + branch + " is at " + remoteSha
                     + ", reviewed " + expected);
         }
+        requireFastForward(expected, commit);
+        pushFastForwardOnce(commit, branch);
+    }
 
-        pushFastForward(commitSha.trim(), branch);
-
-        fetchRemoteBranch(branch);
-        String published = remoteBranchRef(branch);
-        if (!commitSha.trim().equalsIgnoreCase(published)) {
+    /**
+     * A non-force push is not enough on a remote without fast-forward
+     * protection, so the ancestry check enforces the same rule locally.
+     */
+    private void requireFastForward(String reviewedSha, String commitSha) throws IOException {
+        try {
+            runGit("merge-base", "--is-ancestor", reviewedSha, commitSha);
+        } catch (IOException failure) {
             throw new IOException(
-                "remote_head_mismatch: " + branch + " is at " + published
-                    + " after publishing " + commitSha.trim());
+                "not_fast_forward: " + commitSha + " does not descend from reviewed "
+                    + reviewedSha, failure);
         }
-        return commitSha.trim();
+    }
+
+    private void verifyPublished(String branch, String commit) throws IOException {
+        String published;
+        try {
+            fetchRemoteBranch(branch);
+            published = remoteBranchRef(branch);
+        } catch (IOException failure) {
+            throw new IOException(
+                "possibly_published: pushed " + commit + " to " + branch
+                    + " but the remote head could not be verified: "
+                    + failure.getMessage(), failure);
+        }
+        if (!commit.equalsIgnoreCase(published)) {
+            throw new IOException(
+                "remote_head_mismatch: possibly_published " + commit + ", but "
+                    + branch + " is at " + published);
+        }
     }
 
     private void fetchRemoteBranch(String branch) throws IOException {
-        runGit("fetch", "--no-tags", "origin", branch);
+        runGit("fetch", "--no-tags", "origin",
+            "+refs/heads/" + branch + ":" + FETCHED_REF_PREFIX + branch);
     }
 
     private String remoteBranchRef(String branch) throws IOException {
-        return runGitCommand("rev-parse", "refs/remotes/origin/" + branch).trim();
+        return runGitCommand("rev-parse", "--verify", FETCHED_REF_PREFIX + branch).trim();
     }
 
-    private void pushFastForward(String commitSha, String branchName) throws IOException {
+    /**
+     * Run an authenticated git operation, refreshing the credential once when
+     * git reports an authentication failure. The askpass script must cover
+     * every step, fetches included: without it git runs with
+     * {@code GIT_ASKPASS=/dev/null} and fails on a private remote.
+     */
+    private void runWithCredentials(GitOperation operation) throws IOException {
         String token = currentToken();
         boolean authenticate = token != null && !token.isBlank();
         if (authenticate) {
@@ -564,7 +626,7 @@ public class WorkspaceManager {
         }
         try {
             try {
-                pushFastForwardOnce(commitSha, branchName);
+                operation.run();
             } catch (IOException first) {
                 if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
                     throw first;
@@ -572,7 +634,7 @@ public class WorkspaceManager {
                 String refreshed = refreshToken(first);
                 cleanupAskPass();
                 ensureAskPass(refreshed);
-                pushFastForwardOnce(commitSha, branchName);
+                operation.run();
             }
         } finally {
             cleanupAskPass();
@@ -582,6 +644,37 @@ public class WorkspaceManager {
     private void pushFastForwardOnce(String commitSha, String branchName) throws IOException {
         runGit("push", "--no-verify", "origin",
             commitSha + ":refs/heads/" + branchName);
+    }
+
+    private static String validateBranch(String branchName) throws IOException {
+        String branch = branchName == null ? "" : branchName.trim();
+        boolean invalid = branch.isEmpty()
+            || branch.startsWith("-")
+            || branch.startsWith("/")
+            || branch.endsWith("/")
+            || branch.endsWith(".")
+            || branch.contains("..")
+            || branch.contains("//")
+            || branch.contains("@{")
+            || branch.endsWith(".lock")
+            || branch.chars().anyMatch(c -> c <= ' ' || "\u007f~^:?*[\\".indexOf(c) >= 0);
+        if (invalid) {
+            throw new IOException("A valid branch name is required");
+        }
+        return branch;
+    }
+
+    private static String validateCommitSha(String sha, String label) throws IOException {
+        String value = sha == null ? "" : sha.trim().toLowerCase(Locale.ROOT);
+        if (!value.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
+            throw new IOException(label + " SHA must be a full commit object id");
+        }
+        return value;
+    }
+
+    @FunctionalInterface
+    private interface GitOperation {
+        void run() throws IOException;
     }
 
     /**
