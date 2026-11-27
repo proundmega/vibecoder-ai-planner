@@ -2090,10 +2090,66 @@ class DockerSandboxRunnerTest {
         assertTrue(calls.contains("--cap-drop NET_RAW"), calls);
         assertTrue(calls.contains("--log-opt max-size=1m"), calls);
         assertTrue(calls.contains("--log-opt max-file=1"), calls);
+        assertTrue(calls.contains("--pull never"), calls);
+        assertTrue(calls.contains(
+            "image inspect --format {{.Id}} postgres@sha256:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), calls);
         assertTrue(calls.contains("rm -f -v vibecode-service-"), calls);
         assertTrue(calls.contains("network rm vibecode-services-"), calls);
         assertFalse(calls.contains("POSTGRES_PASSWORD"), calls);
         assertFalse(calls.contains("vibecode-repo-cache"), calls);
+    }
+
+    @Test
+    void refusesToPullMissingServiceImages() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("missing-service-image.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              image) echo "Error response from daemon: No such image" >&2; exit 1 ;;
+              rm) exit 0 ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = dockerConfig(script.toString());
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {
+              "schema_version": 1,
+              "verify": ["npm test"],
+              "services": [{
+                "name": "postgres",
+                "image": "postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "connection_env": "DATABASE_URL",
+                "connection_url": "postgresql://vibecode@${host}:5432/test",
+                "healthcheck": {
+                  "command": "pg_isready -U vibecode -d test",
+                  "interval_seconds": 1,
+                  "timeout_seconds": 2,
+                  "retries": 2
+                }
+              }]
+            }
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            IOException error = assertThrows(IOException.class,
+                () -> runner.create(effective.specFor(workspace())));
+            assertTrue(error.getMessage().contains("not available locally"),
+                error.getMessage());
+            assertTrue(error.getMessage().contains("--pull never")
+                || error.getMessage().contains("image pulls during a run are disabled"),
+                error.getMessage());
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains(
+            "image inspect --format {{.Id}} postgres@sha256:"
+                + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), calls);
+        assertFalse(calls.contains("run -d --name vibecode-service-"), calls);
+        assertFalse(calls.contains("network create"), calls);
+        assertFalse(calls.contains("vibecode-services-"), calls);
     }
 
 
