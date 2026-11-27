@@ -61,6 +61,12 @@ class RepoProfileValidationService {
       throw new NotFoundError('Repo profile not found');
     }
     const profile = profileResult.rows[0];
+    // Inactive rows that were never active are retired drafts. Keep them
+    // inert: a new version must be created instead of validating stale content.
+    if (profile.status === 'inactive' && !profile.activated_at) {
+      throw new ValidationError(
+        'Retired drafts cannot be validated; create a new version');
+    }
     await RepoProfileService.assertProfileRepoBinding(projectId, profile.profile);
     const profileHash = profile.profile_hash
       || RepoProfileService.profileHash(profile.profile);

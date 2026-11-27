@@ -484,7 +484,10 @@ class RepoProfileService {
     const rows = result.rows.map((row) => format(row, { redact: !raw }));
     return {
       active: rows.find((row) => row.status === 'active') || null,
-      latest: rows[0] || null,
+      // The query orders active rows first, so `rows[0]` is the active profile
+      // whenever one exists. The editor needs the editable draft, which is the
+      // newest non-active row; fall back to `rows[0]` when there is no draft.
+      latest: rows.find((row) => row.status === 'draft') || rows[0] || null,
       versions: rows,
     };
   }
@@ -620,9 +623,12 @@ class RepoProfileService {
         await client.query('COMMIT');
         return format({ ...target.rows[0], profile_hash: contentHash }, { redact: false });
       }
-      if (target.rows[0].status !== 'draft') {
+      // Inactive rows are either retired drafts (never activated) or previous
+      // active versions. Only the latter may be activated again, which keeps
+      // rollback to a previous version while retired drafts stay inert.
+      if (target.rows[0].status !== 'draft' && !target.rows[0].activated_at) {
         throw new ValidationError(
-          'Only draft profiles can be activated; create a new version');
+          'Only draft or previously active profiles can be activated; create a new version');
       }
       const validated = await client.query(
         `SELECT 1 FROM repo_profile_validations
