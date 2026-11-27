@@ -2148,7 +2148,8 @@ class DockerSandboxRunnerTest {
             "image inspect --format {{.Id}} postgres@sha256:"
                 + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), calls);
         assertFalse(calls.contains("run -d --name vibecode-service-"), calls);
-        assertTrue(calls.contains("network rm vibecode-services-"), calls);
+        assertFalse(calls.contains("network create"), calls);
+        assertFalse(calls.contains("vibecode-services-"), calls);
     }
 
 

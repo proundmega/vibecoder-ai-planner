@@ -1390,6 +1390,11 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (spec.services().isEmpty()) {
             return null;
         }
+        // Check every image before creating the network so a missing artifact
+        // leaves no service resources behind.
+        for (ServiceSpec service : spec.services()) {
+            ensureServiceImagePresent(service);
+        }
         String suffix = sandboxName.startsWith("vibecode-sandbox-")
             ? sandboxName.substring("vibecode-sandbox-".length())
             : sandboxName;
@@ -1415,7 +1420,6 @@ public final class DockerSandboxRunner implements SandboxRunner {
             new ServiceRuntime(network, containers, environment, hosts, passwords));
         try {
             for (ServiceSpec service : spec.services()) {
-                ensureServiceImagePresent(service);
                 String container = "vibecode-service-" + suffix + "-" + service.name();
                 // Track the name before docker run: a timeout or a non-zero
                 // exit can still leave a container behind, and only a tracked
