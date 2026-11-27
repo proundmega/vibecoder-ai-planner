@@ -534,15 +534,17 @@ public class WorkspaceManager {
             throw new IOException("A commit SHA is required");
         }
         if (dryRun) {
-            log.info("[DRY RUN] Would fast-forward publish {} to {}", commitSha, branch);
-            return commitSha.trim();
+            // Keep the return shape identical to a real publish when the
+            // workspace exists; a dry run has no clone to resolve against.
+            String resolved = hasGitWorkspace() ? resolveCommit(commitSha) : commitSha.trim();
+            log.info("[DRY RUN] Would fast-forward publish {} to {}", resolved, branch);
+            return resolved;
         }
 
         hardenGitRepository();
         // Resolve a short or ref name to the full object id so the comparison
         // against the remote head below compares like with like.
-        String commit = runGitCommand(
-            "rev-parse", "--verify", commitSha.trim() + "^{commit}").trim();
+        String commit = resolveCommit(commitSha);
 
         runWithCredentials(() -> {
             publishOnce(branch, expected, commit);
@@ -559,6 +561,9 @@ public class WorkspaceManager {
     private void publishOnce(String branch, String expected, String commit) throws IOException {
         fetchRemoteBranch(branch);
         String remoteSha = remoteBranchRef(branch);
+        // Local and network-free, so it also guards the already-published and
+        // moved-head paths: rewritten history must never pass as a fix.
+        requireFastForward(expected, commit);
         if (commit.equalsIgnoreCase(remoteSha)) {
             return;
         }
@@ -567,8 +572,46 @@ public class WorkspaceManager {
                 "remote_head_moved: " + branch + " is at " + remoteSha
                     + ", reviewed " + expected);
         }
-        requireFastForward(expected, commit);
-        pushFastForwardOnce(commit, branch);
+        try {
+            pushFastForwardOnce(commit, branch);
+        } catch (IOException pushFailure) {
+            // A human push can land between the fetch above and the push. Git
+            // reports that as a raw non-fast-forward rejection; re-read the
+            // head so callers get the same remote_head_moved signal as the
+            // pre-push check.
+            String current = remoteHeadOrNull(branch);
+            if (current == null) {
+                throw pushFailure;
+            }
+            if (commit.equalsIgnoreCase(current)) {
+                return;
+            }
+            if (!expected.equalsIgnoreCase(current)) {
+                throw new IOException(
+                    "remote_head_moved: " + branch + " is at " + current
+                        + ", reviewed " + expected, pushFailure);
+            }
+            throw pushFailure;
+        }
+    }
+
+    private String remoteHeadOrNull(String branch) {
+        try {
+            fetchRemoteBranch(branch);
+            return remoteBranchRef(branch);
+        } catch (IOException ignored) {
+            return null;
+        }
+    }
+
+    private String resolveCommit(String commitSha) throws IOException {
+        return runGitCommand("rev-parse", "--verify", commitSha.trim() + "^{commit}").trim();
+    }
+
+    private boolean hasGitWorkspace() {
+        Path gitDir = repoDir == null ? null : repoDir.resolve(".git");
+        return gitDir != null && Files.isDirectory(gitDir, LinkOption.NOFOLLOW_LINKS)
+            && !Files.isSymbolicLink(gitDir);
     }
 
     /**
@@ -646,6 +689,11 @@ public class WorkspaceManager {
             commitSha + ":refs/heads/" + branchName);
     }
 
+    /**
+     * Approximates {@code git check-ref-format --branch} without needing a
+     * workspace. Anything this accepts but git rejects still fails closed at
+     * fetch time, and the branch name is only used as an explicit refspec.
+     */
     private static String validateBranch(String branchName) throws IOException {
         String branch = branchName == null ? "" : branchName.trim();
         boolean invalid = branch.isEmpty()
@@ -1371,6 +1419,9 @@ public class WorkspaceManager {
      * the workspace; none of them may influence the supervisor's push.
      */
     private void hardenGitRepository() throws IOException {
+        if (repoDir == null) {
+            throw new IOException("Refusing to publish: no workspace has been cloned");
+        }
         Path gitDir = repoDir.resolve(".git");
         if (Files.isSymbolicLink(gitDir)
             || !Files.isDirectory(gitDir, LinkOption.NOFOLLOW_LINKS)) {

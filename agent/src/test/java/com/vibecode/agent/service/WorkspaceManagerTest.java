@@ -1824,6 +1824,7 @@ class WorkspaceManagerTest {
         String realGit = new String(new ProcessBuilder("sh", "-c", "command -v git")
             .start().getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
         String script = "#!/bin/sh\n"
+            + "REAL_GIT='" + realGit + "'\n"
             + "cmd=\"\"\n"
             + "skip=\"\"\n"
             + "for a in \"$@\"; do\n"
@@ -1835,7 +1836,7 @@ class WorkspaceManagerTest {
             + "  esac\n"
             + "done\n"
             + body
-            + "exec '" + realGit + "' \"$@\"\n";
+            + "exec \"$REAL_GIT\" \"$@\"\n";
         Files.writeString(git, script);
         Files.setPosixFilePermissions(git,
             java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
@@ -1985,6 +1986,79 @@ class WorkspaceManagerTest {
         assertTrue(error.getMessage().contains("not_fast_forward"), error.getMessage());
         assertEquals(repo.reviewedSha(),
             gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"));
+    }
+
+    @Test
+    void publishFastForwardRejectsRewrittenHistoryEvenWhenTheRemoteMatches() throws Exception {
+        FixRepo repo = initWithFixBranch("ff-rewritten");
+        WorkspaceManager wm = cloneFixBranch("ff-rewritten", repo, tokenSource("ghs_token"));
+        Path repoDir = wm.getRepoDir();
+        runGit(repoDir, "config", "user.email", "fix@example.com");
+        runGit(repoDir, "config", "user.name", "Fixer");
+        runGit(repoDir, "checkout", "--orphan", "unrelated");
+        runGit(repoDir, "commit", "--allow-empty", "-m", "unrelated root");
+        String rootCommit = gitOutput(repoDir, "rev-parse", "HEAD");
+        // A human force-pushes an unrelated history to the same branch.
+        runGit(repoDir, "push", "--force", "origin",
+            rootCommit + ":refs/heads/vibecode/fix");
+
+        IOException error = assertThrows(IOException.class,
+            () -> wm.publishFastForward(rootCommit, "vibecode/fix", repo.reviewedSha()));
+        assertTrue(error.getMessage().contains("not_fast_forward"), error.getMessage());
+    }
+
+    @Test
+    void publishFastForwardReportsRemoteHeadMovedWhenAPushRacesTheFetch() throws Exception {
+        FixRepo repo = initWithFixBranch("ff-race");
+        WorkspaceManager wm = cloneFixBranch("ff-race", repo, tokenSource("ghs_token"));
+        String fixedSha = commitFix(wm);
+
+        // Prepare a human commit but push it only from inside the supervisor's
+        // push invocation, i.e. after the pre-push fetch.
+        Files.writeString(repo.source().resolve("human.txt"), "human\n");
+        runGit(repo.source(), "add", ".");
+        runGit(repo.source(), "commit", "-m", "human push");
+        String humanSha = gitOutput(repo.source(), "rev-parse", "HEAD");
+
+        Path raced = tempDir.resolve("ff-race-pushed");
+        Path git = wrapperGit("ff-race-bin",
+            "if [ \"$cmd\" = \"push\" ] && [ ! -f '" + raced + "' ]; then\n"
+            + "  touch '" + raced + "'\n"
+            + "  \"$REAL_GIT\" -C '" + repo.source()
+            + "' push origin HEAD:refs/heads/vibecode/fix >/dev/null 2>&1\n"
+            + "fi\n");
+        setField(wm, "gitBinary", git.toString());
+
+        IOException error = assertThrows(IOException.class,
+            () -> wm.publishFastForward(fixedSha, "vibecode/fix", repo.reviewedSha()));
+        assertTrue(error.getMessage().contains("remote_head_moved"), error.getMessage());
+        assertEquals(humanSha,
+            gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"));
+    }
+
+    @Test
+    void publishFastForwardDryRunReturnsTheResolvedCommitId() throws Exception {
+        FixRepo repo = initWithFixBranch("ff-dry");
+        WorkspaceManager wm = cloneFixBranch("ff-dry", repo, tokenSource("ghs_token"));
+        String fixedSha = commitFix(wm);
+
+        WorkspaceManager dry = new WorkspaceManager(tempDir.toString(), "ff-dry-run", true, null);
+        setRepoDir(dry, wm.getRepoDir());
+
+        assertEquals(fixedSha,
+            dry.publishFastForward(fixedSha.substring(0, 12), "vibecode/fix",
+                repo.reviewedSha()));
+        assertEquals(repo.reviewedSha(),
+            gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"),
+            "a dry run must not publish");
+    }
+
+    @Test
+    void publishFastForwardFailsClosedWithoutAClone() {
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "ff-no-clone", false, null);
+        IOException error = assertThrows(IOException.class,
+            () -> wm.publishFastForward("a".repeat(40), "ok", "b".repeat(40)));
+        assertTrue(error.getMessage().contains("no workspace"), error.getMessage());
     }
 
     @Test
