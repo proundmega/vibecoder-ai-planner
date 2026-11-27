@@ -1948,6 +1948,104 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void publishFastForwardReportsPossiblyPublishedWhenTheFailedPushCannotBeReRead()
+        throws Exception {
+        FixRepo repo = initWithFixBranch("ff-push-unreadable");
+        Path fetchCount = tempDir.resolve("ff-push-unreadable-fetch-count");
+        Path git = wrapperGit("ff-push-unreadable-bin",
+            "case \"$cmd\" in\n"
+            + "  fetch)\n"
+            + "    count=0\n"
+            + "    [ -f '" + fetchCount + "' ] && count=$(cat '" + fetchCount + "')\n"
+            + "    count=$((count + 1))\n"
+            + "    echo \"$count\" > '" + fetchCount + "'\n"
+            + "    if [ \"$count\" -eq 2 ]; then\n"
+            + "      echo 'fatal: unable to access repo: Could not resolve host' >&2\n"
+            + "      exit 1\n"
+            + "    fi ;;\n"
+            + "  push)\n"
+            + "    echo 'fatal: the remote end hung up unexpectedly' >&2\n"
+            + "    exit 1 ;;\n"
+            + "esac\n");
+
+        WorkspaceManager wm = cloneFixBranch("ff-push-unreadable", repo, tokenSource("ghs_token"));
+        setField(wm, "gitBinary", git.toString());
+        String fixedSha = commitFix(wm);
+
+        IOException error = assertThrows(IOException.class,
+            () -> wm.publishFastForward(fixedSha, "vibecode/fix", repo.reviewedSha()));
+        assertTrue(error.getMessage().contains("possibly_published"), error.getMessage());
+        assertEquals(repo.reviewedSha(),
+            gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"));
+    }
+
+    @Test
+    void publishFastForwardRefreshesAndRetriesWhenTheHeadReReadFailsAuthentication()
+        throws Exception {
+        FixRepo repo = initWithFixBranch("ff-reread-auth");
+        Path fetchCount = tempDir.resolve("ff-reread-auth-fetch-count");
+        Path pushCount = tempDir.resolve("ff-reread-auth-push-count");
+        Path git = wrapperGit("ff-reread-auth-bin",
+            "case \"$cmd\" in\n"
+            + "  fetch)\n"
+            + "    count=0\n"
+            + "    [ -f '" + fetchCount + "' ] && count=$(cat '" + fetchCount + "')\n"
+            + "    count=$((count + 1))\n"
+            + "    echo \"$count\" > '" + fetchCount + "'\n"
+            + "    if [ \"$count\" -eq 2 ]; then\n"
+            + "      echo 'fatal: Authentication failed for repo' >&2\n"
+            + "      exit 1\n"
+            + "    fi ;;\n"
+            + "  push)\n"
+            + "    count=0\n"
+            + "    [ -f '" + pushCount + "' ] && count=$(cat '" + pushCount + "')\n"
+            + "    count=$((count + 1))\n"
+            + "    echo \"$count\" > '" + pushCount + "'\n"
+            + "    if [ \"$count\" -eq 1 ]; then\n"
+            + "      echo 'fatal: the remote end hung up unexpectedly' >&2\n"
+            + "      exit 1\n"
+            + "    fi ;;\n"
+            + "esac\n");
+
+        final int[] refreshes = {0};
+        GitHubTokenSource tokens = new GitHubTokenSource() {
+            @Override
+            public String get() {
+                return "ghs_first";
+            }
+
+            @Override
+            public String refresh() {
+                refreshes[0] += 1;
+                return "ghs_refreshed";
+            }
+        };
+        WorkspaceManager wm = cloneFixBranch("ff-reread-auth", repo, tokens);
+        setField(wm, "gitBinary", git.toString());
+        String fixedSha = commitFix(wm);
+
+        assertEquals(fixedSha,
+            wm.publishFastForward(fixedSha, "vibecode/fix", repo.reviewedSha()));
+        assertEquals(1, refreshes[0]);
+        assertEquals(fixedSha,
+            gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"));
+    }
+
+    @Test
+    void publishFastForwardDistinguishesAncestryFailureFromAnUnknownReviewedSha()
+        throws Exception {
+        FixRepo repo = initWithFixBranch("ff-unknown-reviewed");
+        WorkspaceManager wm = cloneFixBranch("ff-unknown-reviewed", repo, tokenSource("ghs_token"));
+        String fixedSha = commitFix(wm);
+        String unknown = "0123456789abcdef0123456789abcdef01234567";
+
+        IOException error = assertThrows(IOException.class,
+            () -> wm.publishFastForward(fixedSha, "vibecode/fix", unknown));
+        assertFalse(error.getMessage().contains("not_fast_forward"), error.getMessage());
+        assertTrue(error.getMessage().contains("merge-base"), error.getMessage());
+    }
+
+    @Test
     void publishFastForwardReportsRemoteHeadMismatchAfterPublishing() throws Exception {
         FixRepo repo = initWithFixBranch("ff-mismatch");
         Path fetchCount = tempDir.resolve("ff-mismatch-fetch-count");

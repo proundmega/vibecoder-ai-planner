@@ -519,9 +519,13 @@ public class WorkspaceManager {
      *
      * <p>A failure after the push is ambiguous: the commit may already be on the
      * remote. Those errors carry the {@code possibly_published} marker, and a
-     * retry is safe because an already-published commit is not pushed again.</p>
+     * retry is safe because an already-published commit is not pushed again.
+     * A push failure whose head cannot be re-read is treated the same way,
+     * except that an authentication failure on the re-read is surfaced as
+     * itself so the credential refresh can retry.</p>
      *
-     * @return the full commit object id that was published
+     * @return the full commit object id that was published; in dry-run, the
+     *     resolved id when a workspace exists, otherwise the supplied value
      */
     public String publishFastForward(
         String commitSha,
@@ -579,9 +583,21 @@ public class WorkspaceManager {
             // reports that as a raw non-fast-forward rejection; re-read the
             // head so callers get the same remote_head_moved signal as the
             // pre-push check.
-            String current = remoteHeadOrNull(branch);
-            if (current == null) {
-                throw pushFailure;
+            String current;
+            try {
+                fetchRemoteBranch(branch);
+                current = remoteBranchRef(branch);
+            } catch (IOException reReadFailure) {
+                if (isAuthenticationFailure(reReadFailure.getMessage())) {
+                    // Let the outer credential refresh retry the whole step:
+                    // swallowing it here would hide the cause.
+                    throw reReadFailure;
+                }
+                // The push may have been applied before the connection dropped.
+                throw new IOException(
+                    "possibly_published: the push of " + commit + " to " + branch
+                        + " failed and the remote head could not be re-read: "
+                        + pushFailure.getMessage(), pushFailure);
             }
             if (commit.equalsIgnoreCase(current)) {
                 return;
@@ -591,16 +607,8 @@ public class WorkspaceManager {
                     "remote_head_moved: " + branch + " is at " + current
                         + ", reviewed " + expected, pushFailure);
             }
+            // The remote is unchanged, so the rejected push published nothing.
             throw pushFailure;
-        }
-    }
-
-    private String remoteHeadOrNull(String branch) {
-        try {
-            fetchRemoteBranch(branch);
-            return remoteBranchRef(branch);
-        } catch (IOException ignored) {
-            return null;
         }
     }
 
@@ -619,13 +627,35 @@ public class WorkspaceManager {
      * protection, so the ancestry check enforces the same rule locally.
      */
     private void requireFastForward(String reviewedSha, String commitSha) throws IOException {
-        try {
-            runGit("merge-base", "--is-ancestor", reviewedSha, commitSha);
-        } catch (IOException failure) {
+        // merge-base answers "no" with exit 1; any other non-zero code is a
+        // real failure, not a verdict about ancestry.
+        int exitCode = runGitStatus("merge-base", "--is-ancestor", reviewedSha, commitSha);
+        if (exitCode == 1) {
             throw new IOException(
                 "not_fast_forward: " + commitSha + " does not descend from reviewed "
-                    + reviewedSha, failure);
+                    + reviewedSha);
         }
+    }
+
+    /**
+     * Run git and return 0 or 1. Exit codes above 1 are errors, not answers, so
+     * they throw with the redacted output instead of being mislabelled.
+     */
+    private int runGitStatus(String... args) throws IOException {
+        Process process = startGit(repoDir, Map.of(), args);
+        String output = readProcessOutput(process);
+        int exitCode;
+        try {
+            exitCode = process.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Git command interrupted: " + e.getMessage());
+        }
+        if (exitCode > 1) {
+            throw new IOException(
+                "git " + redact(String.join(" ", args)) + " failed: " + redact(output));
+        }
+        return exitCode;
     }
 
     private void verifyPublished(String branch, String commit) throws IOException {
