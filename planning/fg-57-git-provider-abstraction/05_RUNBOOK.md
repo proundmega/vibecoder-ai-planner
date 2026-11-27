@@ -72,6 +72,17 @@ if you already operate it.
    project-scoped, so a project admin can manage any project's connection while
    the read routes stay owner/super-admin only.
 
+   The agent endpoints (`/repo/agent`, `/token`) accept a node credential and
+   rely on the runtime's `(node, project, role)` grant plus its
+   `current_project_id` scope, so a pool node owned by another user can serve a
+   granted project. Legacy agent keys keep the owner check. GitHub credentials
+   (both app and pat modes) always go through `GitHubAppAuthService.mintToken`,
+   so PAT issuance keeps its audit event and repo binding.
+
+   The tracked `backend/src/api/openapi-generated.json` is produced with
+   `npm run generate:spec`; it is not regenerated per PR, so run that command
+   before frontend codegen (planned with `fg-57f3`).
+
 5. Verify the backend provider with the gated integration test
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
    branch, creates exactly one PR, reads the diff and cleans up.

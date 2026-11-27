@@ -126,6 +126,12 @@ Files:
 - `/git` reads require the project owner or a super admin; `/github` reads keep
   their existing token-only behaviour. The divergence is intentional (the
   generic surface is stricter) and documented in `05_RUNBOOK.md`.
+- The two agent endpoints (`/repo/agent`, `/token`) authorize node credentials
+  through the runtime project grant and its `current_project_id` scope rather
+  than node-owner equality, so a pool node can serve a granted project.
+- GitHub credentials always use `GitHubAppAuthService.mintToken` (app or pat),
+  preserving the audit event and repo binding; non-GitHub providers return the
+  stored scoped credential.
 
 ## Dependencies
 

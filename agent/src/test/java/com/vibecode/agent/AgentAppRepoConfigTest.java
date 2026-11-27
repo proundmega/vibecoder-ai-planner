@@ -124,6 +124,54 @@ class AgentAppRepoConfigTest {
         assertEquals("server-repo", config.name);
     }
 
+    static class TokenModeConfig extends AgentConfig {
+        String provider = "github";
+        String repoMode;
+
+        @Override public String getRepoProvider() { return provider; }
+        @Override public String getRepoAuthMode() { return repoMode; }
+        @Override public String getGitHubAuthMode() { return "pat"; }
+        @Override public boolean isAllowPat() { return false; }
+    }
+
+    @Test
+    void selfHostedStoredPatIsAcceptedAsTheNormalCredential() throws Exception {
+        TokenModeConfig config = new TokenModeConfig();
+        config.provider = "forgejo";
+        config.repoMode = "pat";
+
+        var provider = AgentApp.buildTokenProvider(
+            config,
+            force -> Map.of("provider", "forgejo", "token", "scoped", "mode", "pat"),
+            null);
+
+        assertEquals("scoped", provider.get());
+    }
+
+    @Test
+    void selfHostedProviderRejectsACredentialModeMismatch() {
+        TokenModeConfig config = new TokenModeConfig();
+        config.provider = "forgejo";
+        config.repoMode = "pat";
+
+        var provider = AgentApp.buildTokenProvider(
+            config,
+            force -> Map.of("provider", "forgejo", "token", "x", "mode", "app"),
+            null);
+
+        assertThrows(IOException.class, provider::get);
+    }
+
+    @Test
+    void githubPatStillRequiresTheAllowPatFallbackFlag() {
+        var provider = AgentApp.buildTokenProvider(
+            new TokenModeConfig(),
+            force -> Map.of("token", "stored", "mode", "pat"),
+            null);
+
+        assertThrows(IOException.class, provider::get);
+    }
+
     @Test
     void missingOrInvalidServerRepoKeepsEnvFallback() {
         AgentConfig config = new AgentConfig();

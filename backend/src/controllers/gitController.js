@@ -24,9 +24,17 @@ function connectInput(body = {}) {
   return input;
 }
 
-async function requireProjectAccess(req, projectId, message) {
+/**
+ * Human reads are owner/super-admin only. Node requests are authorized by the
+ * runtime project grant (and its runtime project scope) that the route already
+ * enforced: a pool node is owned by whoever created the node, not necessarily
+ * by the project owner. Legacy agent keys (no node runtime) keep the owner
+ * check because they carry no grant.
+ */
+async function requireProjectAccess(req, projectId, message, { nodeGrant = false } = {}) {
   const project = await Project.findById(projectId);
   if (!project) throw new NotFoundError('Project not found');
+  if (nodeGrant && req.agent?._node) return project;
   const requesterId = req.agent ? req.agent.owner_id : req.user?.userId;
   const isSuperAdmin = req.user?.role === 'super_admin';
   if (!isSuperAdmin && String(requesterId) !== String(project.ownerId)) {
@@ -111,7 +119,8 @@ async function getRepoForAgent(req, res, next) {
     await requireProjectAccess(
       req,
       projectId,
-      'Only the project owner or a super admin can read agent repository config'
+      'Only the project owner or a super admin can read agent repository config',
+      { nodeGrant: true }
     );
     const credential = await GitProjectService.getAgentCredential(projectId, {
       provider: requestedProvider(req),
@@ -138,7 +147,8 @@ async function requestToken(req, res, next) {
     await requireProjectAccess(
       req,
       projectId,
-      'Only the project owner or a super admin can request a Git token'
+      'Only the project owner or a super admin can request a Git token',
+      { nodeGrant: true }
     );
     const repo = await GitProjectService.getRepo(projectId, {
       provider: requestedProvider(req),
@@ -146,7 +156,11 @@ async function requestToken(req, res, next) {
     if (!repo) throw new NotFoundError('No repository connected to this project');
     const providerId = repo.provider || 'github';
 
-    if (providerId === 'github' && GitHubAppAuthService.getAuthMode() === 'app') {
+    // GitHub keeps the audited mint path for both modes: mintToken dispatches
+    // to App (short-lived installation token) and PAT (stored credential plus
+    // the github_app_token_issued audit event and repo binding). Going straight
+    // to getAgentCredential here would skip that audit and validation.
+    if (providerId === 'github') {
       const minted = await GitHubAppAuthService.mintToken(projectId, {
         operation: req.body?.operation || 'agent',
         repo: req.body?.repo,
@@ -163,7 +177,9 @@ async function requestToken(req, res, next) {
       throw new NotFoundError('No repository connected to this project');
     }
     if (!credential.accessToken) {
-      throw new ValidationError('This repository uses SSH and cannot return a bearer token');
+      throw new ValidationError(
+        'This repository has no bearer token (SSH repository or a missing stored credential)'
+      );
     }
     send(res, {
       provider: providerId,
