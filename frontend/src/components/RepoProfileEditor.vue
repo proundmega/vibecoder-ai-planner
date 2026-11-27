@@ -62,6 +62,7 @@ const testDataCleanupText = ref('')
 const envRows = ref<EnvRow[]>([])
 const services = ref<ServiceRow[]>([])
 const viewingVersion = ref<RepoProfileRow | null>(null)
+const reactivatingId = ref<string | null>(null)
 const setupMinutes = ref(15)
 const verifyMinutes = ref(20)
 const maxRoundMinutes = ref(45)
@@ -85,6 +86,16 @@ const viewingHistorical = computed(() => (
     && viewingVersion.value?.id !== draft.value?.id
 ))
 const editable = computed(() => canEdit.value && !viewingHistorical.value)
+// Previously active versions can be reactivated for rollback; retired drafts
+// never had an activation and stay inert.
+function canReactivate(row: RepoProfileRow | null | undefined): boolean {
+  return Boolean(
+    canEdit.value
+      && row
+      && row.status === 'inactive'
+      && row.activated_at,
+  )
+}
 const selectedProfile = computed(() => draft.value || active.value)
 const matchingValidation = computed<RepoProfileValidation | null>(() => {
   if (!draft.value?.profile_hash) return null
@@ -355,6 +366,28 @@ function returnToEditor() {
   success.value = ''
 }
 
+async function reactivate(row: RepoProfileRow) {
+  if (!canReactivate(row)) return
+  busy.value = 'activate'
+  reactivatingId.value = row.id
+  error.value = ''
+  success.value = ''
+  try {
+    await activateRepoProfile(props.projectId, row.id)
+    success.value = `Version ${row.version} reactivated`
+    await load()
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Could not reactivate the version'
+  } finally {
+    busy.value = ''
+    reactivatingId.value = null
+  }
+}
+
+function reactivateViewed() {
+  if (viewingVersion.value) return reactivate(viewingVersion.value)
+}
+
 function schedulePoll(validationId: string) {
   if (pollTimer) clearTimeout(pollTimer)
   pollTimer = setTimeout(async () => {
@@ -468,8 +501,18 @@ onBeforeUnmount(() => {
         Read-only — only the project owner or a super admin can change the repository profile.
       </div>
       <div v-if="viewingHistorical" class="banner readonly">
-        Viewing version {{ viewingVersion?.version }} ({{ viewingVersion?.status }}) — read-only.
+        Viewing version {{ viewingVersion?.version }} ({{ viewingVersion?.status }}) — fields are read-only.
         <button type="button" class="btn small" @click="returnToEditor">Back to editor</button>
+        <button
+          v-if="canReactivate(viewingVersion)"
+          type="button"
+          class="btn small success"
+          :disabled="busy !== ''"
+          title="Requires a successful dry run for this exact version; the current active version is deactivated"
+          @click="reactivateViewed"
+        >
+          {{ reactivatingId === viewingVersion?.id ? 'Reactivating…' : `Reactivate version ${viewingVersion?.version}` }}
+        </button>
       </div>
       <div v-if="error" class="banner error">{{ error }}</div>
       <div v-if="success" class="banner success">{{ success }}</div>
@@ -641,7 +684,19 @@ onBeforeUnmount(() => {
                 <td>{{ row.version }}</td>
                 <td><span class="pill" :class="row.status">{{ row.status }}</span></td>
                 <td>{{ formatDate(row.created_at) }}</td>
-                <td><button class="btn small" type="button" @click="selectVersion(row)">View</button></td>
+                <td class="version-actions">
+                  <button class="btn small" type="button" @click="selectVersion(row)">View</button>
+                  <button
+                    v-if="canReactivate(row)"
+                    class="btn small success"
+                    type="button"
+                    :disabled="busy !== ''"
+                    title="Requires a successful dry run for this exact version; the current active version is deactivated"
+                    @click="reactivate(row)"
+                  >
+                    {{ reactivatingId === row.id ? 'Reactivating…' : 'Reactivate' }}
+                  </button>
+                </td>
               </tr>
               <tr v-if="!(current?.versions || []).length"><td colspan="4" class="muted">No versions yet.</td></tr>
             </tbody>
@@ -714,6 +769,7 @@ textarea { resize: vertical; }
 .pill.active, .pill.succeeded { background: #dcfce7; color: #166534; }
 .pill.draft, .pill.queued, .pill.running { background: #e0f2fe; color: #075985; }
 .pill.failed, .pill.inactive { background: #fee2e2; color: #991b1b; }
+.version-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .validation { border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; margin-bottom: 8px; }
 .validation-header { display: flex; gap: 8px; align-items: center; }
 .command { white-space: pre-wrap; background: #111827; color: #f9fafb; padding: 6px; border-radius: 6px; font-size: 11px; max-height: 120px; overflow: auto; }
