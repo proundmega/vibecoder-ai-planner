@@ -109,6 +109,8 @@ describe('HarnessRunService', () => {
         2,
         null,
         null,
+        'build',
+        null,
       ]);
     });
 
@@ -177,11 +179,13 @@ describe('HarnessRunService', () => {
       expect(client.query.mock.calls[2][0]).toContain('FROM repo_profiles');
       expect(client.query.mock.calls[2][0]).toContain("rp.status = 'active'");
       expect(client.query.mock.calls[2][0]).toContain('v.profile_hash = rp.profile_hash');
-      expect(client.query.mock.calls[3][1].slice(-5)).toEqual([
+      expect(client.query.mock.calls[3][1].slice(-7)).toEqual([
         '11111111-1111-4111-8111-111111111111',
         3,
         2,
         null,
+        null,
+        'build',
         null,
       ]);
     });
@@ -301,6 +305,104 @@ describe('HarnessRunService', () => {
         HarnessRunService.startRun({ ticketId: 42, runtimeId: 7, branch: 'b' })
       ).rejects.toThrow('Ticket is not assigned to this runtime');
       expect(DependencyService.assertReady).not.toHaveBeenCalled();
+    });
+
+    const FIX_ID = '22222222-2222-4222-8222-222222222222';
+    const FIX_BASE = 'a'.repeat(40);
+
+    function fixClient(ownership, claim, insert) {
+      const client = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      client.query
+        .mockResolvedValueOnce({}) // BEGIN
+        .mockResolvedValueOnce({ rows: ownership })
+        .mockResolvedValueOnce({ rows: claim })
+        .mockResolvedValueOnce(insert)
+        .mockResolvedValueOnce({}); // COMMIT
+      pool.connect.mockResolvedValueOnce(client);
+      return client;
+    }
+
+    function fixRun(overrides = {}) {
+      return {
+        ticketId: 42,
+        runtimeId: 7,
+        branch: 'feat/fix',
+        baseSha: FIX_BASE,
+        purpose: 'fix',
+        fixRequestId: FIX_ID,
+        ...overrides,
+      };
+    }
+
+    it('authorises a fix run from the matching claim and skips the PR guard', async () => {
+      const row = { id: RUN_ID, ticket_id: 42, runtime_id: 7, purpose: 'fix' };
+      const client = fixClient(
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        [{ id: FIX_ID, branch: 'feat/fix', reviewed_sha: FIX_BASE }],
+        { rows: [row] }
+      );
+
+      await expect(HarnessRunService.startRun(fixRun())).resolves.toEqual(row);
+
+      const [claimSql, claimParams] = client.query.mock.calls[2];
+      expect(claimSql).toContain('FROM ticket_fix_requests');
+      expect(claimSql).toContain("state IN ('claimed', 'fixing')");
+      expect(claimParams).toEqual([FIX_ID, 42, 7]);
+      const [insertSql, insertParams] = client.query.mock.calls[3];
+      expect(insertSql).toContain('purpose, fix_request_id');
+      expect(insertSql).not.toContain('existing.head_sha');
+      expect(insertParams.slice(-2)).toEqual(['fix', FIX_ID]);
+    });
+
+    it('refuses a fix run without a live claim', async () => {
+      const client = fixClient(
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        [],
+        { rows: [] }
+      );
+
+      await expect(HarnessRunService.startRun(fixRun()))
+        .rejects.toThrow('Fix request is missing, unclaimed or stale');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(client.query.mock.calls.some(
+        ([sql]) => String(sql).includes('INSERT INTO harness_runs'))).toBe(false);
+    });
+
+    it('refuses a fix run whose branch does not match the claim', async () => {
+      fixClient(
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        [{ id: FIX_ID, branch: 'feat/other', reviewed_sha: FIX_BASE }],
+        { rows: [{ id: RUN_ID }] }
+      );
+
+      await expect(HarnessRunService.startRun(fixRun()))
+        .rejects.toThrow('Fix request branch does not match the run branch');
+    });
+
+    it('refuses a fix run whose base SHA does not match the claim', async () => {
+      fixClient(
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        [{ id: FIX_ID, branch: 'feat/fix', reviewed_sha: 'b'.repeat(40) }],
+        { rows: [{ id: RUN_ID }] }
+      );
+
+      await expect(HarnessRunService.startRun(fixRun()))
+        .rejects.toThrow('Fix request reviewed SHA does not match the run base SHA');
+    });
+
+    it('validates purpose, fixRequestId and the fix base SHA before connecting', async () => {
+      await expect(HarnessRunService.startRun(fixRun({ purpose: 'review' })))
+        .rejects.toThrow("purpose must be 'build' or 'fix'");
+      await expect(HarnessRunService.startRun(fixRun({ fixRequestId: null })))
+        .rejects.toThrow('fixRequestId is required for a fix run');
+      await expect(HarnessRunService.startRun(fixRun({ baseSha: null })))
+        .rejects.toThrow('baseSha is required for a fix run');
+      await expect(HarnessRunService.startRun(fixRun({ purpose: 'build' })))
+        .rejects.toThrow('fixRequestId is only valid with purpose=fix');
+      expect(pool.connect).not.toHaveBeenCalled();
     });
   });
 

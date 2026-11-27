@@ -71,6 +71,33 @@ function actorOwnerId(actor) {
   return actor.runtimeId;
 }
 
+const RUN_PURPOSES = new Set(['build', 'fix']);
+
+function normalisePurpose(value) {
+  if (value == null) return 'build';
+  if (typeof value !== 'string') {
+    throw new ValidationError("purpose must be 'build' or 'fix'");
+  }
+  const purpose = value.trim().toLowerCase();
+  if (!RUN_PURPOSES.has(purpose)) {
+    throw new ValidationError("purpose must be 'build' or 'fix'");
+  }
+  return purpose;
+}
+
+function normaliseFixRequestId(value, purpose) {
+  if (purpose === 'build') {
+    if (value != null) {
+      throw new ValidationError('fixRequestId is only valid with purpose=fix');
+    }
+    return null;
+  }
+  if (value == null || value === '') {
+    throw new ValidationError('fixRequestId is required for a fix run');
+  }
+  return requiredUuid(value, 'fixRequestId');
+}
+
 function requiredUuid(value, field) {
   if (typeof value !== 'string' || !UUID_PATTERN.test(value)) {
     throw new ValidationError(`${field} must be a UUID`);
@@ -127,11 +154,18 @@ class HarnessRunService {
     attempt = 1,
     repoProfileId = null,
     repoProfileVersion = null,
+    purpose = 'build',
+    fixRequestId = null,
   } = {}) {
     const normalisedTicketId = positiveInteger(ticketId, 'ticketId');
     const actor = normaliseActor({ runtimeId });
     const normalisedBranch = requiredString(branch, 'branch');
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
+    const normalisedPurpose = normalisePurpose(purpose);
+    const normalisedFixRequestId = normaliseFixRequestId(fixRequestId, normalisedPurpose);
+    if (normalisedPurpose === 'fix' && (baseSha == null || String(baseSha).trim() === '')) {
+      throw new ValidationError('baseSha is required for a fix run');
+    }
     if ((repoProfileId == null) !== (repoProfileVersion == null)) {
       throw new ValidationError(
         'repoProfileId and repoProfileVersion must be provided together');
@@ -242,19 +276,44 @@ class HarnessRunService {
         }
       }
 
-      const result = await client.query(
-        `INSERT INTO harness_runs
-           (ticket_id, runtime_id, project_id, branch, base_sha,
-            workspace_path, session_id, provider, model, attempt,
-            repo_profile_id, repo_profile_version, budget_reserved_usd,
-            provider_base_url, provider_region)
-         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9,
-                $10, $11, $12, $13, $14
-         FROM tickets t
-         WHERE t.id = $1
-           AND t.status = 'in_progress'
-           AND t.assigned_runtime_id = $2
-           AND NULLIF(BTRIM(t.pr_url), '') IS NULL
+      if (normalisedPurpose === 'fix') {
+        // A fix run is authorised by the claimed fix request, not by the
+        // build publish-evidence guard: the ticket already has a reviewed PR.
+        const owned = ownedTicket
+          && ownedTicket.status === 'in_progress'
+          && String(ownedTicket.assigned_runtime_id) === String(actor.runtimeId);
+        if (!owned) {
+          throw new ForbiddenError(
+            'Ticket is not assigned to this runtime or is not in progress');
+        }
+        const claim = await client.query(
+          `SELECT id, branch, reviewed_sha
+             FROM ticket_fix_requests
+            WHERE id = $1
+              AND ticket_id = $2
+              AND claimed_by = $3
+              AND state IN ('claimed', 'fixing')
+            FOR UPDATE`,
+          [normalisedFixRequestId, normalisedTicketId, actor.runtimeId]
+        );
+        const request = claim.rows[0];
+        if (!request) {
+          throw new ForbiddenError(
+            'Fix request is missing, unclaimed or stale for this runtime');
+        }
+        if (String(request.branch) !== normalisedBranch) {
+          throw new ConflictError('Fix request branch does not match the run branch');
+        }
+        if (String(request.reviewed_sha).toLowerCase()
+            !== String(baseSha).trim().toLowerCase()) {
+          throw new ConflictError(
+            'Fix request reviewed SHA does not match the run base SHA');
+        }
+      }
+
+      const publishEvidenceGuard = normalisedPurpose === 'fix'
+        ? ''
+        : `AND NULLIF(BTRIM(t.pr_url), '') IS NULL
            AND NOT EXISTS (
              SELECT 1 FROM harness_runs existing
              WHERE existing.ticket_id = t.id
@@ -262,7 +321,21 @@ class HarnessRunService {
                  NULLIF(BTRIM(existing.pr_url), '') IS NOT NULL
                  OR NULLIF(BTRIM(existing.head_sha), '') IS NOT NULL
                )
-           )
+           )`;
+
+      const result = await client.query(
+        `INSERT INTO harness_runs
+           (ticket_id, runtime_id, project_id, branch, base_sha,
+            workspace_path, session_id, provider, model, attempt,
+            repo_profile_id, repo_profile_version, budget_reserved_usd,
+            provider_base_url, provider_region, purpose, fix_request_id)
+         SELECT $1, $2, t.project_id, $3, $4, $5, $6, $7, $8, $9,
+                $10, $11, $12, $13, $14, $15, $16
+         FROM tickets t
+         WHERE t.id = $1
+           AND t.status = 'in_progress'
+           AND t.assigned_runtime_id = $2
+           ${publishEvidenceGuard}
          RETURNING *`,
         [
           normalisedTicketId,
@@ -279,6 +352,8 @@ class HarnessRunService {
           reservedCostUsd,
           privacyPolicy?.resolvedProviderBaseUrl ?? providerBaseUrl ?? null,
           privacyPolicy?.resolvedProviderRegion ?? providerRegion ?? null,
+          normalisedPurpose,
+          normalisedFixRequestId,
         ]
       );
 
@@ -305,6 +380,10 @@ class HarnessRunService {
         const ticket = context.rows[0];
         if (!ticket) {
           throw new ForbiddenError('Ticket is not assigned to this runtime');
+        }
+        if (normalisedPurpose === 'fix') {
+          throw new ConflictError(
+            'Fix run could not be started; the ticket or fix claim changed');
         }
         if (ticket.pr_url || ticket.has_publish_evidence) {
           throw new ConflictError(
