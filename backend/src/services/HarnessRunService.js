@@ -163,7 +163,8 @@ class HarnessRunService {
     const normalisedAttempt = positiveInteger(attempt, 'attempt');
     const normalisedPurpose = normalisePurpose(purpose);
     const normalisedFixRequestId = normaliseFixRequestId(fixRequestId, normalisedPurpose);
-    if (normalisedPurpose === 'fix' && (baseSha == null || String(baseSha).trim() === '')) {
+    const normalisedBaseSha = baseSha == null ? null : String(baseSha).trim();
+    if (normalisedPurpose === 'fix' && !normalisedBaseSha) {
       throw new ValidationError('baseSha is required for a fix run');
     }
     if ((repoProfileId == null) !== (repoProfileVersion == null)) {
@@ -186,6 +187,41 @@ class HarnessRunService {
     try {
       await client.query('BEGIN');
 
+      // Lock order: fix request before ticket. FixQueueService.claim locks the
+      // request with FOR UPDATE and then updates the ticket via markFixing, so
+      // taking the ticket first here would deadlock under the reclaim race.
+      // Holding the request row also freezes the claim for the insert below.
+      let fixClaim = null;
+      if (normalisedPurpose === 'fix') {
+        const claim = await client.query(
+          `SELECT id, branch, reviewed_sha, lease_expires_at
+             FROM ticket_fix_requests
+            WHERE id = $1
+              AND ticket_id = $2
+              AND claimed_by = $3
+              AND state IN ('claimed', 'fixing')
+              AND lease_expires_at > NOW()
+            FOR UPDATE`,
+          [normalisedFixRequestId, normalisedTicketId, actor.runtimeId]
+        );
+        fixClaim = claim.rows[0];
+        if (!fixClaim) {
+          throw new ForbiddenError(
+            'Fix request is missing, unclaimed or stale for this runtime');
+        }
+        if (!fixClaim.lease_expires_at
+            || new Date(fixClaim.lease_expires_at).getTime() <= Date.now()) {
+          throw new ForbiddenError('Fix request lease has expired; reclaim it');
+        }
+        if (String(fixClaim.branch) !== normalisedBranch) {
+          throw new ConflictError('Fix request branch does not match the run branch');
+        }
+        if (String(fixClaim.reviewed_sha).toLowerCase() !== normalisedBaseSha.toLowerCase()) {
+          throw new ConflictError(
+            'Fix request reviewed SHA does not match the run base SHA');
+        }
+      }
+
       const ownership = await client.query(
         `SELECT status, assigned_runtime_id, project_id
          FROM tickets
@@ -202,6 +238,8 @@ class HarnessRunService {
         && ownedTicket.status === 'in_progress'
         && String(ownedTicket.assigned_runtime_id) === String(actor.runtimeId)
       ) {
+        // Fix runs pass this gate too: a dependency reopened during a fix must
+        // stop the run rather than publish on a stale basis.
         await DependencyService.assertReady(normalisedTicketId, {
           client,
           lock: true,
@@ -276,41 +314,10 @@ class HarnessRunService {
         }
       }
 
-      if (normalisedPurpose === 'fix') {
-        // A fix run is authorised by the claimed fix request, not by the
-        // build publish-evidence guard: the ticket already has a reviewed PR.
-        const owned = ownedTicket
-          && ownedTicket.status === 'in_progress'
-          && String(ownedTicket.assigned_runtime_id) === String(actor.runtimeId);
-        if (!owned) {
-          throw new ForbiddenError(
-            'Ticket is not assigned to this runtime or is not in progress');
-        }
-        const claim = await client.query(
-          `SELECT id, branch, reviewed_sha
-             FROM ticket_fix_requests
-            WHERE id = $1
-              AND ticket_id = $2
-              AND claimed_by = $3
-              AND state IN ('claimed', 'fixing')
-            FOR UPDATE`,
-          [normalisedFixRequestId, normalisedTicketId, actor.runtimeId]
-        );
-        const request = claim.rows[0];
-        if (!request) {
-          throw new ForbiddenError(
-            'Fix request is missing, unclaimed or stale for this runtime');
-        }
-        if (String(request.branch) !== normalisedBranch) {
-          throw new ConflictError('Fix request branch does not match the run branch');
-        }
-        if (String(request.reviewed_sha).toLowerCase()
-            !== String(baseSha).trim().toLowerCase()) {
-          throw new ConflictError(
-            'Fix request reviewed SHA does not match the run base SHA');
-        }
-      }
-
+      // A fix run is authorised by the claimed fix request above, not by the
+      // build publish-evidence guard: the ticket already has a reviewed PR.
+      // The current remote head is revalidated by the publish path, so a claim
+      // never authorises a non-fast-forward write on its own.
       const publishEvidenceGuard = normalisedPurpose === 'fix'
         ? ''
         : `AND NULLIF(BTRIM(t.pr_url), '') IS NULL
@@ -341,7 +348,7 @@ class HarnessRunService {
           normalisedTicketId,
           actor.runtimeId,
           normalisedBranch,
-          baseSha,
+          normalisedBaseSha,
           workspacePath,
           sessionId,
           provider,
@@ -415,6 +422,10 @@ class HarnessRunService {
       // database backstop for the lease.
       if (error.code === '23505') {
         throw new ConflictError('Ticket already has an active harness run');
+      }
+      // A deadlock abort is retryable; surface it as a conflict instead of 500.
+      if (error.code === '40P01') {
+        throw new ConflictError('Concurrent run start or fix claim; retry');
       }
       throw error;
     } finally {

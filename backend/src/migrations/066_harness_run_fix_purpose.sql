@@ -6,8 +6,11 @@
 ALTER TABLE harness_runs
   ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'build'
     CHECK (purpose IN ('build', 'fix')),
+  -- CASCADE matches harness_runs.ticket_id: a fix run has no meaning without
+  -- its request, and SET NULL would violate the check below (and block the
+  -- ticket_review_attempts -> ticket_fix_requests cascade).
   ADD COLUMN IF NOT EXISTS fix_request_id UUID
-    REFERENCES ticket_fix_requests(id) ON DELETE SET NULL;
+    REFERENCES ticket_fix_requests(id) ON DELETE CASCADE;
 
 DO $$
 BEGIN

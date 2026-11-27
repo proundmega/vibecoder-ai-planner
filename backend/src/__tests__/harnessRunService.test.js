@@ -94,6 +94,7 @@ describe('HarnessRunService', () => {
       expect(sql).toContain('runtime_id');
       expect(sql).not.toContain('agent_id');
       expect(sql).toContain('t.assigned_runtime_id = $2');
+      expect(sql).toContain('existing.head_sha');
       expect(params).toEqual([
         42,
         7,
@@ -315,14 +316,26 @@ describe('HarnessRunService', () => {
         query: jest.fn(),
         release: jest.fn(),
       };
+      // The claim is locked before the ticket to match FixQueueService.claim's
+      // order (request -> ticket), avoiding a lock-order deadlock.
       client.query
         .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({ rows: ownership })
         .mockResolvedValueOnce({ rows: claim })
+        .mockResolvedValueOnce({ rows: ownership })
         .mockResolvedValueOnce(insert)
         .mockResolvedValueOnce({}); // COMMIT
       pool.connect.mockResolvedValueOnce(client);
       return client;
+    }
+
+    function liveClaim(overrides = {}) {
+      return {
+        id: '22222222-2222-4222-8222-222222222222',
+        branch: 'feat/fix',
+        reviewed_sha: 'a'.repeat(40),
+        lease_expires_at: new Date(Date.now() + 60_000).toISOString(),
+        ...overrides,
+      };
     }
 
     function fixRun(overrides = {}) {
@@ -341,16 +354,19 @@ describe('HarnessRunService', () => {
       const row = { id: RUN_ID, ticket_id: 42, runtime_id: 7, purpose: 'fix' };
       const client = fixClient(
         [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
-        [{ id: FIX_ID, branch: 'feat/fix', reviewed_sha: FIX_BASE }],
+        [liveClaim()],
         { rows: [row] }
       );
 
       await expect(HarnessRunService.startRun(fixRun())).resolves.toEqual(row);
 
-      const [claimSql, claimParams] = client.query.mock.calls[2];
+      const [claimSql, claimParams] = client.query.mock.calls[1];
       expect(claimSql).toContain('FROM ticket_fix_requests');
       expect(claimSql).toContain("state IN ('claimed', 'fixing')");
+      expect(claimSql).toContain('lease_expires_at > NOW()');
       expect(claimParams).toEqual([FIX_ID, 42, 7]);
+      // Lock order must match FixQueueService.claim: request first, ticket last.
+      expect(client.query.mock.calls[2][0]).toContain('FROM tickets');
       const [insertSql, insertParams] = client.query.mock.calls[3];
       expect(insertSql).toContain('purpose, fix_request_id');
       expect(insertSql).not.toContain('existing.head_sha');
@@ -371,10 +387,24 @@ describe('HarnessRunService', () => {
         ([sql]) => String(sql).includes('INSERT INTO harness_runs'))).toBe(false);
     });
 
+    it('refuses a fix run with an expired lease from the same runtime', async () => {
+      const client = fixClient(
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        [liveClaim({ lease_expires_at: new Date(Date.now() - 1_000).toISOString() })],
+        { rows: [] }
+      );
+
+      await expect(HarnessRunService.startRun(fixRun()))
+        .rejects.toThrow('Fix request lease has expired; reclaim it');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+      expect(client.query.mock.calls.some(
+        ([sql]) => String(sql).includes('INSERT INTO harness_runs'))).toBe(false);
+    });
+
     it('refuses a fix run whose branch does not match the claim', async () => {
       fixClient(
         [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
-        [{ id: FIX_ID, branch: 'feat/other', reviewed_sha: FIX_BASE }],
+        [liveClaim({ branch: 'feat/other' })],
         { rows: [{ id: RUN_ID }] }
       );
 
@@ -385,12 +415,45 @@ describe('HarnessRunService', () => {
     it('refuses a fix run whose base SHA does not match the claim', async () => {
       fixClient(
         [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
-        [{ id: FIX_ID, branch: 'feat/fix', reviewed_sha: 'b'.repeat(40) }],
+        [liveClaim({ reviewed_sha: 'b'.repeat(40) })],
         { rows: [{ id: RUN_ID }] }
       );
 
       await expect(HarnessRunService.startRun(fixRun()))
         .rejects.toThrow('Fix request reviewed SHA does not match the run base SHA');
+    });
+
+    it('trims the base SHA before storing and comparing it', async () => {
+      const client = fixClient(
+        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
+        [liveClaim()],
+        { rows: [{ id: RUN_ID }] }
+      );
+
+      await HarnessRunService.startRun(
+        fixRun({ branch: ' feat/fix ', baseSha: ` ${FIX_BASE} ` }));
+
+      expect(client.query.mock.calls[1][1]).toEqual([FIX_ID, 42, 7]);
+      const insertParams = client.query.mock.calls[3][1];
+      expect(insertParams[2]).toBe('feat/fix');
+      expect(insertParams[3]).toBe(FIX_BASE);
+    });
+
+    it('maps a deadlock abort to a retryable conflict', async () => {
+      const client = {
+        query: jest.fn(),
+        release: jest.fn(),
+      };
+      const deadlock = Object.assign(new Error('deadlock detected'), { code: '40P01' });
+      client.query
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(deadlock)
+        .mockResolvedValueOnce({});
+      pool.connect.mockResolvedValueOnce(client);
+
+      await expect(HarnessRunService.startRun(fixRun()))
+        .rejects.toThrow('Concurrent run start or fix claim; retry');
+      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     });
 
     it('validates purpose, fixRequestId and the fix base SHA before connecting', async () => {
