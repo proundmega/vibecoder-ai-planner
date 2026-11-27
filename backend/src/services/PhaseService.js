@@ -1,6 +1,8 @@
 const { pool } = require('../db');
 const DependencyService = require('./DependencyService');
 const TicketReadinessService = require('./TicketReadinessService');
+const FixDispatchService = require('./FixDispatchService');
+const FixRequestService = require('./FixRequestService');
 const { NotFoundError, ValidationError, ReadinessError } = require('../errors/HttpError');
 
 class PhaseService {
@@ -35,6 +37,14 @@ class PhaseService {
   }
 
   async transition(ticketId, toPhase, actorType = 'system', actorId = null, metadata = null) {
+    // fg-32c2b: a human `review -> in_progress` with feedback is a manual fix
+    // dispatch. The branch/provider preflight runs before the transaction so
+    // no lock is held across provider latency; `off` keeps the old behaviour.
+    const manualFix = await FixDispatchService.prepareManual(ticketId, {
+      toPhase,
+      actorType,
+      metadata,
+    });
     const client = await pool.connect();
     let committed = false;
     try {
@@ -85,22 +95,37 @@ class PhaseService {
         });
       }
 
-      await client.query(
-        'UPDATE tickets SET phase = $1, status = $2, updated_at = NOW() WHERE id = $3',
-        [toPhase, newStatus, ticketId]
-      );
+      let fixRequest = null;
+      if (manualFix && manualFix.branchResolution) {
+        // The fix service owns the review -> in_progress transition, its phase
+        // history row and the request insert, in this transaction.
+        const result = await FixRequestService.createOrEnsureWithClient(
+          client,
+          ticketId,
+          { feedback: manualFix.feedback },
+          { db: client, actorId, branchResolution: manualFix.branchResolution }
+        );
+        fixRequest = result.request;
+      } else {
+        await client.query(
+          'UPDATE tickets SET phase = $1, status = $2, updated_at = NOW() WHERE id = $3',
+          [toPhase, newStatus, ticketId]
+        );
 
-      await client.query(
-        `INSERT INTO ticket_phases (ticket_id, from_phase, to_phase, actor_type, actor_id, metadata, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [ticketId, currentPhase, toPhase, actorType, actorId, metadata ? JSON.stringify(metadata) : null]
-      );
+        await client.query(
+          `INSERT INTO ticket_phases (ticket_id, from_phase, to_phase, actor_type, actor_id, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+          [ticketId, currentPhase, toPhase, actorType, actorId, metadata ? JSON.stringify(metadata) : null]
+        );
+      }
 
       await client.query('COMMIT');
       committed = true;
       if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
 
-      return { ticketId, fromPhase: currentPhase, toPhase, status: newStatus };
+      const result = { ticketId, fromPhase: currentPhase, toPhase, status: newStatus };
+      if (fixRequest) result.fixRequest = fixRequest;
+      return result;
     } catch (error) {
       if (!committed) await client.query('ROLLBACK');
       if (error instanceof ReadinessError) await TicketReadinessService.emitBlocked(error.result);

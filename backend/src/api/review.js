@@ -7,6 +7,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validatePathParams } = require('../middleware/validate');
 const { pathParams } = require('../validators/pathParams');
 const ReviewService = require('../services/ReviewService');
+const FixDispatchService = require('../services/FixDispatchService');
 const FixRequestService = require('../services/FixRequestService');
 const Ticket = require('../models/ticket');
 const TicketService = require('../services/TicketService');
@@ -95,6 +96,11 @@ router.post(
           },
         });
       }
+      // fg-32c2b: the project/deployment fix-loop mode decides who may
+      // dispatch a fix. Reviewer agents need `auto`; humans need manual/auto.
+      const source = req.agent ? 'reviewer' : 'human';
+      await FixDispatchService.assertCanCreate(req.params.ticketId, source);
+
       const result = await FixRequestService.createOrEnsure(
         req.params.ticketId,
         {
