@@ -89,6 +89,57 @@ function profileHash(profile) {
     .digest('hex');
 }
 
+function actorIdOf(user) {
+  return user?.userId || user?.id || null;
+}
+
+function changedProfileFields(before, after) {
+  const keys = new Set([
+    ...Object.keys(before || {}),
+    ...Object.keys(after || {}),
+  ]);
+  return [...keys].filter((key) => (
+    JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key])
+  )).sort();
+}
+
+/**
+ * Append a profile lifecycle event. Audit writes are best effort: a transient
+ * event-log failure must not turn a successful profile change into an error.
+ */
+async function recordEvent({
+  projectId,
+  profileId = null,
+  version = null,
+  actorId = null,
+  action,
+  fromStatus = null,
+  toStatus = null,
+  metadata = {},
+}) {
+  try {
+    await pool.query(
+      `INSERT INTO repo_profile_events
+         (project_id, profile_id, version, actor_id, action, from_status, to_status, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+      [
+        projectId,
+        profileId,
+        version,
+        actorId,
+        action,
+        fromStatus,
+        toStatus,
+        JSON.stringify(metadata),
+      ]
+    );
+  } catch (error) {
+    logger.warn(
+      `Could not record repo profile event ${action} for project ${projectId}: ${error.message}`
+    );
+  }
+}
+
 function format(row, options = {}) {
   return {
     id: row.id,
@@ -472,6 +523,30 @@ class RepoProfileService {
     return result.rows.map((row) => format(row, { redact: !raw }));
   }
 
+  async listEvents(projectId, user, { limit = 200, offset = 0 } = {}) {
+    // Events expose actor IDs and changed field names, so keep them visible to
+    // the project owner/super admin rather than every project member.
+    await assertCanWrite(projectId, user);
+    const safeLimit = Number(limit);
+    const safeOffset = Number(offset);
+    if (!Number.isInteger(safeLimit) || safeLimit < 1 || safeLimit > 200) {
+      throw new ValidationError('limit must be an integer between 1 and 200');
+    }
+    if (!Number.isInteger(safeOffset) || safeOffset < 0) {
+      throw new ValidationError('offset must be a non-negative integer');
+    }
+    const result = await pool.query(
+      `SELECT id, project_id, profile_id, version, actor_id, action,
+              from_status, to_status, metadata, created_at
+       FROM repo_profile_events
+       WHERE project_id = $1
+       ORDER BY created_at DESC, id DESC
+       LIMIT $2 OFFSET $3`,
+      [projectId, safeLimit, safeOffset]
+    );
+    return result.rows;
+  }
+
   async getCurrent(projectId, user) {
     await assertCanRead(projectId, user);
     const raw = await canWrite(projectId, user);
@@ -529,10 +604,11 @@ class RepoProfileService {
       // The project lock serializes concurrent creates, so retiring the
       // current draft and inserting the next one cannot race the partial
       // unique index on (project_id) WHERE status = 'draft'.
-      await client.query(
+      const retired = await client.query(
         `UPDATE repo_profiles
          SET status = 'inactive', updated_at = NOW()
-         WHERE project_id = $1 AND status = 'draft'`,
+         WHERE project_id = $1 AND status = 'draft'
+         RETURNING id, version`,
         [projectId]
       );
       const next = await client.query(
@@ -553,7 +629,29 @@ class RepoProfileService {
         ]
       );
       await client.query('COMMIT');
-      return format(inserted.rows[0], { redact: false });
+      const created = format(inserted.rows[0], { redact: false });
+      const actorId = actorIdOf(user);
+      await recordEvent({
+        projectId,
+        profileId: created.id,
+        version: created.version,
+        actorId,
+        action: 'created',
+        toStatus: 'draft',
+      });
+      for (const row of retired?.rows || []) {
+        await recordEvent({
+          projectId,
+          profileId: row.id,
+          version: row.version,
+          actorId,
+          action: 'retired',
+          fromStatus: 'draft',
+          toStatus: 'inactive',
+          metadata: { superseded_by_version: created.version },
+        });
+      }
+      return created;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -595,7 +693,20 @@ class RepoProfileService {
     if (updated.rows.length === 0) {
       throw new ValidationError('Only draft profiles can be edited; create a new version');
     }
-    return format(updated.rows[0], { redact: false });
+    const formatted = format(updated.rows[0], { redact: false });
+    await recordEvent({
+      projectId,
+      profileId,
+      version: formatted.version,
+      actorId: actorIdOf(user),
+      action: 'updated',
+      fromStatus: current.rows[0].status,
+      toStatus: updated.rows[0].status,
+      metadata: {
+        changed_fields: changedProfileFields(current.rows[0].profile, result.value),
+      },
+    });
+    return formatted;
   }
 
   async activate(projectId, profileId, user) {
@@ -640,10 +751,11 @@ class RepoProfileService {
         throw new ValidationError(
           'A successful dry run is required for this exact profile content');
       }
-      await client.query(
+      const previous = await client.query(
         `UPDATE repo_profiles
          SET status = 'inactive', updated_at = NOW()
-         WHERE project_id = $1 AND status = 'active'`,
+         WHERE project_id = $1 AND status = 'active'
+         RETURNING id`,
         [projectId]
       );
       const activated = await client.query(
@@ -654,7 +766,20 @@ class RepoProfileService {
         [profileId, projectId]
       );
       await client.query('COMMIT');
-      return format(activated.rows[0], { redact: false });
+      const formatted = format(activated.rows[0], { redact: false });
+      await recordEvent({
+        projectId,
+        profileId,
+        version: formatted.version,
+        actorId: actorIdOf(user),
+        action: target.rows[0].status === 'inactive' ? 'reactivated' : 'activated',
+        fromStatus: target.rows[0].status,
+        toStatus: 'active',
+        metadata: {
+          previous_active_id: previous?.rows?.[0]?.id || null,
+        },
+      });
+      return formatted;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

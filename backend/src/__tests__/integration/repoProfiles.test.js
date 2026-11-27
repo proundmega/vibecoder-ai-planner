@@ -3,6 +3,7 @@ const path = require('path');
 const { Pool } = require('pg');
 const RepoProfileService = require('../../services/RepoProfileService');
 const RepoProfileValidationService = require('../../services/RepoProfileValidationService');
+const { SQL_FILES } = require('../../migrations/apply');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const suffix = `${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
@@ -114,6 +115,13 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
       userId: ownerId, role: 'project_admin',
     });
   }
+
+  test('registers migration 067 after 066', () => {
+    const names = SQL_FILES.map((file) => path.basename(file));
+    expect(names.indexOf('067_repo_profile_events.sql')).toBeGreaterThan(
+      names.indexOf('066_harness_run_fix_purpose.sql')
+    );
+  });
 
   test('migration 050 supports versioned profiles and dry-run evidence', async () => {
     const draft = await RepoProfileService.create(projectId, profile(), {
@@ -316,6 +324,53 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     expect(current.latest.status).toBe('draft');
 
     await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+  });
+
+  test('records profile lifecycle events', async () => {
+    const user = { userId: ownerId, role: 'project_admin' };
+    await pool.query('DELETE FROM repo_profile_events WHERE project_id = $1', [projectId]);
+    try {
+      const v1 = await RepoProfileService.create(projectId, profile(), user);
+      await validateAndActivate(v1.id);
+      const v2 = await RepoProfileService.create(
+        projectId, profile({ verify: ['npm run lint'] }), user
+      );
+      await validateAndActivate(v2.id);
+      await RepoProfileService.activate(projectId, v1.id, user);
+      await RepoProfileService.create(
+        projectId, profile({ verify: ['npm run build'] }), user
+      );
+      const v4 = await RepoProfileService.create(
+        projectId, profile({ verify: ['npm run typecheck'] }), user
+      );
+
+      const events = await pool.query(
+        `SELECT action, profile_id, version, from_status, to_status, actor_id, metadata
+         FROM repo_profile_events
+         WHERE project_id = $1 ORDER BY id`,
+        [projectId]
+      );
+      expect(events.rows.map((row) => row.action)).toEqual([
+        'created', 'activated',
+        'created', 'activated',
+        'reactivated',
+        'created', 'created', 'retired',
+      ]);
+      expect(events.rows.every((row) => row.actor_id === ownerId)).toBe(true);
+      expect(events.rows.find((row) => row.action === 'reactivated').metadata)
+        .toEqual({ previous_active_id: v2.id });
+      expect(events.rows.find((row) => row.action === 'retired').metadata)
+        .toEqual({ superseded_by_version: v4.version });
+
+      const listed = await RepoProfileService.listEvents(
+        projectId, user, { limit: 3 }
+      );
+      expect(listed).toHaveLength(3);
+      expect(listed[0].action).toBe('retired');
+    } finally {
+      await pool.query('DELETE FROM repo_profile_events WHERE project_id = $1', [projectId]);
+      await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
+    }
   });
 
   test('activation requires a successful dry run for the exact content', async () => {
