@@ -330,12 +330,38 @@ describe('Generic Git routes', () => {
       });
   });
 
-  it('rejects a review request with an unsafe head branch', async () => {
+  it.each([
+    'vibecode/../main',
+    '.hidden',
+    'release/x.lock',
+    'feat/a b',
+    'feat/x.',
+    'feat/x~1',
+  ])('rejects an unsafe review branch %s', async (headBranch) => {
     const res = await auth(request(app).post('/api/v1/git/42/review'))
-      .send({ headBranch: 'vibecode/../main' });
+      .send({ headBranch });
 
     expect(res.statusCode).toBe(400);
     expect(GitProjectService.createReviewRequest).not.toHaveBeenCalled();
+  });
+
+  it('accepts git-valid characters in the review branch', async () => {
+    GitProjectService.createReviewRequest.mockResolvedValue({
+      url: 'https://example.test/pull/8',
+      ticketId: '42',
+    });
+
+    const res = await auth(request(app).post('/api/v1/git/42/review'))
+      .send({ headBranch: 'release/1.0+hotfix%2', baseBranch: 'main' });
+
+    expect(res.statusCode).toBe(201);
+    expect(GitProjectService.createReviewRequest).toHaveBeenCalledWith(
+      1, '42', undefined,
+      {
+        provider: null,
+        headBranch: 'release/1.0+hotfix%2',
+        baseBranch: 'main',
+      });
   });
 
   it('rejects disconnect without the manage-members permission', async () => {

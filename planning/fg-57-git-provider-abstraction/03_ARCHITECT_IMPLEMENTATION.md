@@ -203,7 +203,7 @@ The test skips unless all three `FORGEJO_*` variables are set. Set
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| 2026-11-27 | `e6bcd0d` (PR #256) | Backend 171 suites / 2097 tests; agent 1134 tests / 0 failures / 10 skipped; contract 39 | `fg-57f2b` (D19): the harness opens Forgejo/Gitea reviews through node-authenticated `POST /git/:ticketId/review` with the pushed head/base; the backend records the branch and reuses an existing review. Local/SSH stays branch-only. |
+| 2026-11-27 | `e6bcd0d` (PR #256) | Backend 171 suites / 2103 tests; agent 1156 tests / 0 failures / 10 skipped; contract 39 | `fg-57f2b` (D19): the harness opens Forgejo/Gitea reviews through node-authenticated `POST /git/:ticketId/review` with the pushed head/base; the backend records the branch and reuses an existing review. Local/SSH stays branch-only. |
 
 | Field | Value |
 |---|---|

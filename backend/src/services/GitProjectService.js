@@ -250,7 +250,13 @@ class GitProjectService {
     if (!branchName) {
       throw new ValidationError('No branch created for this ticket yet');
     }
-    if (baseBranch && baseBranch === branchName) {
+    // Compare against the base the provider would actually use: an omitted
+    // baseBranch falls back to the connected repository's default branch.
+    const effectiveBase = baseBranch
+      || connected.defaultBranch
+      || connected.default_branch
+      || 'main';
+    if (effectiveBase === branchName) {
       throw new ValidationError('The review head and base branch must differ');
     }
 

@@ -630,15 +630,16 @@ describe('GitProjectService', () => {
       expect(result.url).toBe('https://example.test/pull/2');
     });
 
-    it('rejects a review whose head and base are the same', async () => {
+    it('rejects a head that matches the repository default base', async () => {
       await expect(GitProjectService.createReviewRequest(1, 42, null, {
         repo: {
           provider: 'github',
           repoUrl: 'owner/repo',
           accessTokenEncrypted: 'enc:pat',
+          defaultBranch: 'main',
         },
+        // No baseBranch: the provider would fall back to the repo default.
         headBranch: 'main',
-        baseBranch: 'main',
       })).rejects.toThrow('head and base branch must differ');
     });
 

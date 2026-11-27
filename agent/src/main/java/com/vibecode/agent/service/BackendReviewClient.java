@@ -7,6 +7,10 @@ import java.util.Map;
  * Creates a review request through the backend so the agent never needs the
  * self-hosted provider's API base URL or credential. The backend owns the
  * connected provider, the branch/base resolution and review idempotency.
+ *
+ * The backend titles the review from the ticket (`[Ticket #id] <title>`) and
+ * ignores the harness's conventional-commit publish title; the direct GitHub
+ * path still uses that publish title.
  */
 public final class BackendReviewClient implements GitService.ReviewClient {
 

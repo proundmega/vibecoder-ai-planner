@@ -31,21 +31,31 @@ const connectRepoSchema = Joi.object({
 });
 
 /**
- * Git ref names come from the agent, so reject the characters and sequences
- * git refuses before they reach a provider URL or request body.
+ * Conservative `git check-ref-format --branch` subset for agent-supplied
+ * branch names: reject what git refuses (control/space, ~^:?*[\, `..`, `@{`,
+ * empty components, `.`-prefixed or `.lock` components, trailing `.`) while
+ * allowing other printable characters such as +, % and @ that git accepts.
+ * A leading `-` is also rejected so the value cannot be parsed as an option.
  */
+const GIT_REF_FORBIDDEN = /[\s~^:?*\[\\\x00-\x1f\x7f]/;
+
+function isValidGitRef(value) {
+  if (value === '@') return false;
+  if (GIT_REF_FORBIDDEN.test(value)) return false;
+  if (value.includes('..') || value.includes('@{') || value.includes('//')) return false;
+  if (value.startsWith('/') || value.endsWith('/') || value.endsWith('.')) return false;
+  if (value.startsWith('-')) return false;
+  return value.split('/')
+    .every(part => part && !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
 const branchName = Joi.string()
   .min(1)
   .max(200)
-  .pattern(/^[A-Za-z0-9._/-]+$/)
-  .custom((value, helpers) => {
-    const invalid = value.startsWith('/') || value.endsWith('/')
-      || value.endsWith('.') || value.startsWith('-')
-      || value.includes('..') || value.includes('//') || value.includes('@{');
-    return invalid ? helpers.error('any.invalid') : value;
-  })
+  .custom((value, helpers) => (isValidGitRef(value)
+    ? value
+    : helpers.error('any.invalid')))
   .messages({
-    'string.pattern.base': 'must be a valid git branch name',
     'any.invalid': 'must be a valid git branch name',
   });
 
