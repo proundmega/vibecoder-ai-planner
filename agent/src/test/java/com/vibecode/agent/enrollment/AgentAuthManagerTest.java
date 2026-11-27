@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Map;
@@ -20,10 +21,29 @@ class AgentAuthManagerTest {
     @TempDir
     Path tempDir;
 
+    private static String isolatedCloneDir() {
+        try {
+            Path dir = Files.createTempDirectory("vibecode-agent-auth-");
+            dir.toFile().deleteOnExit();
+            return dir.toString();
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot create an isolated clone dir", e);
+        }
+    }
+
     static class EnrollConfig extends AgentConfig {
+        /**
+         * CI may export REPO_OWNER/REPO_NAME, which makes the superclass
+         * validate the clone directory. Keep that probe off the shared
+         * default so this test never depends on /tmp/repos.
+         */
+        private static final String CLONE_DIR = isolatedCloneDir();
+
         String token;
         String url;
         String file;
+
+        @Override public String getRepoCloneDir() { return CLONE_DIR; }
 
         @Override public boolean usesEnrollment() { return true; }
         @Override public String getEnrollmentToken() { return token; }
