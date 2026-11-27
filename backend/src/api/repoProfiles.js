@@ -183,6 +183,8 @@ router.put('/:projectId/repo-profile/:profileId', verifyToken, async (req, res, 
  *     responses:
  *       200:
  *         description: Activated profile
+ *       400:
+ *         description: Retired draft, missing successful dry run or invalid profile
  */
 router.post('/:projectId/repo-profile/:profileId/activate', verifyToken, async (req, res, next) => {
   try {
@@ -215,6 +217,8 @@ router.post('/:projectId/repo-profile/:profileId/activate', verifyToken, async (
  *     responses:
  *       201:
  *         description: Validation queued
+ *       400:
+ *         description: Retired draft or invalid profile
  *       409:
  *         description: A validation is already queued/running
  */

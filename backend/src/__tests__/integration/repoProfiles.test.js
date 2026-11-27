@@ -213,7 +213,7 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
     })).rejects.toThrow(/Only draft or previously active profiles can be activated/);
     await expect(RepoProfileValidationService.request(projectId, first.id, {
       userId: ownerId, role: 'project_admin',
-    })).rejects.toThrow(/Retired drafts cannot be validated/);
+    })).rejects.toThrow(/Retired drafts cannot queue a new validation/);
     const index = await pool.query(
       "SELECT 1 FROM pg_indexes WHERE indexname = 'uq_repo_profiles_draft'"
     );
@@ -230,10 +230,14 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
 
   test('migration 065 retires older drafts and keeps the newest', async () => {
     await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
-    await pool.query('DROP INDEX IF EXISTS uq_repo_profiles_draft');
+    const client = await pool.connect();
     try {
+      // Keep the temporary index drop and backfill inside one transaction so
+      // the test never leaves the shared suite without the unique index.
+      await client.query('BEGIN');
+      await client.query('DROP INDEX IF EXISTS uq_repo_profiles_draft');
       for (const version of [1, 2, 3]) {
-        await pool.query(
+        await client.query(
           `INSERT INTO repo_profiles
              (project_id, version, profile, profile_hash, status)
            VALUES ($1, $2, $3::jsonb, $4, 'draft')`,
@@ -250,9 +254,9 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
         path.join(__dirname, '../../migrations/065_repo_profile_single_draft.sql'),
         'utf8'
       );
-      await pool.query(sql);
+      await client.query(sql);
 
-      const rows = await pool.query(
+      const rows = await client.query(
         `SELECT version, status FROM repo_profiles
          WHERE project_id = $1 ORDER BY version`,
         [projectId]
@@ -262,18 +266,15 @@ describe('Repo profiles — PostgreSQL integration (fg-39)', () => {
         { version: 2, status: 'inactive' },
         { version: 3, status: 'draft' },
       ]);
-      await expect(pool.query(
+      await expect(client.query(
         `INSERT INTO repo_profiles
            (project_id, version, profile, profile_hash, status)
          VALUES ($1, 4, '{}'::jsonb, 'h4', 'draft')`,
         [projectId]
       )).rejects.toThrow(/duplicate key value violates unique constraint/);
     } finally {
-      await pool.query('DELETE FROM repo_profiles WHERE project_id = $1', [projectId]);
-      await pool.query(
-        `CREATE UNIQUE INDEX IF NOT EXISTS uq_repo_profiles_draft
-         ON repo_profiles(project_id) WHERE status = 'draft'`
-      );
+      await client.query('ROLLBACK');
+      client.release();
     }
   });
 

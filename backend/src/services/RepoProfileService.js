@@ -485,8 +485,8 @@ class RepoProfileService {
     return {
       active: rows.find((row) => row.status === 'active') || null,
       // The query orders active rows first, so `rows[0]` is the active profile
-      // whenever one exists. The editor needs the editable draft, which is the
-      // newest non-active row; fall back to `rows[0]` when there is no draft.
+      // whenever one exists. The editor needs the editable draft (at most one
+      // per project); fall back to `rows[0]` when there is no draft.
       latest: rows.find((row) => row.status === 'draft') || rows[0] || null,
       versions: rows,
     };

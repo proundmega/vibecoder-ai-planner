@@ -132,7 +132,7 @@ describe('RepoProfileValidationService', () => {
 
     await expect(
       RepoProfileValidationService.request(1, PROFILE_ID, { userId: 7 })
-    ).rejects.toThrow(/Retired drafts cannot be validated/);
+    ).rejects.toThrow(/Retired drafts cannot queue a new validation/);
     expect(pool.query).toHaveBeenCalledTimes(1);
   });
 
