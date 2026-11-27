@@ -40,8 +40,8 @@ environment failures, not coding failures.
 | 5 | Project settings profile editor | done (#167) |
 
 All slices are merged, including slice 4b (FR4/D9), which adds persistent
-per-project dependency caches. The remaining follow-ups (D1-D4, D11-D12 and
-D15) are tracked in the deferred register below.
+per-project dependency caches. The remaining follow-ups (D1-D4, D11-D12, D15
+and D18) are tracked in the deferred register below.
 
 ## Status evidence
 
@@ -60,7 +60,7 @@ D15) are tracked in the deferred register below.
 | D17 editor rollback | Previously active versions expose **Reactivate** in version history and the historical banner; retired drafts stay actionless; the backend still enforces the exact successful dry run | ☑ |
 | D10 profile events | `repo_profile_events` records created/updated/activated/reactivated/retired with actor and metadata; reads are owner/super-admin only. Best-effort operational log, not authoritative (D18) | ☑ |
 | Verification results | `03` → Results | ☑ |
-| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D11-D12 and D15 remain open | ☑ |
+| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D11-D12, D15 and D18 remain open | ☑ |
 
 ## Deferred register (canonical)
 
