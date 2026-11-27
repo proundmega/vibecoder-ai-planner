@@ -1363,6 +1363,29 @@ public final class DockerSandboxRunner implements SandboxRunner {
      * and every outbound connection must pass through the proxy.
      */
 
+    /**
+     * Require a service image to exist on the agent host before the run.
+     *
+     * <p>{@code docker run} would otherwise ask the daemon to pull the image
+     * over the host network, outside the sandbox's egress allowlist. Requiring
+     * a local, operator-pre-pulled digest keeps the run offline and makes the
+     * approved artifact explicit. {@code --pull never} enforces the same rule
+     * if the image disappears between this check and {@code docker run}.</p>
+     */
+    private void ensureServiceImagePresent(ServiceSpec service) throws IOException {
+        DockerResult present = runDocker(
+            List.of(config.dockerBinary(), "image", "inspect",
+                "--format", "{{.Id}}", service.image()),
+            INSPECT_TIMEOUT,
+            1_024
+        );
+        if (present.timedOut() || present.exitCode() != 0) {
+            throw new IOException("Service image '" + service.image()
+                + "' is not available locally; image pulls during a run are disabled. "
+                + "Pre-pull the approved digest on the agent host. " + present.output());
+        }
+    }
+
     private ServiceRuntime startServices(String sandboxName, SandboxSpec spec) throws IOException {
         if (spec.services().isEmpty()) {
             return null;
@@ -1392,6 +1415,7 @@ public final class DockerSandboxRunner implements SandboxRunner {
             new ServiceRuntime(network, containers, environment, hosts, passwords));
         try {
             for (ServiceSpec service : spec.services()) {
+                ensureServiceImagePresent(service);
                 String container = "vibecode-service-" + suffix + "-" + service.name();
                 // Track the name before docker run: a timeout or a non-zero
                 // exit can still leave a container behind, and only a tracked
@@ -1418,6 +1442,10 @@ public final class DockerSandboxRunner implements SandboxRunner {
                 addOwnerLabel(command, spec.owner());
                 command.addAll(List.of(
                     "--network", network,
+                    // Never pull during a model-driven run: the Docker daemon
+                    // would bypass the sandbox egress allowlist. Operators
+                    // pre-pull the approved digest on the agent host.
+                    "--pull", "never",
                     "--pids-limit", "256",
                     "--memory", "536870912",
                     "--cpus", "1.0",
