@@ -1,3 +1,8 @@
+/**
+ * Hand-written provider-neutral Git client (like `github.ts`). The generated
+ * `api/generated` client is intentionally not used for Git; regenerate the
+ * OpenAPI spec with `npm run generate:spec` when route JSDoc changes.
+ */
 import { get, post, del } from './client'
 import {
   normalizeRepoStatus,
@@ -62,6 +67,33 @@ function providerQuery(provider?: string | null): string {
   return provider ? `?provider=${encodeURIComponent(provider)}` : ''
 }
 
+/**
+ * Review URLs come from a provider, which may be a compromised self-hosted
+ * instance. Only absolute http(s) URLs are exposed, and self-hosted rows must
+ * stay on the connected provider origin; anything else becomes an empty string
+ * so callers render text instead of a link.
+ */
+export function safeReviewUrl(rawUrl?: string | null, baseUrl?: string | null): string {
+  if (!rawUrl) return ''
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return ''
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return ''
+  if (baseUrl) {
+    let base: URL
+    try {
+      base = new URL(baseUrl)
+    } catch {
+      return ''
+    }
+    if (url.origin !== base.origin) return ''
+  }
+  return url.toString()
+}
+
 export function normalizeGitRepoStatus(raw: RawRepoStatus | null | undefined): GitRepoStatus | null {
   const base = normalizeRepoStatus(raw)
   if (!base) return null
@@ -74,13 +106,13 @@ export function normalizeGitRepoStatus(raw: RawRepoStatus | null | undefined): G
   }
 }
 
-function normalizeReview(raw: RawReviewRequest): ReviewRequest {
+function normalizeReview(raw: RawReviewRequest, baseUrl?: string | null): ReviewRequest {
   return {
     id: raw.id,
     number: raw.number ?? 0,
     title: raw.title,
     state: raw.state ?? 'open',
-    url: raw.url || raw.html_url || '',
+    url: safeReviewUrl(raw.url || raw.html_url, baseUrl),
     head: typeof raw.head === 'string' ? raw.head : raw.head?.ref,
     base: typeof raw.base === 'string' ? raw.base : raw.base?.ref,
   }
@@ -140,11 +172,17 @@ export function deleteBranch(ticketId: string, provider?: string): Promise<void>
   return del<void>(`/api/v1/git/${ticketId}/branch${providerQuery(provider)}`)
 }
 
-export function listReviews(projectId: string, provider?: string): Promise<ReviewRequest[]> {
+export function listReviews(
+  projectId: string,
+  provider?: string,
+  baseUrl?: string | null,
+): Promise<ReviewRequest[]> {
   return get<RawReviewRequest[]>(
     `/api/v1/git/${projectId}/reviews${providerQuery(provider)}`,
   )
-    .then((rows) => (Array.isArray(rows) ? rows.map(normalizeReview) : []))
+    .then((rows) => (Array.isArray(rows)
+      ? rows.map((row) => normalizeReview(row, baseUrl))
+      : []))
     .catch(() => [])
 }
 
@@ -152,9 +190,10 @@ export function createReview(
   ticketId: string,
   description: string,
   provider?: string,
+  baseUrl?: string | null,
 ): Promise<ReviewRequest> {
   return post<RawReviewRequest>(`/api/v1/git/${ticketId}/review`, {
     description,
     ...(provider ? { provider } : {}),
-  }).then(normalizeReview)
+  }).then((row) => normalizeReview(row, baseUrl))
 }

@@ -32,7 +32,7 @@ const memoryObj = useMemory(projectId)
 
 const {
   loading: githubLoading, error: githubError, success: githubSuccess,
-  repo: githubRepo, branches: githubBranches, reviews: githubReviews,
+  activeRepo: githubRepo, branches: githubBranches, reviews: githubReviews,
   actionLoading: githubActionLoading, load: githubLoad,
   disconnect: githubDisconnect, createBranch: githubCreateBranch,
 } = gitObj
@@ -227,7 +227,8 @@ async function handleTabSwitch(tabId) {
                 <div v-if="githubReviews.length === 0" class="empty">No reviews yet</div>
                 <ul v-else class="pr-list">
                   <li v-for="review in githubReviews" :key="review.number">
-                    <a :href="review.url" target="_blank" rel="noopener">{{ review.title || review.head || `#${review.number}` }}</a>
+                    <a v-if="review.url" :href="review.url" target="_blank" rel="noopener">{{ review.title || review.head || `#${review.number}` }}</a>
+                    <span v-else>{{ review.title || review.head || `#${review.number}` }} (URL unavailable)</span>
                     <span :class="['pr-state', review.state]">{{ review.state }}</span>
                   </li>
                 </ul>

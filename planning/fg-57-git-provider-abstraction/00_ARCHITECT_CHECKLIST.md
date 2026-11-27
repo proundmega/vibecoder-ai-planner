@@ -95,6 +95,7 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D17 | Agent provider-neutral repo credential for clone/push and the `/git/:projectId/token` route | self | Functionality | fg-57f2 | done (#249) |
 | D18 | Project settings provider picker and connection status UI; regenerate the tracked `openapi-generated.json` (`npm run generate:spec`) before frontend codegen | self | UX | fg-57f3 (#261, in review) | open |
 | D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b (#256, in review) | open |
+| D20 | Permission-aware Git settings controls (hide connect/disconnect/branch/review actions the user cannot use) | review | UX | follow-up | open |
 
 ## Decisions needed from the user
 

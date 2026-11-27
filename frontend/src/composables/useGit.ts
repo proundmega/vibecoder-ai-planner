@@ -83,7 +83,11 @@ export function useGit(projectId: string | number) {
   }
 
   async function loadReviews(): Promise<void> {
-    reviews.value = await listReviews(String(projectId), activeProvider.value || undefined)
+    reviews.value = await listReviews(
+      String(projectId),
+      activeProvider.value || undefined,
+      activeRepo.value?.providerBaseUrl,
+    )
   }
 
   async function load(): Promise<void> {
@@ -100,7 +104,7 @@ export function useGit(projectId: string | number) {
       if (!activeProvider.value || !rows.some((row) => row.provider === activeProvider.value)) {
         activeProvider.value = rows[0]?.provider ?? ''
       }
-      if (repo.value?.connected) {
+      if (activeRepo.value?.connected) {
         await Promise.all([loadBranches(), loadReviews()])
       } else {
         branches.value = []
@@ -125,7 +129,9 @@ export function useGit(projectId: string | number) {
       }
       if (form.baseUrl.trim()) input.baseUrl = form.baseUrl.trim()
       if (form.defaultBranch.trim()) input.defaultBranch = form.defaultBranch.trim()
-      if (form.authMode) input.authMode = form.authMode
+      // GitHub's auth mode is deployment-wide; let the backend choose instead
+      // of sending a UI default that a PAT deployment would reject.
+      if (form.authMode && form.provider !== 'github') input.authMode = form.authMode
       if (form.authMode === 'ssh') {
         if (form.sshKey.trim()) input.sshKey = form.sshKey.trim()
       } else if (form.token.trim()) {
@@ -204,6 +210,7 @@ export function useGit(projectId: string | number) {
         ticketId.trim(),
         description.trim(),
         activeProvider.value || undefined,
+        activeRepo.value?.providerBaseUrl,
       )
       success.value = 'Review request created successfully'
       await loadReviews()

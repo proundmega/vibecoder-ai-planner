@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useGit } from '@/composables/useGit'
 
@@ -16,6 +16,12 @@ const {
 const branchTicketId = ref('')
 const reviewTicketId = ref('')
 const reviewDescription = ref('')
+
+const repoPlaceholder = computed(() => {
+  if (form.provider === 'github') return 'https://github.com/owner/repo'
+  if (form.provider === 'local') return 'ssh://git@host/path'
+  return 'owner/repo'
+})
 
 onMounted(load)
 </script>
@@ -72,11 +78,7 @@ onMounted(load)
 
           <label class="field">
             <span>Repository URL</span>
-            <input
-              v-model="form.repoUrl"
-              type="text"
-              :placeholder="form.provider === 'github' ? 'https://github.com/owner/repo' : 'owner/repo'"
-            />
+            <input v-model="form.repoUrl" type="text" :placeholder="repoPlaceholder" />
           </label>
 
           <label v-if="formCapabilities?.requiresBaseUrl" class="field">
@@ -84,7 +86,7 @@ onMounted(load)
             <input v-model="form.baseUrl" type="text" placeholder="https://git.example.com" />
           </label>
 
-          <label class="field">
+          <label v-if="form.provider !== 'github'" class="field">
             <span>Auth mode</span>
             <select v-model="form.authMode">
               <option v-for="mode in formCapabilities?.authModes ?? ['pat']" :key="mode" :value="mode">
@@ -92,6 +94,7 @@ onMounted(load)
               </option>
             </select>
           </label>
+          <small v-else>GitHub auth mode is deployment-wide and chosen by the backend.</small>
 
           <label v-if="form.authMode !== 'ssh'" class="field">
             <span>Access token</span>
@@ -148,7 +151,15 @@ onMounted(load)
         </div>
       </div>
 
-      <div v-if="activeRepo" class="section">
+      <div v-if="activeRepo && !activeCapabilities?.supportsReviewRequests" class="section">
+        <h2>Branch-only provider</h2>
+        <p class="repo-meta">
+          Local bare/SSH repositories are agent-managed: the worker pushes the ticket branch and
+          there are no review requests or manual branch controls.
+        </p>
+      </div>
+
+      <div v-if="activeRepo && activeCapabilities?.supportsReviewRequests" class="section">
         <div class="section-header">
           <h2>Branches</h2>
         </div>
@@ -196,9 +207,18 @@ onMounted(load)
         <div v-if="reviews.length === 0" class="empty-state">No reviews found</div>
         <ul v-else class="review-list">
           <li v-for="review in reviews" :key="review.number" class="review-item">
-            <a :href="review.url" target="_blank" rel="noopener" class="review-link">
+            <a
+              v-if="review.url"
+              :href="review.url"
+              target="_blank"
+              rel="noopener"
+              class="review-link"
+            >
               #{{ review.number }} {{ review.title || review.head || 'review' }}
             </a>
+            <span v-else class="review-link">
+              #{{ review.number }} {{ review.title || review.head || 'review' }} (URL unavailable)
+            </span>
             <span :class="['review-state', review.state]">{{ review.state }}</span>
           </li>
         </ul>

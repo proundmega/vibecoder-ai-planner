@@ -593,6 +593,76 @@ describe('GitProjectService', () => {
       expect(pool.query).not.toHaveBeenCalled();
     });
 
+    it('drops a javascript review URL instead of storing it', async () => {
+      const provider = fakeProvider({
+        createReviewRequest: jest.fn().mockResolvedValue({
+          url: 'javascript:alert(document.cookie)',
+          state: 'open',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await GitProjectService.createReviewRequest(1, 42, null, {
+        repo: {
+          provider: 'github',
+          repoUrl: 'https://git.example.com/group/repo',
+          providerBaseUrl: 'https://git.example.com',
+          accessTokenEncrypted: 'enc:pat',
+        },
+      });
+
+      expect(result.url).toBeNull();
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SET pr_url = $1'),
+        [null, 'open', 42]
+      );
+    });
+
+    it('drops a cross-origin review URL for a self-hosted provider', async () => {
+      const provider = fakeProvider({
+        createReviewRequest: jest.fn().mockResolvedValue({
+          url: 'https://evil.example.com/phish',
+          state: 'open',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await GitProjectService.createReviewRequest(1, 42, null, {
+        repo: {
+          provider: 'github',
+          repoUrl: 'https://git.example.com/group/repo',
+          providerBaseUrl: 'https://git.example.com',
+          accessTokenEncrypted: 'enc:pat',
+        },
+      });
+
+      expect(result.url).toBeNull();
+    });
+
+    it('keeps a same-origin self-hosted review URL', async () => {
+      const provider = fakeProvider({
+        createReviewRequest: jest.fn().mockResolvedValue({
+          url: 'https://git.example.com/group/repo/pulls/4',
+          state: 'open',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await GitProjectService.createReviewRequest(1, 42, null, {
+        repo: {
+          provider: 'github',
+          repoUrl: 'https://git.example.com/group/repo',
+          providerBaseUrl: 'https://git.example.com',
+          accessTokenEncrypted: 'enc:pat',
+        },
+      });
+
+      expect(result.url).toBe('https://git.example.com/group/repo/pulls/4');
+    });
+
     it('uses and records the agent-pushed head branch with its base', async () => {
       const provider = fakeProvider({
         createReviewRequest: jest.fn().mockResolvedValue({
@@ -647,7 +717,10 @@ describe('GitProjectService', () => {
       const provider = fakeProvider({
         getFileContent: jest.fn().mockResolvedValue('contents'),
         listBranches: jest.fn().mockResolvedValue(['branch']),
-        listReviewRequests: jest.fn().mockResolvedValue([{ url: 'pr' }]),
+        listReviewRequests: jest.fn().mockResolvedValue([
+          { url: 'https://example.test/pull/8' },
+          { url: 'javascript:alert(1)' },
+        ]),
         getReviewDiff: jest.fn().mockResolvedValue({ files: [] }),
         deleteBranch: jest.fn().mockResolvedValue(undefined),
       });
@@ -673,7 +746,10 @@ describe('GitProjectService', () => {
       expect(provider.listBranches).toHaveBeenCalledWith(repo);
 
       await expect(GitProjectService.listReviewRequests(1, { repo }))
-        .resolves.toEqual([{ url: 'pr' }]);
+        .resolves.toEqual([
+          { url: 'https://example.test/pull/8' },
+          { url: null },
+        ]);
       expect(provider.listReviewRequests).toHaveBeenCalledWith(repo);
 
       await expect(GitProjectService.getReviewDiff(1, 42, { repo }))

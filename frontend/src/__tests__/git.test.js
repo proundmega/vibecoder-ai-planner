@@ -112,6 +112,45 @@ describe('git API', () => {
     }])
   })
 
+  it('drops javascript and data review URLs', async () => {
+    const { get } = await import('../api/client')
+    get.mockResolvedValue([
+      { number: 1, url: 'javascript:alert(document.cookie)', state: 'open' },
+      { number: 2, url: 'data:text/html,<script>alert(1)</script>', state: 'open' },
+      { number: 3, url: 'https://git.example.com/group/repo/pulls/3', state: 'open' },
+    ])
+
+    const reviews = await git.listReviews('1', 'forgejo', 'https://git.example.com')
+
+    expect(reviews.map((review) => review.url)).toEqual([
+      '',
+      '',
+      'https://git.example.com/group/repo/pulls/3',
+    ])
+  })
+
+  it('drops a review URL on another origin', async () => {
+    const { get } = await import('../api/client')
+    get.mockResolvedValue([
+      { number: 1, url: 'https://evil.example.com/phish', state: 'open' },
+    ])
+
+    const reviews = await git.listReviews('1', 'forgejo', 'https://git.example.com')
+
+    expect(reviews[0].url).toBe('')
+  })
+
+  it('does not expose an unsafe URL from the create response', async () => {
+    const { post } = await import('../api/client')
+    post.mockResolvedValue({ number: 9, url: 'javascript:alert(1)', state: 'open' })
+
+    const review = await git.createReview(
+      '42', 'body', 'forgejo', 'https://git.example.com',
+    )
+
+    expect(review.url).toBe('')
+  })
+
   it('creates a review with the ticket and provider', async () => {
     const { post } = await import('../api/client')
     post.mockResolvedValue({ number: 9, url: 'https://git.example.com/group/repo/pulls/9', state: 'open' })

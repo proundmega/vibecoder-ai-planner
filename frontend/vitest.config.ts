@@ -34,7 +34,6 @@ export default defineConfig({
         'src/views/CodeReview.vue',
         'src/views/ComputeNodes.vue',
         'src/views/Dashboard.vue',
-        'src/views/GitHubConnections.vue',
         'src/views/HarnessObservability.vue',
         'src/views/Login.vue',
         'src/views/PhaseFlow.vue',

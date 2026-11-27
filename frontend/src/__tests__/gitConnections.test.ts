@@ -136,6 +136,26 @@ describe('GitConnections', () => {
     })
   })
 
+  it('never renders an unsafe provider review URL as a link', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url.endsWith('/providers')) return Promise.resolve(providers)
+      if (url.endsWith('/repos')) return Promise.resolve([repoRow])
+      if (url.includes('/repo')) return Promise.resolve(repoRow)
+      if (url.includes('/branches')) return Promise.resolve([])
+      if (url.includes('/reviews')) {
+        return Promise.resolve([{ number: 9, url: 'javascript:alert(1)', state: 'open' }])
+      }
+      return Promise.resolve(null)
+    })
+
+    const wrapper = mount(GitConnections)
+    await flushPromises()
+
+    expect(wrapper.find('a[href^="javascript"]').exists()).toBe(false)
+    expect(wrapper.find('a.review-link').exists()).toBe(false)
+    expect(wrapper.text()).toContain('#9 review (URL unavailable)')
+  })
+
   it('disconnects the active provider', async () => {
     connectedBackend()
     const wrapper = mount(GitConnections)

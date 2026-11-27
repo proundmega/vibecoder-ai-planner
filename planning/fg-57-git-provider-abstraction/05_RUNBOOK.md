@@ -90,7 +90,8 @@ if you already operate it.
    hosts, the auth mode, and the token or SSH key. The connection card and
    status show the provider, default branch and the latest review URL
    (`branch-only` for local). The same page lists and creates branches and
-   reviews for the active provider.
+   reviews for the active provider; a local bare/SSH repository is
+   agent-managed, so it shows a branch-only note instead of manual controls.
 6. Verify the backend provider with the gated integration test
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
    branch, creates exactly one PR, reads the diff and cleans up.
