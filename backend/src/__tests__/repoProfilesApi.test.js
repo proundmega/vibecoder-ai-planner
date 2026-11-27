@@ -64,6 +64,7 @@ jest.mock('../services/PermissionService', () => ({
 jest.mock('../services/RepoProfileService', () => ({
   getCurrent: jest.fn(),
   listVersions: jest.fn(),
+  listEvents: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
   activate: jest.fn(),
@@ -85,6 +86,7 @@ jest.mock('../services/RepoProfileValidationService', () => ({
 
 const RepoProfileService = require('../services/RepoProfileService');
 const RepoProfileValidationService = require('../services/RepoProfileValidationService');
+const { ForbiddenError } = require('../errors/HttpError');
 const jwt = require('jsonwebtoken');
 
 const PROFILE_ID = '11111111-1111-4111-8111-111111111111';
@@ -120,6 +122,36 @@ describe('Repo profile API', () => {
     expect(RepoProfileService.getCurrent).toHaveBeenCalledWith('1', expect.objectContaining({
       userId: 'user-1',
     }));
+  });
+
+  it('lists lifecycle events with pagination', async () => {
+    RepoProfileService.listEvents.mockResolvedValue([
+      { id: '1', action: 'created' },
+    ]);
+
+    const res = await request(app)
+      .get('/api/v1/projects/1/repo-profile/events?limit=10&offset=5')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(RepoProfileService.listEvents).toHaveBeenCalledWith(
+      '1',
+      expect.objectContaining({ userId: 'user-1' }),
+      expect.objectContaining({ limit: 10, offset: 5 })
+    );
+  });
+
+  it('returns 403 when event access is forbidden', async () => {
+    RepoProfileService.listEvents.mockRejectedValueOnce(
+      new ForbiddenError('Only the project owner can read profile events')
+    );
+
+    const res = await request(app)
+      .get('/api/v1/projects/1/repo-profile/events')
+      .set('Authorization', 'Bearer mock-token');
+
+    expect(res.statusCode).toBe(403);
   });
 
   it('creates a draft profile', async () => {

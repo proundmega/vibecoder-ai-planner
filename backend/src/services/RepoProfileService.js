@@ -134,8 +134,9 @@ async function recordEvent({
       ]
     );
   } catch (error) {
-    logger.warn('Could not record repo profile event {} for project {}: {}',
-      action, projectId, error.message);
+    logger.warn(
+      `Could not record repo profile event ${action} for project ${projectId}: ${error.message}`
+    );
   }
 }
 
@@ -523,7 +524,9 @@ class RepoProfileService {
   }
 
   async listEvents(projectId, user, { limit = 200, offset = 0 } = {}) {
-    await assertCanRead(projectId, user);
+    // Events expose actor IDs and changed field names, so keep them visible to
+    // the project owner/super admin rather than every project member.
+    await assertCanWrite(projectId, user);
     const safeLimit = Number(limit);
     const safeOffset = Number(offset);
     if (!Number.isInteger(safeLimit) || safeLimit < 1 || safeLimit > 200) {

@@ -18,6 +18,7 @@ jest.mock('../services/GitHubService', () => ({
 }));
 
 const RepoProfileService = require('../services/RepoProfileService');
+const logger = require('../utils/logger');
 const { validateRepoProfile } = require('../validators/repoProfiles');
 const Project = require('../models/project');
 const GitHubService = require('../services/GitHubService');
@@ -826,6 +827,88 @@ describe('RepoProfileService', () => {
         .rejects.toThrow(/limit must be an integer between 1 and 200/);
       await expect(RepoProfileService.listEvents(1, owner(), { offset: -1 }))
         .rejects.toThrow(/offset must be a non-negative integer/);
+    });
+
+    it('is restricted to the owner and super admins', async () => {
+      await expect(
+        RepoProfileService.listEvents(1, { userId: 8, role: 'member' })
+      ).rejects.toThrow(ForbiddenError);
+      await expect(
+        RepoProfileService.listEvents(1, { userId: 9, role: 'member' })
+      ).rejects.toThrow(ForbiddenError);
+      await expect(
+        RepoProfileService.listEvents(1, superAdmin())
+      ).resolves.toEqual([]);
+    });
+  });
+
+  describe('audit event failures', () => {
+    let warn;
+
+    beforeEach(() => {
+      warn = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    it('keeps profile changes successful and logs the action and project', async () => {
+      const stored = {
+        id: 'p1', project_id: 1, version: 1,
+        profile: validProfile(), status: 'draft',
+      };
+      clientWith([
+        {}, // BEGIN
+        { rows: [{ id: 1 }] }, // project lock
+        { rows: [] }, // retire
+        { rows: [{ version: 1 }] }, // max version
+        { rows: [stored] }, // INSERT
+        {}, // COMMIT
+      ]);
+      pool.query.mockRejectedValueOnce(new Error('audit down'));
+      await expect(RepoProfileService.create(1, validProfile(), owner()))
+        .resolves.toBeTruthy();
+
+      const current = {
+        id: 'p2', project_id: 1, version: 1,
+        status: 'draft', profile: validProfile(),
+      };
+      pool.query.mockReset();
+      pool.query
+        .mockResolvedValueOnce({ rows: [current] })
+        .mockResolvedValueOnce({
+          rows: [{ ...current, profile: validProfile({ verify: ['npm run lint'] }) }],
+        })
+        .mockRejectedValueOnce(new Error('audit down'));
+      await expect(RepoProfileService.update(
+        1, 'p2', validProfile({ verify: ['npm run lint'] }), owner()
+      )).resolves.toBeTruthy();
+
+      const target = {
+        id: 'p3', project_id: 1, version: 2, profile: validProfile(),
+        profile_hash: 'h1', status: 'draft',
+      };
+      pool.query.mockReset();
+      pool.query.mockRejectedValueOnce(new Error('audit down'));
+      clientWith([
+        {}, // BEGIN
+        { rows: [target] }, // target lock
+        { rows: [{ exists: true }] }, // exact-content validation
+        { rows: [] }, // deactivate old
+        { rows: [{ ...target, status: 'active' }] }, // activate target
+        {}, // COMMIT
+      ]);
+      await expect(RepoProfileService.activate(1, 'p3', owner()))
+        .resolves.toBeTruthy();
+
+      const messages = warn.mock.calls.map(([message]) => message);
+      expect(messages.some((message) => message.includes('created')
+        && message.includes('project 1') && message.includes('audit down'))).toBe(true);
+      expect(messages.some((message) => message.includes('updated')
+        && message.includes('project 1') && message.includes('audit down'))).toBe(true);
+      expect(messages.some((message) => message.includes('activated')
+        && message.includes('project 1') && message.includes('audit down'))).toBe(true);
     });
   });
 
