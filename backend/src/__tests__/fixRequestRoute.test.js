@@ -22,6 +22,7 @@ jest.mock('../services/FixRequestService', () => ({
 }));
 
 const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
+let fixLoopMode = 'auto';
 
 function mockReviewerRuntime() {
   jest.spyOn(AgentNodeService, 'authenticateAccessToken').mockResolvedValue({
@@ -41,6 +42,9 @@ function mockReviewerRuntime() {
     if (sql.includes('FROM agent_node_grants')) {
       return Promise.resolve({ rows: [{ id: 1 }] });
     }
+    if (sql.includes('fix_loop_mode')) {
+      return Promise.resolve({ rows: [{ fix_loop_mode: fixLoopMode }] });
+    }
     return Promise.resolve({ rows: [] });
   });
 }
@@ -48,6 +52,7 @@ function mockReviewerRuntime() {
 describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    fixLoopMode = 'auto';
     jwt.verify.mockReturnValue({ userId: 7, role: 'member' });
     jest.spyOn(PermissionService, 'hasAnyPermission').mockResolvedValue(true);
     jest.spyOn(Ticket, 'findById').mockResolvedValue({
@@ -79,7 +84,7 @@ describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
     expect(FixRequestService.createOrEnsure).toHaveBeenCalledWith(
       '42',
       { attemptId: ATTEMPT_ID, feedback: null },
-      { actorId: 3 }
+      { actorId: 3, phaseMetadata: null }
     );
   });
 
@@ -110,7 +115,7 @@ describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
     expect(FixRequestService.createOrEnsure).toHaveBeenCalledWith(
       '42',
       { attemptId: null, feedback: 'Please fix this' },
-      { actorId: 7 }
+      { actorId: 7, phaseMetadata: { feedback: 'Please fix this' } }
     );
   });
 
@@ -161,6 +166,54 @@ describe('POST /tickets/:id/review/request-changes (fg-32a)', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.body.data.id).toBe('req-1');
+  });
+
+  it('refuses a reviewer agent unless dispatch is automatic', async () => {
+    fixLoopMode = 'manual';
+
+    const response = await request(app)
+      .post('/api/v1/tickets/42/review/request-changes')
+      .set('X-API-Key', 'at_valid')
+      .set('X-Agent-Runtime', '3')
+      .send({ attempt_id: ATTEMPT_ID });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body.error.message)
+      .toContain('Automatic fix dispatch requires FIX_LOOP_MODE=auto');
+    expect(FixRequestService.createOrEnsure).not.toHaveBeenCalled();
+  });
+
+  it('refuses every source when the loop is off', async () => {
+    fixLoopMode = 'off';
+
+    const human = await request(app)
+      .post('/api/v1/tickets/42/review/request-changes')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ feedback: 'Please fix this' });
+
+    expect(human.statusCode).toBe(409);
+    expect(human.body.error.message).toContain('Fix loop is disabled for this project');
+    expect(FixRequestService.createOrEnsure).not.toHaveBeenCalled();
+  });
+
+  it('allows a human in manual mode', async () => {
+    fixLoopMode = 'manual';
+    FixRequestService.createOrEnsure.mockResolvedValue({
+      created: true,
+      request: { id: 'req-1', state: 'queued' },
+    });
+
+    const response = await request(app)
+      .post('/api/v1/tickets/42/review/request-changes')
+      .set('Authorization', 'Bearer mock-token')
+      .send({ feedback: 'Please fix this' });
+
+    expect(response.statusCode).toBe(201);
+    expect(FixRequestService.createOrEnsure).toHaveBeenCalledWith(
+      '42',
+      { attemptId: null, feedback: 'Please fix this' },
+      { actorId: 7, phaseMetadata: { feedback: 'Please fix this' } }
+    );
   });
 
   it('maps a service conflict to 409', async () => {

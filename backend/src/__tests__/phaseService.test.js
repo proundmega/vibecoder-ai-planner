@@ -17,9 +17,19 @@ jest.mock('../services/TicketReadinessService', () => ({
   emitBlocked: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../services/FixDispatchService', () => ({
+  prepareManual: jest.fn().mockResolvedValue(null),
+}));
+
+jest.mock('../services/FixRequestService', () => ({
+  createOrEnsureWithClient: jest.fn(),
+}));
+
 const phaseService = require('../services/PhaseService');
 const DependencyService = require('../services/DependencyService');
 const TicketReadinessService = require('../services/TicketReadinessService');
+const FixDispatchService = require('../services/FixDispatchService');
+const FixRequestService = require('../services/FixRequestService');
 const { NotFoundError, ValidationError } = require('../errors/HttpError');
 
 describe('PhaseService', () => {
@@ -27,6 +37,7 @@ describe('PhaseService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    FixDispatchService.prepareManual.mockResolvedValue(null);
   });
 
   describe('ALLOWED_TRANSITIONS', () => {
@@ -283,6 +294,103 @@ describe('PhaseService', () => {
 
       const result = await phaseService.transition('ticket-1', 'done', 'human', 'user-1');
       expect(result.toPhase).toBe('done');
+    });
+
+    test('manual request-changes hands the transition to the fix service', async () => {
+      const branchResolution = {
+        branch: 'feat/fix', reviewedSha: 'a'.repeat(40), round: 1,
+      };
+      FixDispatchService.prepareManual.mockResolvedValueOnce({
+        feedback: 'fix the empty state',
+        branchResolution,
+      });
+      const request = { id: 'req-1', state: 'queued' };
+      FixRequestService.createOrEnsureWithClient.mockResolvedValueOnce({
+        request, created: true,
+      });
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 42, phase: 'review' }] })
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      mockPool.connect.mockReturnValue(mockClient);
+
+      const result = await phaseService.transition(
+        42,
+        'in_progress',
+        'human',
+        'user-1',
+        { action: 'changes_requested', reason: 'fix the empty state' }
+      );
+
+      const metadata = { action: 'changes_requested', reason: 'fix the empty state' };
+      expect(FixRequestService.createOrEnsureWithClient).toHaveBeenCalledWith(
+        mockClient,
+        42,
+        { feedback: 'fix the empty state' },
+        {
+          db: mockClient,
+          actorId: 'user-1',
+          branchResolution,
+          phaseMetadata: metadata,
+        }
+      );
+      expect(result).toEqual({
+        ticketId: 42,
+        fromPhase: 'review',
+        toPhase: 'in_progress',
+        status: 'in_progress',
+        fixRequest: request,
+        created: true,
+      });
+      expect(mockClient.query.mock.calls.some(
+        ([sql]) => String(sql).includes('UPDATE tickets SET phase'))).toBe(false);
+    });
+
+    test('surfaces an already-queued request without duplicating it', async () => {
+      const existing = { id: 'req-9', state: 'queued' };
+      FixDispatchService.prepareManual.mockResolvedValueOnce({
+        feedback: 'fix it', existing,
+      });
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 42, phase: 'review' }] })
+          .mockResolvedValueOnce({}) // UPDATE
+          .mockResolvedValueOnce({}) // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      mockPool.connect.mockReturnValue(mockClient);
+
+      const result = await phaseService.transition(
+        42, 'in_progress', 'human', 'user-1', { reason: 'retry' });
+
+      expect(FixRequestService.createOrEnsureWithClient).not.toHaveBeenCalled();
+      expect(result.fixRequest).toEqual(existing);
+      expect(result.created).toBe(false);
+    });
+
+    test('keeps the plain transition when dispatch is off', async () => {
+      // prepareManual is null in beforeEach, i.e. `off` or no feedback.
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 42, phase: 'review' }] })
+          .mockResolvedValueOnce({}) // UPDATE
+          .mockResolvedValueOnce({}) // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      mockPool.connect.mockReturnValue(mockClient);
+
+      const result = await phaseService.transition(
+        42, 'in_progress', 'human', 'user-1', { reason: 'legacy request changes' });
+
+      expect(FixRequestService.createOrEnsureWithClient).not.toHaveBeenCalled();
+      expect(result).not.toHaveProperty('fixRequest');
     });
 
     test('should handle reopen from done to in_progress', async () => {
