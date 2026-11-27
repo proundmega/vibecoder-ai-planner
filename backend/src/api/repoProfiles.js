@@ -97,6 +97,8 @@ router.get('/:projectId/repo-profile/versions', verifyToken, async (req, res, ne
  *         description: Profile lifecycle events
  *       400:
  *         description: Invalid pagination parameters
+ *       403:
+ *         description: Only the project owner or a super admin can read profile events
  */
 router.get('/:projectId/repo-profile/events', verifyToken,
   validate({ query: validationListQuerySchema }), async (req, res, next) => {

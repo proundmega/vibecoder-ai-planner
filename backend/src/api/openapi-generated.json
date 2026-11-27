@@ -2267,6 +2267,9 @@
           },
           "400": {
             "description": "Invalid pagination parameters"
+          },
+          "403": {
+            "description": "Only the project owner or a super admin can read profile events"
           }
         }
       }
