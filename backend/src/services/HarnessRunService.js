@@ -191,10 +191,11 @@ class HarnessRunService {
       // request with FOR UPDATE and then updates the ticket via markFixing, so
       // taking the ticket first here would deadlock under the reclaim race.
       // Holding the request row also freezes the claim for the insert below.
-      let fixClaim = null;
       if (normalisedPurpose === 'fix') {
+        // The database clock decides staleness: a claim whose lease expired is
+        // not returned, so no second in-process clock can disagree with it.
         const claim = await client.query(
-          `SELECT id, branch, reviewed_sha, lease_expires_at
+          `SELECT id, branch, reviewed_sha
              FROM ticket_fix_requests
             WHERE id = $1
               AND ticket_id = $2
@@ -204,14 +205,10 @@ class HarnessRunService {
             FOR UPDATE`,
           [normalisedFixRequestId, normalisedTicketId, actor.runtimeId]
         );
-        fixClaim = claim.rows[0];
+        const fixClaim = claim.rows[0];
         if (!fixClaim) {
           throw new ForbiddenError(
             'Fix request is missing, unclaimed or stale for this runtime');
-        }
-        if (!fixClaim.lease_expires_at
-            || new Date(fixClaim.lease_expires_at).getTime() <= Date.now()) {
-          throw new ForbiddenError('Fix request lease has expired; reclaim it');
         }
         if (String(fixClaim.branch) !== normalisedBranch) {
           throw new ConflictError('Fix request branch does not match the run branch');

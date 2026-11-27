@@ -333,7 +333,6 @@ describe('HarnessRunService', () => {
         id: '22222222-2222-4222-8222-222222222222',
         branch: 'feat/fix',
         reviewed_sha: 'a'.repeat(40),
-        lease_expires_at: new Date(Date.now() + 60_000).toISOString(),
         ...overrides,
       };
     }
@@ -382,20 +381,8 @@ describe('HarnessRunService', () => {
 
       await expect(HarnessRunService.startRun(fixRun()))
         .rejects.toThrow('Fix request is missing, unclaimed or stale');
-      expect(client.query).toHaveBeenCalledWith('ROLLBACK');
-      expect(client.query.mock.calls.some(
-        ([sql]) => String(sql).includes('INSERT INTO harness_runs'))).toBe(false);
-    });
-
-    it('refuses a fix run with an expired lease from the same runtime', async () => {
-      const client = fixClient(
-        [{ status: 'in_progress', assigned_runtime_id: '7', project_id: 5 }],
-        [liveClaim({ lease_expires_at: new Date(Date.now() - 1_000).toISOString() })],
-        { rows: [] }
-      );
-
-      await expect(HarnessRunService.startRun(fixRun()))
-        .rejects.toThrow('Fix request lease has expired; reclaim it');
+      // Expired leases are filtered by the database clock, not a Java/Node one.
+      expect(client.query.mock.calls[1][0]).toContain('lease_expires_at > NOW()');
       expect(client.query).toHaveBeenCalledWith('ROLLBACK');
       expect(client.query.mock.calls.some(
         ([sql]) => String(sql).includes('INSERT INTO harness_runs'))).toBe(false);
