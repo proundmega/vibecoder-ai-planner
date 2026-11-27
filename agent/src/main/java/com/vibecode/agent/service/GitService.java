@@ -11,6 +11,7 @@ public final class GitService {
     @FunctionalInterface
     public interface ReviewClient {
         String createReviewRequest(
+            long ticketId,
             String title,
             String body,
             String headBranch,
@@ -42,7 +43,25 @@ public final class GitService {
         if (gitHubService == null) {
             throw new IllegalArgumentException("GitHubService is required for GitHub review requests");
         }
-        return new GitService("github", repoUrl, repoName, true, gitHubService::createPullRequest);
+        return new GitService("github", repoUrl, repoName, true,
+            (ticketId, title, body, headBranch, baseBranch) ->
+                gitHubService.createPullRequest(title, body, headBranch, baseBranch));
+    }
+
+    /**
+     * Self-hosted providers create the review through the backend, which owns
+     * the provider client, token and branch/base resolution.
+     */
+    public static GitService withReviewClient(
+        String provider,
+        String repoUrl,
+        String repoName,
+        ReviewClient reviewClient
+    ) {
+        if (reviewClient == null) {
+            throw new IllegalArgumentException("A review client is required for review requests");
+        }
+        return new GitService(provider, repoUrl, repoName, true, reviewClient);
     }
 
     public static GitService branchOnly(String provider, String repoUrl, String repoName) {
@@ -55,6 +74,7 @@ public final class GitService {
     public boolean supportsReviewRequests() { return supportsReviewRequests; }
 
     public String createReviewRequest(
+        long ticketId,
         String title,
         String body,
         String headBranch,
@@ -63,6 +83,7 @@ public final class GitService {
         if (!supportsReviewRequests || reviewClient == null) {
             return null;
         }
-        return reviewClient.createReviewRequest(title, body, headBranch, baseBranch);
+        return reviewClient.createReviewRequest(
+            ticketId, title, body, headBranch, baseBranch);
     }
 }

@@ -6,7 +6,7 @@ priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-22"
-updated: "2026-11-25"
+updated: "2026-11-27"
 pr: null
 branch: null
 depends_on: ["fg-35", "fg-54"]
@@ -92,9 +92,9 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D14 | Forgejo/Gitea `getFileContent` for repo-profile detection (returns null in fg-57e) | review | Functionality | fg-57f / follow-up | open |
 | D15 | Paginate Forgejo/Gitea branch and review listings beyond the first 50 items | review | Reliability | follow-up | open |
 | D16 | Pass the allowed provider origin into the agent `WorkspaceManager` so HTTPS token auth is scoped to the connected provider | review | Security | fg-57d2 / follow-up | open |
-| D17 | Agent provider-neutral repo credential for clone/push and the `/git/:projectId/token` route | self | Functionality | fg-57f2 | open |
+| D17 | Agent provider-neutral repo credential for clone/push and the `/git/:projectId/token` route | self | Functionality | fg-57f2 | done (#249) |
 | D18 | Project settings provider picker and connection status UI; regenerate the tracked `openapi-generated.json` (`npm run generate:spec`) before frontend codegen | self | UX | fg-57f3 / follow-up | open |
-| D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b | open |
+| D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b (#256, in review) | open |
 
 ## Decisions needed from the user
 

@@ -247,12 +247,21 @@ async function listReviews(req, res, next) {
 async function createReview(req, res, next) {
   try {
     const projectId = await projectForTicket(req.params.ticketId);
-    await requireProjectAccess(req, projectId, 'Only the project owner or a super admin can create a review');
+    await requireProjectAccess(
+      req,
+      projectId,
+      'Only the project owner or a super admin can create a review',
+      { nodeGrant: true }
+    );
     const result = await GitProjectService.createReviewRequest(
       projectId,
       req.params.ticketId,
       req.body?.description,
-      { provider: requestedProvider(req) }
+      {
+        provider: requestedProvider(req),
+        headBranch: req.body?.headBranch,
+        baseBranch: req.body?.baseBranch,
+      }
     );
     send(res, result, 201);
   } catch (error) {

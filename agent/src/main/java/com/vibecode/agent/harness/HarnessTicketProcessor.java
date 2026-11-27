@@ -1297,6 +1297,7 @@ public final class HarnessTicketProcessor implements TicketWorker {
                 String prUrl = null;
                 if (gitService.supportsReviewRequests()) {
                     prUrl = gitService.createReviewRequest(
+                        pickedUp.getId(),
                         publishTitle,
                         prBody,
                         branchName,

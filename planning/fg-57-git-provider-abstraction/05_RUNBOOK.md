@@ -72,10 +72,10 @@ if you already operate it.
    project-scoped, so a project admin can manage any project's connection while
    the read routes stay owner/super-admin only.
 
-   The agent endpoints (`/repo/agent`, `/token`) accept a node credential and
-   rely on the runtime's `(node, project, role)` grant plus its
-   `current_project_id` scope, so a pool node owned by another user can serve a
-   granted project. Legacy agent keys keep the owner check. GitHub credentials
+   The agent endpoints (`/repo/agent`, `/token`, `/:ticketId/review`) accept a
+   node credential and rely on the runtime's `(node, project, role)` grant plus
+   its `current_project_id` scope, so a pool node owned by another user can
+   serve a granted project. Legacy agent keys keep the owner check. GitHub credentials
    (both app and pat modes) always go through `GitHubAppAuthService.mintToken`,
    so PAT issuance keeps its audit event and repo binding.
 
@@ -87,12 +87,15 @@ if you already operate it.
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
    branch, creates exactly one PR, reads the diff and cleans up.
 6. Run one worker. The agent fetches the provider-scoped credential from
-   `/api/v1/git/:projectId/token`, clones/pushes over HTTPS and records the
-   branch. Forgejo/Gitea agent-side PR creation follows in `fg-57f2b`; until
-   then the ticket moves to `review` with the branch/SHA. Then verify:
+   `/api/v1/git/:projectId/token`, clones/pushes over HTTPS and then opens the
+   review through `POST /api/v1/git/:ticketId/review` with the pushed
+   `headBranch` and the run's `baseBranch`. The backend owns the provider
+   client, so the agent never needs the Forgejo/Gitea API URL, and the request
+   is idempotent. Then verify:
    - one branch is pushed;
-   - after `fg-57f2b`, exactly one PR is created and a retry does not duplicate it;
-   - the ticket moves to `review` with the PR URL or branch evidence.
+   - exactly one PR/MR is created and a retry does not duplicate it;
+   - the ticket moves to `review` with the PR/MR URL (or branch + SHA for the
+     local bare/SSH fallback).
 7. Clean up the PR/branch, repository, token and container.
 
 ## GitLab self-hosted

@@ -65,6 +65,7 @@ Files:
 - `backend/src/api/git.js` (new generic routes)
 - `backend/src/controllers/gitController.js` (new)
 - `backend/src/__tests__/integration/forgejoProvider.test.js` (new)
+- `agent/src/main/java/.../service/BackendReviewClient.java` (new; backend-proxied review request)
 - `agent/src/test/java/.../GitServiceTest.java` (provider cases)
 - `05_RUNBOOK.md` deployment steps
 
@@ -132,6 +133,10 @@ Files:
 - GitHub credentials always use `GitHubAppAuthService.mintToken` (app or pat),
   preserving the audit event and repo binding; non-GitHub providers return the
   stored scoped credential.
+- `POST /git/:ticketId/review` accepts node credentials (runtime + ticket
+  grant) and optional `headBranch`/`baseBranch`, so the harness can open the
+  review for the branch it pushed. The service records the head branch on the
+  ticket and overrides the provider's base branch for that request.
 
 ## Dependencies
 
@@ -198,7 +203,7 @@ The test skips unless all three `FORGEJO_*` variables are set. Set
 
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
-| — | — | — | Not run |
+| 2026-11-27 | `e8c38b8` (PR #256) | Backend 171 suites / 2103 tests; agent 1156 tests / 0 failures / 10 skipped; contract 39 | `fg-57f2b` (D19): the harness opens Forgejo/Gitea reviews through node-authenticated `POST /git/:ticketId/review` with the pushed head/base; the backend records the branch and reuses an existing review. Local/SSH stays branch-only. |
 
 | Field | Value |
 |---|---|

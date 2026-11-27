@@ -30,9 +30,40 @@ const connectRepoSchema = Joi.object({
   providerProjectId: Joi.string().max(200).optional(),
 });
 
+/**
+ * Conservative `git check-ref-format --branch` subset for agent-supplied
+ * branch names: reject what git refuses (control/space, ~^:?*[\, `..`, `@{`,
+ * empty components, `.`-prefixed or `.lock` components, trailing `.`) while
+ * allowing other printable characters such as +, % and @ that git accepts.
+ * A leading `-` is also rejected so the value cannot be parsed as an option.
+ */
+const GIT_REF_FORBIDDEN = /[\s~^:?*\[\\\x00-\x1f\x7f]/;
+
+function isValidGitRef(value) {
+  if (value === '@') return false;
+  if (GIT_REF_FORBIDDEN.test(value)) return false;
+  if (value.includes('..') || value.includes('@{') || value.includes('//')) return false;
+  if (value.startsWith('/') || value.endsWith('/') || value.endsWith('.')) return false;
+  if (value.startsWith('-')) return false;
+  return value.split('/')
+    .every(part => part && !part.startsWith('.') && !part.endsWith('.lock'));
+}
+
+const branchName = Joi.string()
+  .min(1)
+  .max(200)
+  .custom((value, helpers) => (isValidGitRef(value)
+    ? value
+    : helpers.error('any.invalid')))
+  .messages({
+    'any.invalid': 'must be a valid git branch name',
+  });
+
 const reviewRequestSchema = Joi.object({
   provider: provider.optional(),
   description: Joi.string().max(10000).allow('').optional(),
+  headBranch: branchName.optional(),
+  baseBranch: branchName.optional(),
 });
 
 module.exports = {

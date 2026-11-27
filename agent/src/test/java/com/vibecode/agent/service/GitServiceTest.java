@@ -31,8 +31,23 @@ class GitServiceTest {
         assertEquals("repo", git.repoName());
         assertTrue(git.supportsReviewRequests());
         assertEquals("https://github.com/owner/repo/pull/7",
-            git.createReviewRequest("title", "body", "branch", "main"));
+            git.createReviewRequest(42, "title", "body", "branch", "main"));
         verify(github).createPullRequest("title", "body", "branch", "main");
+    }
+
+    @Test
+    void selfHostedReviewRequestsCarryTheTicketId() throws IOException {
+        GitService.ReviewClient client = mock(GitService.ReviewClient.class);
+        when(client.createReviewRequest(42, "title", "body", "branch", "main"))
+            .thenReturn("https://git.example.com/group/repo/pulls/7");
+
+        GitService git = GitService.withReviewClient(
+            "forgejo", "https://git.example.com/group/repo.git", "repo", client);
+
+        assertTrue(git.supportsReviewRequests());
+        assertEquals("https://git.example.com/group/repo/pulls/7",
+            git.createReviewRequest(42, "title", "body", "branch", "main"));
+        verify(client).createReviewRequest(42, "title", "body", "branch", "main");
     }
 
     @Test
@@ -42,7 +57,7 @@ class GitServiceTest {
 
         assertEquals("local", git.provider());
         assertFalse(git.supportsReviewRequests());
-        assertNull(git.createReviewRequest("title", "body", "branch", "main"));
+        assertNull(git.createReviewRequest(42, "title", "body", "branch", "main"));
     }
 
     @Test
@@ -61,6 +76,15 @@ class GitServiceTest {
         assertEquals("/run/secrets/deploy-key", selfHosted.sshKeyFile());
         assertNull(selfHosted.createGitHubService(mock(GitHubTokenSource.class)));
         assertFalse(selfHosted.createGitService(null).supportsReviewRequests());
+
+        GitService.ReviewClient reviewClient = mock(GitService.ReviewClient.class);
+        assertTrue(selfHosted.createGitService(null, reviewClient).supportsReviewRequests());
+
+        AgentConfig localConfig = mock(AgentConfig.class);
+        when(localConfig.getRepoProvider()).thenReturn("local");
+        when(localConfig.getRepoUrl()).thenReturn("ssh://git@git.example.com/group/repo.git");
+        assertFalse(GitCredentialProvider.fromConfig(localConfig)
+            .createGitService(null, reviewClient).supportsReviewRequests());
 
         AgentConfig githubConfig = mock(AgentConfig.class);
         when(githubConfig.getRepoProvider()).thenReturn("github");

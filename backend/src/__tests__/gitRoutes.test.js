@@ -286,13 +286,82 @@ describe('Generic Git routes', () => {
       1, '42', { provider: 'forgejo' });
     expect(review.statusCode).toBe(201);
     expect(GitProjectService.createReviewRequest).toHaveBeenCalledWith(
-      1, '42', 'desc', { provider: 'forgejo' });
+      1, '42', 'desc',
+      { provider: 'forgejo', headBranch: undefined, baseBranch: undefined });
     expect(diff.statusCode).toBe(200);
     expect(GitProjectService.getReviewDiff).toHaveBeenCalledWith(
       1, '42', { provider: null });
     expect(removed.statusCode).toBe(200);
     expect(GitProjectService.deleteBranch).toHaveBeenCalledWith(
       1, '42', { provider: null });
+  });
+
+  it('lets a granted pool node open the review for the pushed branch', async () => {
+    mockGrantedPoolNode();
+    GitProjectService.createReviewRequest.mockResolvedValue({
+      url: 'https://git.example.com/group/repo/pulls/7',
+      state: 'open',
+      ticketId: '42',
+    });
+    pool.query.mockImplementation(async (sql) => {
+      if (String(sql).includes('FROM tickets')) return { rows: [{ project_id: 1 }] };
+      if (String(sql).includes('agent_node_grants')) return { rows: [{ ok: 1 }] };
+      return { rows: [] };
+    });
+
+    const res = await request(app)
+      .post('/api/v1/git/42/review')
+      .set('X-API-Key', 'at_node_token')
+      .set('X-Agent-Runtime', '5')
+      .send({
+        provider: 'forgejo',
+        description: 'PR body',
+        headBranch: 'vibecode/ticket-42-fix',
+        baseBranch: 'main',
+      });
+
+    expect(res.statusCode).toBe(201);
+    expect(GitProjectService.createReviewRequest).toHaveBeenCalledWith(
+      1, '42', 'PR body',
+      {
+        provider: 'forgejo',
+        headBranch: 'vibecode/ticket-42-fix',
+        baseBranch: 'main',
+      });
+  });
+
+  it.each([
+    'vibecode/../main',
+    '.hidden',
+    'release/x.lock',
+    'feat/a b',
+    'feat/x.',
+    'feat/x~1',
+  ])('rejects an unsafe review branch %s', async (headBranch) => {
+    const res = await auth(request(app).post('/api/v1/git/42/review'))
+      .send({ headBranch });
+
+    expect(res.statusCode).toBe(400);
+    expect(GitProjectService.createReviewRequest).not.toHaveBeenCalled();
+  });
+
+  it('accepts git-valid characters in the review branch', async () => {
+    GitProjectService.createReviewRequest.mockResolvedValue({
+      url: 'https://example.test/pull/8',
+      ticketId: '42',
+    });
+
+    const res = await auth(request(app).post('/api/v1/git/42/review'))
+      .send({ headBranch: 'release/1.0+hotfix%2', baseBranch: 'main' });
+
+    expect(res.statusCode).toBe(201);
+    expect(GitProjectService.createReviewRequest).toHaveBeenCalledWith(
+      1, '42', undefined,
+      {
+        provider: null,
+        headBranch: 'release/1.0+hotfix%2',
+        baseBranch: 'main',
+      });
   });
 
   it('rejects disconnect without the manage-members permission', async () => {
