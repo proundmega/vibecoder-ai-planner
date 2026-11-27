@@ -593,6 +593,55 @@ describe('GitProjectService', () => {
       expect(pool.query).not.toHaveBeenCalled();
     });
 
+    it('uses and records the agent-pushed head branch with its base', async () => {
+      const provider = fakeProvider({
+        createReviewRequest: jest.fn().mockResolvedValue({
+          url: 'https://example.test/pull/2',
+          state: 'open',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42, projectId: 1, title: 'Title', description: 'Desc',
+      });
+      pool.query.mockResolvedValue({ rows: [] });
+
+      const result = await GitProjectService.createReviewRequest(1, 42, 'Agent body', {
+        repo: {
+          provider: 'github',
+          repoUrl: 'owner/repo',
+          accessTokenEncrypted: 'enc:pat',
+        },
+        headBranch: 'vibecode/ticket-42-agent',
+        baseBranch: 'release',
+      });
+
+      expect(provider.createReviewRequest).toHaveBeenCalledWith(
+        expect.objectContaining({ defaultBranch: 'release' }),
+        42,
+        'Title',
+        'vibecode/ticket-42-agent',
+        'Agent body'
+      );
+      expect(pool.query).toHaveBeenCalledWith(
+        expect.stringContaining('SET branch_name = $1'),
+        ['vibecode/ticket-42-agent', 42]
+      );
+      expect(result.url).toBe('https://example.test/pull/2');
+    });
+
+    it('rejects a review whose head and base are the same', async () => {
+      await expect(GitProjectService.createReviewRequest(1, 42, null, {
+        repo: {
+          provider: 'github',
+          repoUrl: 'owner/repo',
+          accessTokenEncrypted: 'enc:pat',
+        },
+        headBranch: 'main',
+        baseBranch: 'main',
+      })).rejects.toThrow('head and base branch must differ');
+    });
+
     it('forwards read, list, diff and delete operations', async () => {
       const provider = fakeProvider({
         getFileContent: jest.fn().mockResolvedValue('contents'),

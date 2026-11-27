@@ -236,17 +236,41 @@ class GitProjectService {
     return { branchName, ticketId };
   }
 
-  async createReviewRequest(projectId, ticketId, description, { repo = null, provider = null } = {}) {
+  async createReviewRequest(
+    projectId,
+    ticketId,
+    description,
+    { repo = null, provider = null, headBranch = null, baseBranch = null } = {}
+  ) {
     const connected = await this._requireRepo(projectId, repo, { provider });
     const ticket = await this._ticketForProject(ticketId, projectId);
-    if (!ticket.branchName) {
+    // The harness pushes the branch itself and passes it; human callers use
+    // the branch recorded by the branch endpoint.
+    const branchName = headBranch || ticket.branchName;
+    if (!branchName) {
       throw new ValidationError('No branch created for this ticket yet');
     }
+    if (baseBranch && baseBranch === branchName) {
+      throw new ValidationError('The review head and base branch must differ');
+    }
+
+    if (headBranch && headBranch !== ticket.branchName) {
+      await pool.query(
+        'UPDATE tickets SET branch_name = $1, updated_at = NOW() WHERE id = $2',
+        [branchName, ticketId]
+      );
+    }
+
+    // Repo profiles choose the base branch per ticket; providers read the
+    // repo's default branch, so override it for this request.
+    const target = baseBranch
+      ? { ...connected, defaultBranch: baseBranch, default_branch: baseBranch }
+      : connected;
 
     const review = await this._withProvider(
       projectId,
       (providerInstance) => providerInstance.createReviewRequest(
-        connected, ticket.id, ticket.title, ticket.branchName,
+        target, ticket.id, ticket.title, branchName,
         description || ticket.description
       ),
       { repo: connected, provider }
@@ -255,7 +279,7 @@ class GitProjectService {
     if (!review) {
       // Branch-only providers (local bare/SSH) publish branch + SHA; the agent
       // records the SHA and the ticket still moves to review through reconcile.
-      return { ticketId, branchName: ticket.branchName };
+      return { ticketId, branchName };
     }
 
     await pool.query(

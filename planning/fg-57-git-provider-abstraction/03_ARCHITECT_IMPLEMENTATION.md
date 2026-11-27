@@ -65,6 +65,7 @@ Files:
 - `backend/src/api/git.js` (new generic routes)
 - `backend/src/controllers/gitController.js` (new)
 - `backend/src/__tests__/integration/forgejoProvider.test.js` (new)
+- `agent/src/main/java/.../service/BackendReviewClient.java` (new; backend-proxied review request)
 - `agent/src/test/java/.../GitServiceTest.java` (provider cases)
 - `05_RUNBOOK.md` deployment steps
 
@@ -132,6 +133,10 @@ Files:
 - GitHub credentials always use `GitHubAppAuthService.mintToken` (app or pat),
   preserving the audit event and repo binding; non-GitHub providers return the
   stored scoped credential.
+- `POST /git/:ticketId/review` accepts node credentials (runtime + ticket
+  grant) and optional `headBranch`/`baseBranch`, so the harness can open the
+  review for the branch it pushed. The service records the head branch on the
+  ticket and overrides the provider's base branch for that request.
 
 ## Dependencies
 

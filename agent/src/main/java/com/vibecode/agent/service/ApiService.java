@@ -194,6 +194,41 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
+     * Create or reuse the ticket review request through the backend, which owns
+     * the connected provider and resolves the branch/base. Returns the provider
+     * payload; branch-only providers return no `url`.
+     */
+    public Map<String, Object> createReviewRequest(
+        long ticketId,
+        String description,
+        String headBranch,
+        String baseBranch,
+        String provider
+    ) throws IOException {
+        String url = baseUrl + "/git/" + ticketId + "/review";
+        Map<String, Object> body = new HashMap<>();
+        if (description != null && !description.isBlank()) {
+            body.put("description", description);
+        }
+        if (headBranch != null && !headBranch.isBlank()) {
+            body.put("headBranch", headBranch);
+        }
+        if (baseBranch != null && !baseBranch.isBlank()) {
+            body.put("baseBranch", baseBranch);
+        }
+        if (provider != null && !provider.isBlank()) {
+            body.put("provider", provider);
+        }
+        ApiResponse<Map<String, Object>> response = executePost(
+            url, body, new TypeReference<ApiResponse<Map<String, Object>>>() {});
+
+        if (response.hasError()) {
+            throw new IOException("Failed to create review request: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    /**
      * Persist a durable harness run before starting side effects (fg-33).
      */
     public Map<String, Object> startHarnessRun(

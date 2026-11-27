@@ -60,8 +60,21 @@ public final class GitCredentialProvider {
     }
 
     public GitService createGitService(GitHubService gitHubService) {
+        return createGitService(gitHubService, null);
+    }
+
+    public GitService createGitService(
+        GitHubService gitHubService,
+        GitService.ReviewClient reviewClient
+    ) {
         if ("github".equals(provider) && gitHubService != null) {
             return GitService.github(repoUrl, repoName, gitHubService);
+        }
+        // Local bare/SSH has no review API; every other self-hosted provider
+        // creates the review through the backend proxy (which returns
+        // branch-only evidence when it cannot open one).
+        if (reviewClient != null && !"local".equals(provider)) {
+            return GitService.withReviewClient(provider, repoUrl, repoName, reviewClient);
         }
         return GitService.branchOnly(provider, repoUrl, repoName);
     }

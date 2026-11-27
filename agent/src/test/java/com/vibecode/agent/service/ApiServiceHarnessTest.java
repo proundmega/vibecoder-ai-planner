@@ -480,6 +480,26 @@ class ApiServiceHarnessTest {
     }
 
     @Test
+    void createsTheTicketReviewThroughTheBackend() throws Exception {
+        respond("/api/v1/git/42/review", 201, ok(
+            "{\"url\":\"https://git.example.com/group/repo/pulls/7\","
+                + "\"state\":\"open\",\"ticketId\":42}"));
+
+        Map<String, Object> data = api.createReviewRequest(
+            42, "PR body", "vibecode/ticket-42", "main", "forgejo");
+
+        RecordedRequest request = lastRequest();
+        assertEquals("POST", request.method());
+        assertEquals("/api/v1/git/42/review", request.path());
+        assertTrue(request.body().contains("\"description\":\"PR body\""), request.body());
+        assertTrue(request.body().contains("\"headBranch\":\"vibecode/ticket-42\""),
+            request.body());
+        assertTrue(request.body().contains("\"baseBranch\":\"main\""), request.body());
+        assertTrue(request.body().contains("\"provider\":\"forgejo\""), request.body());
+        assertEquals("https://git.example.com/group/repo/pulls/7", data.get("url"));
+    }
+
+    @Test
     void fetchesRepoConfigFromTheProviderNeutralGitRoute() throws Exception {
         respond("/api/v1/git/7/repo/agent", 200, ok(
             "{\"provider\":\"forgejo\",\"repoUrl\":\"https://git.example.com/g/r.git\","

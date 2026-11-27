@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
-const { forProjectParam } = require('../middleware/agentProjectScope');
-const { requireRuntime, requireProjectGrant } = require('../middleware/agentRole');
+const { forProjectParam, forTicketParam } = require('../middleware/agentProjectScope');
+const {
+  requireRuntime, requireProjectGrant, requireTicketGrant,
+} = require('../middleware/agentRole');
 const { requireAnyPermission } = require('../middleware/permissions');
 const { validate, validatePathParams } = require('../middleware/validate');
 const gitController = require('../controllers/gitController');
@@ -246,14 +248,36 @@ router.delete('/:ticketId/branch', verifyToken, validatePathParams({ ticketId: i
  *   post:
  *     tags: [Git]
  *     summary: Create or reuse the ticket review request
+ *     description: Agents pass the pushed headBranch (and optional baseBranch); humans may omit them to use the ticket branch.
+ *     parameters:
+ *       - in: path
+ *         name: ticketId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *     security:
+ *       - ApiKeyAuth: []
+ *       - BearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               provider: { type: string }
+ *               description: { type: string }
+ *               headBranch: { type: string, description: Branch the agent pushed }
+ *               baseBranch: { type: string, description: Branch the review targets }
  *     responses:
  *       201:
- *         description: Review request created or reused
+ *         description: Review request created or reused (or branch + SHA for branch-only providers)
  */
 router.post(
   '/:ticketId/review',
-  verifyToken,
+  verifyTokenOrAgent,
   validatePathParams({ ticketId: idPathParam }),
+  requireRuntime('running'),
+  forTicketParam(),
+  requireTicketGrant('worker'),
   validate(reviewRequestSchema),
   gitController.createReview
 );

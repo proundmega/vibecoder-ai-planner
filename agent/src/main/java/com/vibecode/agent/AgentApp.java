@@ -156,7 +156,9 @@ public class AgentApp {
         }
         GitCredentialProvider credentials = GitCredentialProvider.fromConfig(config);
         gitHubService = credentials.createGitHubService(tokenProvider);
-        gitService = credentials.createGitService(gitHubService);
+        gitService = credentials.createGitService(
+            gitHubService,
+            new BackendReviewClient(apiService, config.getRepoProvider()));
         harnessConfig.validate();
         TicketWorker ticketWorker = new HarnessTicketProcessor(
             config, apiService, providerSettings, gitHubService,
