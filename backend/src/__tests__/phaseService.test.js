@@ -325,11 +325,17 @@ describe('PhaseService', () => {
         { action: 'changes_requested', reason: 'fix the empty state' }
       );
 
+      const metadata = { action: 'changes_requested', reason: 'fix the empty state' };
       expect(FixRequestService.createOrEnsureWithClient).toHaveBeenCalledWith(
         mockClient,
         42,
         { feedback: 'fix the empty state' },
-        { db: mockClient, actorId: 'user-1', branchResolution }
+        {
+          db: mockClient,
+          actorId: 'user-1',
+          branchResolution,
+          phaseMetadata: metadata,
+        }
       );
       expect(result).toEqual({
         ticketId: 42,
@@ -340,6 +346,30 @@ describe('PhaseService', () => {
       });
       expect(mockClient.query.mock.calls.some(
         ([sql]) => String(sql).includes('UPDATE tickets SET phase'))).toBe(false);
+    });
+
+    test('surfaces an already-queued request without duplicating it', async () => {
+      const existing = { id: 'req-9', state: 'queued' };
+      FixDispatchService.prepareManual.mockResolvedValueOnce({
+        feedback: 'fix it', existing,
+      });
+      const mockClient = {
+        query: jest.fn()
+          .mockResolvedValueOnce({}) // BEGIN
+          .mockResolvedValueOnce({ rows: [{ id: 42, phase: 'review' }] })
+          .mockResolvedValueOnce({}) // UPDATE
+          .mockResolvedValueOnce({}) // INSERT
+          .mockResolvedValueOnce({}), // COMMIT
+        release: jest.fn(),
+      };
+      mockPool.connect.mockReturnValue(mockClient);
+
+      const result = await phaseService.transition(
+        42, 'in_progress', 'human', 'user-1', { reason: 'retry' });
+
+      expect(FixRequestService.createOrEnsureWithClient).not.toHaveBeenCalled();
+      expect(result.fixRequest).toEqual(existing);
+      expect(result.created).toBe(false);
     });
 
     test('keeps the plain transition when dispatch is off', async () => {

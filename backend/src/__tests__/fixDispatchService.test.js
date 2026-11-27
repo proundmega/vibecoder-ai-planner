@@ -73,6 +73,7 @@ describe('fg-32c2b fix dispatch', () => {
 
       await expect(FixDispatchService.assertCanCreate(42, 'human'))
         .rejects.toThrow('Fix loop is disabled for this project');
+      expect(pool.query.mock.calls[0][0]).toContain('p.deleted_at IS NULL');
     });
 
     test('refuses a reviewer unless dispatch is automatic', async () => {

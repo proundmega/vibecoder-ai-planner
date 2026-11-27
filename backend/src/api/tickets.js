@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { requireAnyPermission } = require('../middleware/permissions');
+const {
+  requireHumanStatusPermission,
+  requireHumanProjectMembership,
+} = require('../middleware/humanActor');
 const { verifyToken, verifyTokenOrAgent } = require('../middleware/auth');
 const { validate, validatePathParams } = require('../middleware/validate');
 const { requireRuntime, requireTicketGrant, requireBodyGrant } = require('../middleware/agentRole');
@@ -672,9 +676,22 @@ router.get('/:ticketId/phases/allowed', verifyTokenOrAgent, forTicketParam(), va
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/:ticketId/phases/transition', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
+router.post('/:ticketId/phases/transition', verifyTokenOrAgent, requireRuntime('running'), forTicketParam(), requireTicketGrant('worker'), requireHumanStatusPermission, requireHumanProjectMembership, validatePathParams({ ticketId: pathParams.ticketId }), validate({ headers: jsonContentTypeSchema, body: phaseTransitionSchema }), async (req, res, next) => {
   try {
     const { toPhase, actorType, metadata } = req.body;
+    // The actor type is a property of the credential, never of the body: a
+    // worker agent must not claim `human` (which would bypass the reviewer
+    // dispatch gate and mislabel the phase history).
+    const derivedActorType = req.agent ? 'agent' : 'human';
+    if (actorType && actorType !== derivedActorType) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_ACTOR_TYPE',
+          message: `actorType '${actorType}' does not match the authenticated caller`,
+        },
+      });
+    }
     // Agent phase transitions cannot complete a ticket directly; done/deployed
     // must go through the approval path like a status change.
     if (req.agent && (toPhase === 'done' || toPhase === 'deployed')) {
@@ -686,11 +703,13 @@ router.post('/:ticketId/phases/transition', verifyTokenOrAgent, requireRuntime('
         },
       });
     }
-    const actorId = req.user ? req.user.id : (req.agent ? req.agent.id : null);
+    const actorId = req.agent
+      ? req.agent.id
+      : (req.user?.userId ?? req.user?.id ?? null);
     const result = await phaseService.transition(
       req.params.ticketId,
       toPhase,
-      actorType || 'system',
+      derivedActorType,
       actorId,
       metadata || null
     );

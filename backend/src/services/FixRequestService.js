@@ -243,6 +243,13 @@ class FixRequestService {
     const fromPhase = ticket.phase;
     const actorType = attemptId ? 'agent' : 'human';
     const actorId = options.actorId == null ? null : String(options.actorId);
+    // Caller-supplied phase context (for example a manual dispatch reason).
+    // The dispatch-owned keys are written last so callers cannot spoof them.
+    const phaseMetadata = options.phaseMetadata
+      && typeof options.phaseMetadata === 'object'
+      && !Array.isArray(options.phaseMetadata)
+      ? options.phaseMetadata
+      : null;
 
     await client.query(
       `UPDATE tickets
@@ -266,7 +273,12 @@ class FixRequestService {
         fromPhase,
         actorType,
         actorId,
-        JSON.stringify({ source, attemptId, reviewState: 'changes_requested' }),
+        JSON.stringify({
+          ...(phaseMetadata || {}),
+          source,
+          attemptId,
+          reviewState: 'changes_requested',
+        }),
       ]
     );
 

@@ -103,7 +103,13 @@ class PhaseService {
           client,
           ticketId,
           { feedback: manualFix.feedback },
-          { db: client, actorId, branchResolution: manualFix.branchResolution }
+          {
+            db: client,
+            actorId,
+            branchResolution: manualFix.branchResolution,
+            // Keep the caller's reason/action on the manual fix history row.
+            phaseMetadata: metadata,
+          }
         );
         fixRequest = result.request;
       } else {
@@ -124,7 +130,13 @@ class PhaseService {
       if (readiness && readiness.blocked) await TicketReadinessService.emitBlocked(readiness);
 
       const result = { ticketId, fromPhase: currentPhase, toPhase, status: newStatus };
-      if (fixRequest) result.fixRequest = fixRequest;
+      if (fixRequest) {
+        result.fixRequest = fixRequest;
+      } else if (manualFix?.existing) {
+        // Retry of an already-queued request: the ticket only needed moving.
+        result.fixRequest = manualFix.existing;
+        result.created = false;
+      }
       return result;
     } catch (error) {
       if (!committed) await client.query('ROLLBACK');

@@ -76,7 +76,9 @@ const phaseTransitionSchema = Joi.object({
     'any.only': 'toPhase must be one of: draft, planning, plan_approved, assigned, in_progress, blocked, review, human_approval, done, deployed',
     'any.required': 'toPhase is required',
   }),
-  actorType: Joi.string().valid('human', 'agent', 'system').optional().default('human'),
+  // Derived from the credential by the route; a body value is only allowed to
+  // match it, never to override it.
+  actorType: Joi.string().valid('human', 'agent', 'system').optional(),
   metadata: Joi.object().optional(),
 });
 

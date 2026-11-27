@@ -81,7 +81,9 @@ class FixDispatchService {
       `SELECT p.fix_loop_mode
          FROM tickets t
          JOIN projects p ON p.id = t.project_id
-        WHERE t.id = $1 AND t.deleted_at IS NULL`,
+        WHERE t.id = $1
+          AND t.deleted_at IS NULL
+          AND p.deleted_at IS NULL`,
       [id]
     );
     if (result.rows.length === 0) {
@@ -115,7 +117,9 @@ class FixDispatchService {
       `SELECT t.phase, p.fix_loop_mode
          FROM tickets t
          JOIN projects p ON p.id = t.project_id
-        WHERE t.id = $1 AND t.deleted_at IS NULL`,
+        WHERE t.id = $1
+          AND t.deleted_at IS NULL
+          AND p.deleted_at IS NULL`,
       [id]
     );
     const row = result.rows[0];
