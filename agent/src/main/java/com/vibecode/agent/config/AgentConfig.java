@@ -76,6 +76,7 @@ public class AgentConfig {
     private final String gitSshKeyFile;
     private final String gitSshKnownHosts;
     private String repoUrl;
+    private String repoBaseUrl;
     private String repoProvider = "github";
     private String repoAuthMode;
     private final boolean allowPat;
@@ -265,6 +266,15 @@ public class AgentConfig {
     }
 
     public String getRepoProvider() { return repoProvider; }
+
+    /** Provider base URL from the backend (self-hosted hosts); null for GitHub. */
+    public String getRepoBaseUrl() { return repoBaseUrl; }
+
+    public void setRepoBaseUrl(String repoBaseUrl) {
+        this.repoBaseUrl = repoBaseUrl == null || repoBaseUrl.isBlank()
+            ? null
+            : repoBaseUrl.trim();
+    }
 
     public void setRepoProvider(String provider) {
         if (provider != null && !provider.isBlank()) {

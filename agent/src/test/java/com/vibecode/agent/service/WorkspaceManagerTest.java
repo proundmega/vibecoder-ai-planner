@@ -31,6 +31,39 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class WorkspaceManagerTest {
 
+    @Test
+    void onlyAuthenticatesAgainstTheConfiguredProviderOrigin() {
+        WorkspaceManager manager = new WorkspaceManager(
+            "/tmp/ws", "repo", false, "token", () -> "token", null,
+            "https://git.example.com");
+
+        assertTrue(manager.shouldAuthenticate("https://git.example.com/group/repo.git"));
+        assertFalse(manager.shouldAuthenticate("https://evil.example.com/group/repo.git"));
+        assertFalse(manager.shouldAuthenticate("http://git.example.com/group/repo.git"));
+        assertFalse(manager.shouldAuthenticate("ssh://git@git.example.com/group/repo.git"));
+    }
+
+    @Test
+    void normalizesTheTokenOrigin() {
+        assertEquals("https://github.com",
+            WorkspaceManager.httpsOrigin("https://GitHub.com/owner/repo.git"));
+        assertEquals("https://github.com",
+            WorkspaceManager.httpsOrigin("https://github.com:443/owner/repo.git"));
+        assertEquals("https://git.example.com:8443",
+            WorkspaceManager.httpsOrigin("https://git.example.com:8443/group/repo.git"));
+        assertNull(WorkspaceManager.httpsOrigin("ssh://git@git.example.com/group/repo.git"));
+        assertNull(WorkspaceManager.httpsOrigin(null));
+    }
+
+    @Test
+    void legacyConstructionWithoutAnOriginKeepsTheOldBehaviour() {
+        WorkspaceManager manager = new WorkspaceManager(
+            "/tmp/ws", "repo", false, "token", () -> "token");
+
+        assertTrue(manager.shouldAuthenticate("https://anything.example.com/repo.git"));
+        assertTrue(manager.shouldAuthenticate("ssh://git@anything.example.com/repo.git"));
+    }
+
     @TempDir
     Path tempDir;
 

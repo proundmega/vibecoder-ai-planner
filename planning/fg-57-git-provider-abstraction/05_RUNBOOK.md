@@ -100,7 +100,9 @@ if you already operate it.
    review through `POST /api/v1/git/:ticketId/review` with the pushed
    `headBranch` and the run's `baseBranch`. The backend owns the provider
    client, so the agent never needs the Forgejo/Gitea API URL, and the request
-   is idempotent. Then verify:
+   is idempotent. The HTTPS bearer token is only sent to the configured
+   provider origin (the provider base URL, or the repo URL origin for GitHub);
+   a remote on another host gets no credential and fails closed. Then verify:
    - one branch is pushed;
    - exactly one PR/MR is created and a retry does not duplicate it;
    - the ticket moves to `review` with the PR/MR URL (or branch + SHA for the

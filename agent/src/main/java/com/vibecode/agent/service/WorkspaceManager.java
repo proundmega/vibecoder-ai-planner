@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -93,6 +94,7 @@ public class WorkspaceManager {
     private final String repoCloneDir;
     private final Path cloneRoot;
     private final String repoName;
+    private final String allowedTokenOrigin;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -113,6 +115,19 @@ public class WorkspaceManager {
     public WorkspaceManager(
         String repoCloneDir, String repoName, boolean dryRun,
         String githubToken, GitHubTokenSource tokenSource, String workspaceKey) {
+        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, workspaceKey, null);
+    }
+
+    /**
+     * @param tokenOrigin the only https origin allowed to receive the bearer
+     *     token (the configured provider base/repo origin). Null keeps the
+     *     legacy unrestricted behaviour for direct construction; production
+     *     wiring always passes the configured origin.
+     */
+    public WorkspaceManager(
+        String repoCloneDir, String repoName, boolean dryRun,
+        String githubToken, GitHubTokenSource tokenSource, String workspaceKey,
+        String tokenOrigin) {
         this.repoCloneDir = repoCloneDir;
         this.cloneRoot = Paths.get(repoCloneDir).toAbsolutePath().normalize();
         this.repoName = repoName;
@@ -122,6 +137,7 @@ public class WorkspaceManager {
         this.tokenSource = tokenSource != null ? tokenSource : () -> githubToken;
         this.credentialHelperScript = null;
         this.repoDir = null;
+        this.allowedTokenOrigin = httpsOrigin(tokenOrigin);
     }
 
     /** Set the ticket id (or other key) used for the runtime-scoped layout. */
@@ -450,7 +466,8 @@ public class WorkspaceManager {
         throws IOException {
         String token = currentToken();
         boolean authenticate = token != null && !token.isBlank()
-            && repoUrl.startsWith("https://");
+            && repoUrl.startsWith("https://")
+            && shouldAuthenticate(repoUrl);
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -567,7 +584,8 @@ public class WorkspaceManager {
         // can overwrite a branch only if the remote has not moved.
         String pushTarget = "origin";
         String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank();
+        boolean authenticate = token != null && !token.isBlank()
+            && shouldAuthenticateRemote();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -773,7 +791,8 @@ public class WorkspaceManager {
      */
     private void runWithCredentials(GitOperation operation) throws IOException {
         String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank();
+        boolean authenticate = token != null && !token.isBlank()
+            && shouldAuthenticateRemote();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -1494,6 +1513,67 @@ public class WorkspaceManager {
             || lower.contains("invalid username or password")
             || lower.contains("http 401")
             || lower.contains("returned error: 401");
+    }
+
+    /**
+     * Normalize an https URL to {@code scheme://host[:port]}, dropping any
+     * credentials, path and query. Returns null for non-https URLs.
+     */
+    static String httpsOrigin(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
+                return null;
+            }
+            String host = uri.getHost().toLowerCase(Locale.ROOT);
+            int port = uri.getPort();
+            return port == -1 || port == 443
+                ? "https://" + host
+                : "https://" + host + ":" + port;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Only send the bearer token to the configured provider origin. The token
+     * is never sent over http, to an ssh/file remote, or to another host.
+     */
+    boolean shouldAuthenticate(String repoUrl) {
+        if (allowedTokenOrigin == null) {
+            return true; // legacy direct construction; production passes an origin
+        }
+        String origin = httpsOrigin(repoUrl);
+        return origin != null && origin.equals(allowedTokenOrigin);
+    }
+
+    /** Read the publishing remote's URL; a failure returns null. */
+    private String remoteOriginUrl() {
+        try {
+            return runGitCommand("remote", "get-url", "origin").trim();
+        } catch (IOException e) {
+            log.debug("Could not read the origin URL: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Decide authentication for the publishing remote. Publishing restores the
+     * clone-time config first, so the remote is the URL the workspace was
+     * cloned from. Direct construction (tests) with no configured origin keeps
+     * the legacy authenticated behaviour.
+     */
+    private boolean shouldAuthenticateRemote() {
+        String remote = remoteOriginUrl();
+        if (remote == null || remote.isBlank()) {
+            // No readable remote: legacy direct construction keeps the old
+            // behaviour; a configured origin fails closed.
+            return allowedTokenOrigin == null;
+        }
+        return shouldAuthenticate(remote);
     }
 
     private String currentToken() throws IOException {

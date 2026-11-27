@@ -88,14 +88,15 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D10 | Webhook-driven review state and merge events | self | Integration | follow-up | open |
 | D11 | Consolidate the private-host checks in `providers/generic`, `ProviderRegistryService` and `providers/git` | review | Security | follow-up | open |
 | D12 | Pin or revalidate the resolved base URL address at connect time (DNS rebinding) | review | Security | fg-57b / follow-up | open |
-| D13 | Local filesystem repo paths with a configured repository root; local repo/default-branch existence validation and the 04 integration test | review | Security | fg-57d2 | open |
+| D13 | Local filesystem repo paths with a configured repository root; local repo/default-branch existence validation and the 04 integration test | review | Security | fg-57d2b | open |
 | D14 | Forgejo/Gitea `getFileContent` for repo-profile detection (returns null in fg-57e) | review | Functionality | fg-57f / follow-up | open |
 | D15 | Paginate Forgejo/Gitea branch and review listings beyond the first 50 items | review | Reliability | follow-up | open |
-| D16 | Pass the allowed provider origin into the agent `WorkspaceManager` so HTTPS token auth is scoped to the connected provider | review | Security | fg-57d2 / follow-up | open |
+| D16 | Pass the allowed provider origin into the agent `WorkspaceManager` so HTTPS token auth is scoped to the connected provider | review | Security | fg-57d2a (#TBD, in review) | open |
 | D17 | Agent provider-neutral repo credential for clone/push and the `/git/:projectId/token` route | self | Functionality | fg-57f2 | done (#249) |
 | D18 | Project settings provider picker and connection status UI; regenerate the tracked `openapi-generated.json` (`npm run generate:spec`) before frontend codegen | self | UX | fg-57f3 (#261, in review) | open |
 | D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b (#256, in review) | open |
 | D20 | Permission-aware Git settings controls (hide connect/disconnect/branch/review actions the user cannot use) | review | UX | follow-up | open |
+| D21 | Agent SSH clone/push with a configured known-hosts file (`GIT_SSH_COMMAND`, `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`; refuse when no known-hosts file is configured) | review | Security | fg-57d2b | open |
 
 ## Decisions needed from the user
 
