@@ -80,9 +80,10 @@ Files:
 
 ### Phase 4: UI, docs and indexes
 
-- `frontend/src/views/ProjectSettings.vue` (or current settings view)
-- `frontend/src/components/...` provider form
-- `backend/src/api/v1/index.js` generic mount
+- `frontend/src/views/GitConnections.vue` (provider picker, connection status, branches/reviews)
+- `frontend/src/composables/useGit.ts` and `frontend/src/api/git.ts` (generic client/state)
+- `frontend/src/views/ProjectDetail.vue` and `frontend/src/router/index.ts` (`/projects/:id/git`; the legacy `/github` URL redirects)
+- `backend/src/api/openapi-generated.json` (regenerated with `npm run generate:spec`)
 - `AGENTS.md`, `PENDING.txt`, `planning/HARNESS_ROADMAP.md`
 - `05_RUNBOOK.md`
 

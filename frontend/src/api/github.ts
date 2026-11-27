@@ -9,7 +9,7 @@ export interface RepoStatus {
   connected: boolean
 }
 
-interface RawRepoStatus {
+export interface RawRepoStatus {
   id?: string | number | null
   projectId?: string | number | null
   project_id?: string | number | null
@@ -21,6 +21,13 @@ interface RawRepoStatus {
   isActive?: boolean | null
   is_active?: boolean | null
   connected?: boolean | null
+  provider?: string | null
+  providerBaseUrl?: string | null
+  provider_base_url?: string | null
+  providerProjectId?: string | null
+  provider_project_id?: string | null
+  authMode?: string | null
+  auth_mode?: string | null
 }
 
 /**
@@ -88,7 +95,7 @@ function branchName(row: string | { name?: string }): string {
   return typeof row === 'string' ? row : row?.name || ''
 }
 
-function ticketIdFromBranch(name: string): string | null {
+export function ticketIdFromBranch(name: string): string | null {
   const match = name.match(/^vibecode\/ticket-(\d+)(?:-|$)/)
   return match ? match[1] : null
 }

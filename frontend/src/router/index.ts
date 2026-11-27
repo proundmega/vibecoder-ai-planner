@@ -128,10 +128,15 @@ const routes = [
         meta: { requiresAuth: true },
       },
       {
-        path: 'github',
-        name: 'ProjectGitHub',
-        component: () => import('../views/GitHubConnections.vue'),
+        path: 'git',
+        name: 'ProjectGit',
+        component: () => import('../views/GitConnections.vue'),
         meta: { requiresAuth: true },
+      },
+      {
+        // Keep the pre-fg-57 URL working for bookmarks and older links.
+        path: 'github',
+        redirect: 'git',
       },
       {
         path: 'templates',

@@ -80,13 +80,21 @@ if you already operate it.
    so PAT issuance keeps its audit event and repo binding.
 
    The tracked `backend/src/api/openapi-generated.json` is produced with
-   `npm run generate:spec`; it is not regenerated per PR, so run that command
-   before frontend codegen (planned with `fg-57f3`).
+   `npm run generate:spec`; regenerate it whenever the route JSDoc changes
+   (`fg-57f3` refreshed it, so the `/git` routes and the agent token route are
+   current).
 
-5. Verify the backend provider with the gated integration test
+5. In the UI, open the project → **Git** (the legacy `/github` URL redirects).
+   The provider picker lists the registered providers; choose GitHub, Forgejo,
+   Gitea or Local, then fill the repository URL, the base URL for self-hosted
+   hosts, the auth mode, and the token or SSH key. The connection card and
+   status show the provider, default branch and the latest review URL
+   (`branch-only` for local). The same page lists and creates branches and
+   reviews for the active provider.
+6. Verify the backend provider with the gated integration test
    (`FORGEJO_BASE_URL`, `FORGEJO_TOKEN`, `FORGEJO_REPO`): it connects, creates a
    branch, creates exactly one PR, reads the diff and cleans up.
-6. Run one worker. The agent fetches the provider-scoped credential from
+7. Run one worker. The agent fetches the provider-scoped credential from
    `/api/v1/git/:projectId/token`, clones/pushes over HTTPS and then opens the
    review through `POST /api/v1/git/:ticketId/review` with the pushed
    `headBranch` and the run's `baseBranch`. The backend owns the provider
@@ -96,7 +104,7 @@ if you already operate it.
    - exactly one PR/MR is created and a retry does not duplicate it;
    - the ticket moves to `review` with the PR/MR URL (or branch + SHA for the
      local bare/SSH fallback).
-7. Clean up the PR/branch, repository, token and container.
+8. Clean up the PR/branch, repository, token and container.
 
 ## GitLab self-hosted
 
