@@ -133,7 +133,9 @@ public class AgentConfig {
         this.harnessConfig = HarnessConfig.fromEnvironment();
         this.sandboxConfig = SandboxConfig.fromEnvironment();
         if (!isReviewMode() && hasRepoCoordinates()) {
-            validateCloneDir(this.repoCloneDir);
+            // Read through the getter so a test (or wrapper) can point the
+            // validation at its own directory instead of the shared default.
+            validateCloneDir(getRepoCloneDir());
         }
     }
 
@@ -143,19 +145,29 @@ public class AgentConfig {
             try {
                 Files.createDirectories(path);
             } catch (IOException e) {
-                throw new IllegalStateException("Cannot create REPO_CLONE_DIR: " + dir + " - " + e.getMessage());
+                throw new IllegalStateException(
+                    "Cannot create REPO_CLONE_DIR: " + dir + " - " + describe(e));
             }
         }
         if (!Files.isDirectory(path) || !Files.isWritable(path)) {
             throw new IllegalStateException("REPO_CLONE_DIR is not writable: " + dir);
         }
         try {
-            Path testFile = path.resolve(".write-test");
-            Files.writeString(testFile, "ok");
+            // A fixed probe name races with other agent processes and with a
+            // leftover from a crashed run; a unique file only touches our own.
+            Path testFile = Files.createTempFile(path, ".write-test", ".tmp");
             Files.delete(testFile);
         } catch (IOException e) {
-            throw new IllegalStateException("Cannot write to REPO_CLONE_DIR: " + dir + " - " + e.getMessage());
+            throw new IllegalStateException(
+                "Cannot write to REPO_CLONE_DIR: " + dir + " - " + describe(e));
         }
+    }
+
+    private static String describe(IOException failure) {
+        if (failure instanceof java.nio.file.FileSystemException fs && fs.getReason() != null) {
+            return fs.getReason();
+        }
+        return failure.getClass().getSimpleName() + ": " + failure.getMessage();
     }
 
     public String getBackendUrl() { return backendUrl; }
@@ -276,7 +288,7 @@ public class AgentConfig {
     public void setRepoCoordinates(String owner, String name) {
         // Validate before mutating so a failure leaves env fallback intact.
         if (owner != null && !owner.isBlank()) {
-            validateCloneDir(this.repoCloneDir);
+            validateCloneDir(getRepoCloneDir());
         }
         this.repoOwner = owner;
         this.repoName = name;

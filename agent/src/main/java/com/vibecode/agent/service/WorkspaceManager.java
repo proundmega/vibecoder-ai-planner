@@ -63,6 +63,14 @@ public class WorkspaceManager {
         "-c", "advice.detachedHead=false"
     );
 
+    /**
+     * Private ref namespace for the supervisor's own fetches. Resolving the
+     * remote head through this ref works for a {@code --single-branch} clone of
+     * a different branch, where {@code refs/remotes/origin/<branch>} is never
+     * created.
+     */
+    private static final String FETCHED_REF_PREFIX = "refs/vibecode/fetched/";
+
     private static final int MAX_COUNTED_LINES = 1_000_000;
     private static final long MAX_COUNTED_BYTES = 10L * 1024 * 1024;
     /**
@@ -498,6 +506,253 @@ public class WorkspaceManager {
         } finally {
             cleanupAskPass();
         }
+    }
+
+    /**
+     * Publish a fix commit with fast-forward semantics only (fg-32c1).
+     *
+     * <p>The remote branch must still point at {@code reviewedSha} and
+     * {@code commitSha} must descend from it. The fetches and the push share the
+     * same transient askpass credentials as a clone, so authenticated remotes
+     * work; without a credential, git fails closed instead of prompting. The
+     * push is not forced, so a human push during the fix wins.</p>
+     *
+     * <p>A failure after the push is ambiguous: the commit may already be on the
+     * remote. Those errors carry the {@code possibly_published} marker, and a
+     * retry is safe because an already-published commit is not pushed again.
+     * A push failure whose head cannot be re-read is treated the same way,
+     * except that an authentication failure on the re-read is surfaced as
+     * itself so the credential refresh can retry.</p>
+     *
+     * @return the full commit object id that was published; in dry-run, the
+     *     resolved id when a workspace exists, otherwise the supplied value
+     */
+    public String publishFastForward(
+        String commitSha,
+        String branchName,
+        String reviewedSha
+    ) throws IOException {
+        String branch = validateBranch(branchName);
+        String expected = validateCommitSha(reviewedSha, "reviewed");
+        if (commitSha == null || commitSha.isBlank()) {
+            throw new IOException("A commit SHA is required");
+        }
+        if (dryRun) {
+            // Keep the return shape identical to a real publish when the
+            // workspace exists; a dry run has no clone to resolve against.
+            String resolved = hasGitWorkspace() ? resolveCommit(commitSha) : commitSha.trim();
+            log.info("[DRY RUN] Would fast-forward publish {} to {}", resolved, branch);
+            return resolved;
+        }
+
+        hardenGitRepository();
+        // Resolve a short or ref name to the full object id so the comparison
+        // against the remote head below compares like with like.
+        String commit = resolveCommit(commitSha);
+
+        runWithCredentials(() -> {
+            publishOnce(branch, expected, commit);
+            verifyPublished(branch, commit);
+        });
+        return commit;
+    }
+
+    /**
+     * Fetch, confirm the remote is still at the reviewed SHA, confirm the fix
+     * descends from it, then push without force. Re-running it after an
+     * ambiguous push success is a no-op rather than a second push.
+     */
+    private void publishOnce(String branch, String expected, String commit) throws IOException {
+        fetchRemoteBranch(branch);
+        String remoteSha = remoteBranchRef(branch);
+        // Local and network-free, so it also guards the already-published and
+        // moved-head paths: rewritten history must never pass as a fix.
+        requireFastForward(expected, commit);
+        if (commit.equalsIgnoreCase(remoteSha)) {
+            return;
+        }
+        if (!expected.equalsIgnoreCase(remoteSha)) {
+            throw new IOException(
+                "remote_head_moved: " + branch + " is at " + remoteSha
+                    + ", reviewed " + expected);
+        }
+        try {
+            pushFastForwardOnce(commit, branch);
+        } catch (IOException pushFailure) {
+            // A human push can land between the fetch above and the push. Git
+            // reports that as a raw non-fast-forward rejection; re-read the
+            // head so callers get the same remote_head_moved signal as the
+            // pre-push check.
+            String current;
+            try {
+                fetchRemoteBranch(branch);
+                current = remoteBranchRef(branch);
+            } catch (IOException reReadFailure) {
+                if (isAuthenticationFailure(reReadFailure.getMessage())) {
+                    // Let the outer credential refresh retry the whole step:
+                    // swallowing it here would hide the cause.
+                    throw reReadFailure;
+                }
+                // The push may have been applied before the connection dropped.
+                throw new IOException(
+                    "possibly_published: the push of " + commit + " to " + branch
+                        + " failed and the remote head could not be re-read: "
+                        + pushFailure.getMessage(), pushFailure);
+            }
+            if (commit.equalsIgnoreCase(current)) {
+                return;
+            }
+            if (!expected.equalsIgnoreCase(current)) {
+                throw new IOException(
+                    "remote_head_moved: " + branch + " is at " + current
+                        + ", reviewed " + expected, pushFailure);
+            }
+            // The remote is unchanged, so the rejected push published nothing.
+            throw pushFailure;
+        }
+    }
+
+    private String resolveCommit(String commitSha) throws IOException {
+        return runGitCommand("rev-parse", "--verify", commitSha.trim() + "^{commit}").trim();
+    }
+
+    private boolean hasGitWorkspace() {
+        Path gitDir = repoDir == null ? null : repoDir.resolve(".git");
+        return gitDir != null && Files.isDirectory(gitDir, LinkOption.NOFOLLOW_LINKS)
+            && !Files.isSymbolicLink(gitDir);
+    }
+
+    /**
+     * A non-force push is not enough on a remote without fast-forward
+     * protection, so the ancestry check enforces the same rule locally.
+     */
+    private void requireFastForward(String reviewedSha, String commitSha) throws IOException {
+        // merge-base answers "no" with exit 1; any other non-zero code is a
+        // real failure, not a verdict about ancestry.
+        int exitCode = runGitStatus("merge-base", "--is-ancestor", reviewedSha, commitSha);
+        if (exitCode == 1) {
+            throw new IOException(
+                "not_fast_forward: " + commitSha + " does not descend from reviewed "
+                    + reviewedSha);
+        }
+    }
+
+    /**
+     * Run git and return 0 or 1. Exit codes above 1 are errors, not answers, so
+     * they throw with the redacted output instead of being mislabelled.
+     */
+    private int runGitStatus(String... args) throws IOException {
+        Process process = startGit(repoDir, Map.of(), args);
+        String output = readProcessOutput(process);
+        int exitCode;
+        try {
+            exitCode = process.waitFor();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Git command interrupted: " + e.getMessage());
+        }
+        if (exitCode > 1) {
+            throw new IOException(
+                "git " + redact(String.join(" ", args)) + " failed: " + redact(output));
+        }
+        return exitCode;
+    }
+
+    private void verifyPublished(String branch, String commit) throws IOException {
+        String published;
+        try {
+            fetchRemoteBranch(branch);
+            published = remoteBranchRef(branch);
+        } catch (IOException failure) {
+            throw new IOException(
+                "possibly_published: pushed " + commit + " to " + branch
+                    + " but the remote head could not be verified: "
+                    + failure.getMessage(), failure);
+        }
+        if (!commit.equalsIgnoreCase(published)) {
+            throw new IOException(
+                "remote_head_mismatch: possibly_published " + commit + ", but "
+                    + branch + " is at " + published);
+        }
+    }
+
+    private void fetchRemoteBranch(String branch) throws IOException {
+        runGit("fetch", "--no-tags", "origin",
+            "+refs/heads/" + branch + ":" + FETCHED_REF_PREFIX + branch);
+    }
+
+    private String remoteBranchRef(String branch) throws IOException {
+        return runGitCommand("rev-parse", "--verify", FETCHED_REF_PREFIX + branch).trim();
+    }
+
+    /**
+     * Run an authenticated git operation, refreshing the credential once when
+     * git reports an authentication failure. The askpass script must cover
+     * every step, fetches included: without it git runs with
+     * {@code GIT_ASKPASS=/dev/null} and fails on a private remote.
+     */
+    private void runWithCredentials(GitOperation operation) throws IOException {
+        String token = currentToken();
+        boolean authenticate = token != null && !token.isBlank();
+        if (authenticate) {
+            ensureAskPass(token);
+        }
+        try {
+            try {
+                operation.run();
+            } catch (IOException first) {
+                if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
+                    throw first;
+                }
+                String refreshed = refreshToken(first);
+                cleanupAskPass();
+                ensureAskPass(refreshed);
+                operation.run();
+            }
+        } finally {
+            cleanupAskPass();
+        }
+    }
+
+    private void pushFastForwardOnce(String commitSha, String branchName) throws IOException {
+        runGit("push", "--no-verify", "origin",
+            commitSha + ":refs/heads/" + branchName);
+    }
+
+    /**
+     * Approximates {@code git check-ref-format --branch} without needing a
+     * workspace. Anything this accepts but git rejects still fails closed at
+     * fetch time, and the branch name is only used as an explicit refspec.
+     */
+    private static String validateBranch(String branchName) throws IOException {
+        String branch = branchName == null ? "" : branchName.trim();
+        boolean invalid = branch.isEmpty()
+            || branch.startsWith("-")
+            || branch.startsWith("/")
+            || branch.endsWith("/")
+            || branch.endsWith(".")
+            || branch.contains("..")
+            || branch.contains("//")
+            || branch.contains("@{")
+            || branch.endsWith(".lock")
+            || branch.chars().anyMatch(c -> c <= ' ' || "\u007f~^:?*[\\".indexOf(c) >= 0);
+        if (invalid) {
+            throw new IOException("A valid branch name is required");
+        }
+        return branch;
+    }
+
+    private static String validateCommitSha(String sha, String label) throws IOException {
+        String value = sha == null ? "" : sha.trim().toLowerCase(Locale.ROOT);
+        if (!value.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
+            throw new IOException(label + " SHA must be a full commit object id");
+        }
+        return value;
+    }
+
+    @FunctionalInterface
+    private interface GitOperation {
+        void run() throws IOException;
     }
 
     /**
@@ -1194,6 +1449,9 @@ public class WorkspaceManager {
      * the workspace; none of them may influence the supervisor's push.
      */
     private void hardenGitRepository() throws IOException {
+        if (repoDir == null) {
+            throw new IOException("Refusing to publish: no workspace has been cloned");
+        }
         Path gitDir = repoDir.resolve(".git");
         if (Files.isSymbolicLink(gitDir)
             || !Files.isDirectory(gitDir, LinkOption.NOFOLLOW_LINKS)) {
