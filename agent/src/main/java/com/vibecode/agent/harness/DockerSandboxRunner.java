@@ -579,7 +579,8 @@ public final class DockerSandboxRunner implements SandboxRunner {
             watchdog.shutdownNow();
         }
         for (ScheduledExecutorService watchdog : new ArrayList<>(serviceWatchdogs.values())) {
-            watchdog.shutdownNow();
+            // Do not interrupt a watchdog that is already running cleanup.
+            watchdog.shutdown();
         }
         for (String name : new ArrayList<>(egress.keySet())) {
             stopEgress(name);
@@ -1644,12 +1645,9 @@ public final class DockerSandboxRunner implements SandboxRunner {
      *     clean sandbox.
      */
     private boolean stopServices(String name) {
-        ScheduledExecutorService serviceWatchdog = serviceWatchdogs.remove(name);
-        if (serviceWatchdog != null) {
-            serviceWatchdog.shutdownNow();
-        }
         ServiceRuntime runtime = services.get(name);
         if (runtime == null) {
+            stopServiceWatchdog(name);
             return true;
         }
         boolean clean = true;
@@ -1694,8 +1692,20 @@ public final class DockerSandboxRunner implements SandboxRunner {
         if (clean) {
             services.remove(name, runtime);
             RedactionRegistry.unregister(runtime.passwords());
+            // Cancel only after cleanup succeeds. This runs on the service
+            // watchdog thread when the quota trips, so never interrupt it.
+            stopServiceWatchdog(name);
         }
         return clean;
+    }
+
+    private void stopServiceWatchdog(String name) {
+        ScheduledExecutorService serviceWatchdog = serviceWatchdogs.remove(name);
+        if (serviceWatchdog != null) {
+            // shutdown() lets an in-flight watchdog finish its own cleanup;
+            // shutdownNow() would interrupt the quota-triggered cleanup.
+            serviceWatchdog.shutdown();
+        }
     }
 
     private void awaitServiceHealthy(String container, ServiceSpec.Healthcheck healthcheck)
