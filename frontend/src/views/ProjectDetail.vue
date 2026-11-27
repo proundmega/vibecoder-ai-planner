@@ -1,9 +1,9 @@
 <script setup>
-import { onMounted, computed, watch } from 'vue'
+import { onMounted, computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AIAssistant from './AIAssistant.vue'
 import RepoProfileEditor from '@/components/RepoProfileEditor.vue'
-import { useGitHub } from '@/composables/useGitHub'
+import { useGit } from '@/composables/useGit'
 import { useUsage } from '@/composables/useUsage'
 import { useMemory } from '@/composables/useMemory'
 import { useTabNavigation } from '@/composables/useTabNavigation'
@@ -17,7 +17,7 @@ const isChildRoute = computed(() => route.name !== 'ProjectDetail')
 const tabs = [
   { id: 'tickets', label: 'Tickets' },
   { id: 'approvals', label: 'Approvals' },
-  { id: 'github', label: 'GitHub' },
+  { id: 'github', label: 'Git' },
   { id: 'repo-profile', label: 'Repository Profile' },
   { id: 'ai', label: 'AI Chat' },
   { id: 'usage', label: 'Usage & Billing' },
@@ -26,19 +26,29 @@ const tabs = [
 
 const { activeTab } = useTabNavigation(tabs)
 
-const githubObj = useGitHub(projectId)
+const gitObj = useGit(projectId)
 const usageObj = useUsage(projectId)
 const memoryObj = useMemory(projectId)
 
 const {
   loading: githubLoading, error: githubError, success: githubSuccess,
-  repo: githubRepo, showConnectForm: githubShowConnectForm,
-  repoUrl: githubRepoUrl, repoBranch: githubRepoBranch, repoAccessToken: githubRepoAccessToken,
-  branches: githubBranches, prs: githubPrs, creatingBranch: githubCreatingBranch,
-  branchTicketId: githubBranchTicketId, load: githubLoad,
-  connect: githubConnect, disconnect: githubDisconnect,
-  createBranch: githubCreateBranch,
-} = githubObj
+  activeRepo: githubRepo, activeCapabilities: githubActiveCapabilities,
+  branches: githubBranches, reviews: githubReviews,
+  actionLoading: githubActionLoading, load: githubLoad,
+  disconnect: githubDisconnect, createBranch: githubCreateBranch,
+} = gitObj
+const githubBranchTicketId = ref('')
+
+// Local bare/SSH is agent-managed. If capabilities are unavailable, only the
+// known local provider is gated (a provider list failure must not hide GitHub
+// controls).
+const gitBranchOnly = computed(() => {
+  if (githubRepo.value?.provider === 'local') return true
+  if (githubActiveCapabilities.value) {
+    return !githubActiveCapabilities.value.supportsReviewRequests
+  }
+  return false
+})
 
 const {
   usage: usageData, usageLoading: usageLoadingState, usageError: usageErrorState,
@@ -67,6 +77,7 @@ const ROUTE_TAB_MAP = {
   ProjectHarness: 'tickets',
   AIAssistant: 'ai',
   ProjectApprovals: 'approvals',
+  ProjectGit: 'github',
   ProjectGitHub: 'github',
 }
 
@@ -182,8 +193,8 @@ async function handleTabSwitch(tabId) {
 
       <div v-if="activeTab === 'github'" class="tab-panel">
         <div class="tab-header">
-          <h2>GitHub</h2>
-          <router-link :to="`/projects/${projectId}/github`" class="btn-secondary">Manage GitHub</router-link>
+          <h2>Git</h2>
+          <router-link :to="`/projects/${projectId}/git`" class="btn-secondary">Manage Git</router-link>
         </div>
         <div v-if="githubLoading" class="loading">Loading...</div>
         <div v-else>
@@ -192,29 +203,8 @@ async function handleTabSwitch(tabId) {
 
           <div v-if="!githubRepo?.connected" class="github-section">
             <h3>Connect Repository</h3>
-            <p class="description">Link your GitHub repository to enable branch creation, PR management, and ticket tracking.</p>
-            <button v-if="!githubShowConnectForm" @click="githubShowConnectForm = true" class="btn-primary">Connect Repository</button>
-
-            <div v-if="githubShowConnectForm" class="connect-form">
-              <div class="form-group">
-                <label>Repository URL</label>
-                <input v-model="githubRepoUrl" type="text" placeholder="https://github.com/owner/repo" />
-              </div>
-              <div class="form-group">
-                <label>Default Branch</label>
-                <input v-model="githubRepoBranch" type="text" placeholder="main" />
-              </div>
-              <div class="form-group">
-                <label>GitHub Personal Access Token</label>
-                <input v-model="githubRepoAccessToken" type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
-              </div>
-              <div class="form-actions">
-                <button @click="githubConnect" :disabled="githubLoading" class="btn-submit">
-                  {{ githubLoading ? 'Connecting...' : 'Connect' }}
-                </button>
-                <button @click="githubShowConnectForm = false" class="btn-cancel">Cancel</button>
-              </div>
-            </div>
+            <p class="description">Link a GitHub, Forgejo/Gitea or local repository to enable branch creation, reviews and ticket tracking.</p>
+            <router-link :to="`/projects/${projectId}/git`" class="btn-primary">Manage Git connections</router-link>
           </div>
 
           <div v-else class="github-connected">
@@ -224,10 +214,15 @@ async function handleTabSwitch(tabId) {
                 <span class="repo-url">{{ githubRepo.repoUrl }}</span>
                 <span class="repo-branch">{{ githubRepo.defaultBranch }}</span>
               </div>
-              <button @click="githubDisconnect" :disabled="githubLoading" class="btn-danger">Disconnect</button>
+              <button @click="githubDisconnect(githubRepo.provider)" :disabled="githubLoading" class="btn-danger">Disconnect</button>
             </div>
 
-            <div class="github-panels">
+            <p v-if="gitBranchOnly" class="description">
+              Local bare/SSH repositories are agent-managed: the worker pushes the ticket branch and
+              there are no manual branch or review controls.
+            </p>
+
+            <div v-if="!gitBranchOnly" class="github-panels">
               <div class="panel">
                 <h4>Branches</h4>
                 <div v-if="githubBranches.length === 0" class="empty">No branches yet</div>
@@ -238,19 +233,20 @@ async function handleTabSwitch(tabId) {
                 </ul>
                 <div class="create-branch">
                   <input v-model="githubBranchTicketId" type="text" placeholder="Ticket ID for branch" />
-                  <button @click="githubCreateBranch(githubBranchTicketId)" :disabled="githubCreatingBranch || !githubBranchTicketId" class="btn-small">
-                    {{ githubCreatingBranch ? 'Creating...' : 'Create Branch' }}
+                  <button @click="githubCreateBranch(githubBranchTicketId)" :disabled="githubActionLoading === 'branch' || !githubBranchTicketId" class="btn-small">
+                    {{ githubActionLoading === 'branch' ? 'Creating...' : 'Create Branch' }}
                   </button>
                 </div>
               </div>
 
               <div class="panel">
-                <h4>Pull Requests</h4>
-                <div v-if="githubPrs.length === 0" class="empty">No PRs yet</div>
+                <h4>Reviews</h4>
+                <div v-if="githubReviews.length === 0" class="empty">No reviews yet</div>
                 <ul v-else class="pr-list">
-                  <li v-for="pr in githubPrs" :key="pr.id">
-                    <a :href="pr.url" target="_blank" rel="noopener">{{ pr.title }}</a>
-                    <span :class="['pr-state', pr.state]">{{ pr.state }}</span>
+                  <li v-for="review in githubReviews" :key="review.number">
+                    <a v-if="review.url" :href="review.url" target="_blank" rel="noopener">{{ review.title || review.head || `#${review.number}` }}</a>
+                    <span v-else>{{ review.title || review.head || `#${review.number}` }} (URL unavailable)</span>
+                    <span :class="['pr-state', review.state]">{{ review.state }}</span>
                   </li>
                 </ul>
               </div>

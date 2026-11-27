@@ -222,6 +222,33 @@ function createRegistry() {
   };
 }
 
+/**
+ * A provider is hostile input: only absolute http(s) review URLs are exposed
+ * to the UI, and self-hosted rows must stay on the connected provider origin.
+ * Anything else is dropped (the ticket stays branch-only) instead of being
+ * stored in `tickets.pr_url` or rendered as a link.
+ */
+function safeReviewUrl(rawUrl, baseUrl = null) {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  let url;
+  try {
+    url = new URL(rawUrl.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (baseUrl) {
+    let base;
+    try {
+      base = new URL(baseUrl);
+    } catch {
+      return null;
+    }
+    if (url.origin !== base.origin) return null;
+  }
+  return url.toString();
+}
+
 module.exports = {
   PROVIDERS,
   PROVIDER_IDS,
@@ -229,5 +256,6 @@ module.exports = {
   getCapabilities,
   isPrivateHostname,
   assertSafeBaseUrl,
+  safeReviewUrl,
   createRegistry,
 };

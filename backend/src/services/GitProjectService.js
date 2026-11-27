@@ -288,12 +288,22 @@ class GitProjectService {
       return { ticketId, branchName };
     }
 
+    // A self-hosted provider is untrusted input: keep only http(s) URLs, and
+    // for self-hosted rows only the connected provider origin. A dropped URL
+    // leaves the ticket with branch evidence instead of a dangerous link.
+    const safeUrl = gitProviders.safeReviewUrl(
+      review.url, connected.providerBaseUrl || null);
+    if (!safeUrl && review.url) {
+      logger.warn(`Dropped an unsafe review URL for ticket ${ticketId}`);
+    }
+    const safeReview = { ...review, url: safeUrl };
+
     await pool.query(
       'UPDATE tickets SET pr_url = $1, pr_state = $2, updated_at = NOW() WHERE id = $3',
-      [review.url, review.state, ticketId]
+      [safeReview.url, safeReview.state, ticketId]
     );
 
-    return { ...review, ticketId };
+    return { ...safeReview, ticketId };
   }
 
   async deleteBranch(projectId, ticketId, { repo = null, provider = null } = {}) {
@@ -333,11 +343,17 @@ class GitProjectService {
 
   async listReviewRequests(projectId, { repo = null, provider = null } = {}) {
     const connected = await this._requireRepo(projectId, repo, { provider });
-    return this._withProvider(
+    const reviews = await this._withProvider(
       projectId,
       (providerInstance) => providerInstance.listReviewRequests(connected),
       { repo: connected, provider }
     );
+    if (!Array.isArray(reviews)) return [];
+    const baseUrl = connected.providerBaseUrl || null;
+    return reviews.map((review) => ({
+      ...review,
+      url: gitProviders.safeReviewUrl(review.url, baseUrl),
+    }));
   }
 
   async getReviewRequest(projectId, ticketId, { repo = null, provider = null } = {}) {
@@ -360,7 +376,11 @@ class GitProjectService {
       { repo: connected, provider }
     );
     if (!review || !review.branch || !review.headSha) return null;
-    return { ...review, ticketId };
+    return {
+      ...review,
+      url: gitProviders.safeReviewUrl(review.url, connected.providerBaseUrl || null),
+      ticketId,
+    };
   }
 
   async getReviewDiff(projectId, ticketId, { repo = null, provider = null } = {}) {

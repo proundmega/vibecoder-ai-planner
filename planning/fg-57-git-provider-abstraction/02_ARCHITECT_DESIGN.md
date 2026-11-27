@@ -177,7 +177,9 @@ GitProviderConfig          provider, base URL, auth mode, capabilities
 
 ### UI
 
-- Project settings provider picker: GitHub, Forgejo/Gitea, GitLab, Local.
+- Project settings provider picker: GitHub, Forgejo/Gitea, Local (GitLab once
+  its provider lands). Implemented as project → **Git**
+  (`/projects/:id/git`); the legacy `/github` URL redirects.
 - Fields: repository URL, base URL, auth mode, token or deploy key.
 - Connection status shows provider, branch, latest review URL or SHA.
 - Ticket/run views show PR/MR URL when present, otherwise branch + SHA.
