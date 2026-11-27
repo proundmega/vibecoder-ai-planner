@@ -205,7 +205,7 @@ The test skips unless all three `FORGEJO_*` variables are set. Set
 | Date | Commit | Suites | Outcome |
 |---|---|---|---|
 | 2026-11-27 | `e8c38b8` (PR #256) | Backend 171 suites / 2103 tests; agent 1156 tests / 0 failures / 10 skipped; contract 39 | `fg-57f2b` (D19): the harness opens Forgejo/Gitea reviews through node-authenticated `POST /git/:ticketId/review` with the pushed head/base; the backend records the branch and reuses an existing review. Local/SSH stays branch-only. |
-| 2026-11-27 | `ce7554a` (PR #261) | Frontend 71 files / 615 tests; `vue-tsc` and build clean; backend 171 suites / 2113 tests; contract 39 | `fg-57f3` (D18): project → Git page with provider picker, connection status and provider-scoped branches/reviews; generic client/composable; `/github` redirects; tracked `openapi-generated.json` refreshed. Provider review URLs are http(s)/same-origin validated on both sides; local stays agent-managed. |
+| 2026-11-27 | `32cca9c` (PR #261) | Frontend 71 files / 617 tests; `vue-tsc` and build clean; backend 171 suites / 2114 tests; contract 39 | `fg-57f3` (D18): project → Git page with provider picker, connection status and provider-scoped branches/reviews; generic client/composable; `/github` redirects; tracked `openapi-generated.json` refreshed. Provider review URLs are http(s)/same-origin validated on both sides and on single-review reads; local stays agent-managed in both views. |
 
 | Field | Value |
 |---|---|
