@@ -156,6 +156,55 @@ describe('GitConnections', () => {
     expect(wrapper.text()).toContain('#9 review (URL unavailable)')
   })
 
+  it('keeps branch/review controls when capabilities fail but the repo is not local', async () => {
+    mockGet.mockImplementation((url: string) => {
+      if (url.endsWith('/providers')) return Promise.reject(new Error('providers down'))
+      if (url.endsWith('/repos')) return Promise.resolve([repoRow])
+      if (url.includes('/repo')) return Promise.resolve(repoRow)
+      if (url.includes('/branches')) return Promise.resolve(['vibecode/ticket-7-fix'])
+      if (url.includes('/reviews')) {
+        return Promise.resolve([{
+          number: 3,
+          url: 'https://git.example.com/group/repo/pulls/3',
+          state: 'open',
+        }])
+      }
+      return Promise.resolve(null)
+    })
+
+    const wrapper = mount(GitConnections)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Branch-only provider')
+    expect(wrapper.text()).toContain('Branches')
+    expect(wrapper.text()).toContain('Reviews')
+  })
+
+  it('shows only the agent-managed note for a local repository', async () => {
+    const localRepo = {
+      ...repoRow,
+      provider: 'local',
+      repoUrl: 'ssh://git@git.example.com/group/repo.git',
+      authMode: 'ssh',
+      providerBaseUrl: null,
+    }
+    mockGet.mockImplementation((url: string) => {
+      if (url.endsWith('/providers')) return Promise.resolve(providers)
+      if (url.endsWith('/repos')) return Promise.resolve([localRepo])
+      if (url.includes('/repo')) return Promise.resolve(localRepo)
+      if (url.includes('/branches')) return Promise.resolve([])
+      if (url.includes('/reviews')) return Promise.resolve([])
+      return Promise.resolve(null)
+    })
+
+    const wrapper = mount(GitConnections)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Branch-only provider')
+    expect(wrapper.text()).not.toContain('Create branch')
+    expect(wrapper.text()).not.toContain('Create pull request')
+  })
+
   it('disconnects the active provider', async () => {
     connectedBackend()
     const wrapper = mount(GitConnections)

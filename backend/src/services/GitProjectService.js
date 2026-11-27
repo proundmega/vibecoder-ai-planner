@@ -376,7 +376,11 @@ class GitProjectService {
       { repo: connected, provider }
     );
     if (!review || !review.branch || !review.headSha) return null;
-    return { ...review, ticketId };
+    return {
+      ...review,
+      url: gitProviders.safeReviewUrl(review.url, connected.providerBaseUrl || null),
+      ticketId,
+    };
   }
 
   async getReviewDiff(projectId, ticketId, { repo = null, provider = null } = {}) {

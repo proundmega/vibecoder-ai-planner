@@ -713,6 +713,35 @@ describe('GitProjectService', () => {
       })).rejects.toThrow('head and base branch must differ');
     });
 
+    it('sanitizes the URL when reading one review request', async () => {
+      const provider = fakeProvider({
+        getReviewRequest: jest.fn().mockResolvedValue({
+          branch: 'feat/from-pr',
+          headSha: 'c'.repeat(40),
+          url: 'javascript:alert(1)',
+          state: 'open',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: 1,
+        prUrl: 'https://git.example.com/group/repo/pulls/7',
+      });
+
+      const review = await GitProjectService.getReviewRequest(1, 42, {
+        repo: {
+          provider: 'github',
+          repoUrl: 'owner/repo',
+          accessTokenEncrypted: 'enc:pat',
+          providerBaseUrl: 'https://git.example.com',
+        },
+      });
+
+      expect(review.url).toBeNull();
+      expect(review.headSha).toBe('c'.repeat(40));
+    });
+
     it('forwards read, list, diff and delete operations', async () => {
       const provider = fakeProvider({
         getFileContent: jest.fn().mockResolvedValue('contents'),

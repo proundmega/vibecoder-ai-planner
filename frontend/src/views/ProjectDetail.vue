@@ -32,11 +32,23 @@ const memoryObj = useMemory(projectId)
 
 const {
   loading: githubLoading, error: githubError, success: githubSuccess,
-  activeRepo: githubRepo, branches: githubBranches, reviews: githubReviews,
+  activeRepo: githubRepo, activeCapabilities: githubActiveCapabilities,
+  branches: githubBranches, reviews: githubReviews,
   actionLoading: githubActionLoading, load: githubLoad,
   disconnect: githubDisconnect, createBranch: githubCreateBranch,
 } = gitObj
 const githubBranchTicketId = ref('')
+
+// Local bare/SSH is agent-managed. If capabilities are unavailable, only the
+// known local provider is gated (a provider list failure must not hide GitHub
+// controls).
+const gitBranchOnly = computed(() => {
+  if (githubRepo.value?.provider === 'local') return true
+  if (githubActiveCapabilities.value) {
+    return !githubActiveCapabilities.value.supportsReviewRequests
+  }
+  return false
+})
 
 const {
   usage: usageData, usageLoading: usageLoadingState, usageError: usageErrorState,
@@ -205,7 +217,12 @@ async function handleTabSwitch(tabId) {
               <button @click="githubDisconnect(githubRepo.provider)" :disabled="githubLoading" class="btn-danger">Disconnect</button>
             </div>
 
-            <div class="github-panels">
+            <p v-if="gitBranchOnly" class="description">
+              Local bare/SSH repositories are agent-managed: the worker pushes the ticket branch and
+              there are no manual branch or review controls.
+            </p>
+
+            <div v-if="!gitBranchOnly" class="github-panels">
               <div class="panel">
                 <h4>Branches</h4>
                 <div v-if="githubBranches.length === 0" class="empty">No branches yet</div>

@@ -23,6 +23,17 @@ const repoPlaceholder = computed(() => {
   return 'owner/repo'
 })
 
+// Local bare/SSH is agent-managed. If capabilities are unavailable, only the
+// known local provider is gated so a provider-list failure does not mislabel a
+// GitHub/Forgejo connection as branch-only.
+const branchOnly = computed(() => {
+  if (activeRepo.value?.provider === 'local') return true
+  if (activeCapabilities.value) {
+    return !activeCapabilities.value.supportsReviewRequests
+  }
+  return false
+})
+
 onMounted(load)
 </script>
 
@@ -100,7 +111,7 @@ onMounted(load)
             <span>Access token</span>
             <input v-model="form.token" type="password" placeholder="Scoped repository token" />
             <small v-if="form.authMode === 'app'">
-              Used once to validate access; agents use the GitHub App installation token.
+              Used once to validate access; the backend applies the deployment-wide GitHub auth mode.
             </small>
           </label>
 
@@ -151,7 +162,7 @@ onMounted(load)
         </div>
       </div>
 
-      <div v-if="activeRepo && !activeCapabilities?.supportsReviewRequests" class="section">
+      <div v-if="activeRepo && branchOnly" class="section">
         <h2>Branch-only provider</h2>
         <p class="repo-meta">
           Local bare/SSH repositories are agent-managed: the worker pushes the ticket branch and
@@ -159,7 +170,7 @@ onMounted(load)
         </p>
       </div>
 
-      <div v-if="activeRepo && activeCapabilities?.supportsReviewRequests" class="section">
+      <div v-if="activeRepo && !branchOnly" class="section">
         <div class="section-header">
           <h2>Branches</h2>
         </div>
@@ -189,7 +200,7 @@ onMounted(load)
         </ul>
       </div>
 
-      <div v-if="activeRepo?.provider && activeCapabilities?.supportsReviewRequests" class="section">
+      <div v-if="activeRepo && !branchOnly" class="section">
         <div class="section-header">
           <h2>Reviews</h2>
         </div>
@@ -201,7 +212,7 @@ onMounted(load)
             :disabled="actionLoading === 'review' || !reviewTicketId"
             class="btn-primary"
           >
-            {{ actionLoading === 'review' ? 'Creating...' : `Create ${activeCapabilities.reviewRequestName}` }}
+            {{ actionLoading === 'review' ? 'Creating...' : `Create ${activeCapabilities?.reviewRequestName ?? 'review request'}` }}
           </button>
         </div>
         <div v-if="reviews.length === 0" class="empty-state">No reviews found</div>
