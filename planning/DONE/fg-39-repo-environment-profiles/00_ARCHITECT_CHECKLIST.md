@@ -78,7 +78,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D7 | Prebuilt per-stack images/devcontainers and pinned toolchains (slice 4a) | fg-39 FR3 | Infrastructure | fg-39 slice 4a | done (#232, `8a38cb8`) |
 | D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | merged (#167) |
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4b | done (#237, `607ebf1`) |
-| D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | done (#260, `573cce6`); best-effort operational event log, not an authoritative audit trail |
+| D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | done (#260, `87de6a8`); best-effort operational event log, not an authoritative audit trail |
 | D11 | Real-Docker/real-repo profile dry-run e2e, including npm install, mvn test and go test (cache real-Docker package-manager coverage is now in `smoke-sandbox-caches.sh`) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | partial: cache smoke done; profile dry-run e2e open |
 | D12 | Service container disk quota and egress-governed image pulls; service images now require a local pre-pull and `--pull never`, while the service writable-layer quota remains open | fg-39 slice 2 review | Security | fg-39 slice 4 | partial: local-only service images done (#255, `1579036`); disk quota open |
 | D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | done (#251, `92e3c0e`); retired drafts are inert, previously active versions still roll back |
