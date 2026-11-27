@@ -178,6 +178,12 @@ describe('RepoProfileEditor', () => {
     await flushPromises()
 
     expect(button(wrapper, 'Reactivate')).toBeUndefined()
+    const viewButtons = wrapper.findAll('button').filter(
+      (item) => item.text() === 'View',
+    )
+    await viewButtons[1].trigger('click')
+    expect(button(wrapper, 'Reactivate version 1')).toBeUndefined()
+    expect(wrapper.text()).toContain('fields are read-only')
   })
 
   it('does not edit an older draft in place', async () => {

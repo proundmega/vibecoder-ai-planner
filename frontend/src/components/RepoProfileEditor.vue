@@ -508,7 +508,7 @@ onBeforeUnmount(() => {
           type="button"
           class="btn small success"
           :disabled="busy !== ''"
-          title="Requires a successful dry run for this exact version; the current active version is deactivated"
+          title="Requires a successful dry run for this exact version"
           @click="reactivateViewed"
         >
           {{ reactivatingId === viewingVersion?.id ? 'Reactivating…' : `Reactivate version ${viewingVersion?.version}` }}
@@ -691,7 +691,7 @@ onBeforeUnmount(() => {
                     class="btn small success"
                     type="button"
                     :disabled="busy !== ''"
-                    title="Requires a successful dry run for this exact version; the current active version is deactivated"
+                    title="Requires a successful dry run for this exact version"
                     @click="reactivate(row)"
                   >
                     {{ reactivatingId === row.id ? 'Reactivating…' : 'Reactivate' }}
