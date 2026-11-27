@@ -382,13 +382,15 @@ public class WorkspaceManager {
 
         cloneWithCredentials(repoUrl, cloneTimeout);
 
-        String remoteSha = runGitCommandAllowFailure(
-            "rev-parse", "--verify", "refs/remotes/origin/" + branch).trim();
-        if (remoteSha.isEmpty()) {
+        // --quiet answers 1 for an absent ref while any other git failure is
+        // thrown by runGitStatus, so "not present" is not blamed on corruption.
+        String remoteRef = "refs/remotes/origin/" + branch;
+        if (runGitStatus("rev-parse", "--verify", "--quiet", remoteRef) != 0) {
             throw new IOException(
                 "reviewed_sha_mismatch: branch " + branch
                     + " is not present in the clone, reviewed " + expected);
         }
+        String remoteSha = runGitCommand("rev-parse", "--verify", remoteRef).trim();
         if (!expected.equalsIgnoreCase(remoteSha)) {
             throw new IOException(
                 "reviewed_sha_mismatch: " + branch + " is at " + remoteSha
