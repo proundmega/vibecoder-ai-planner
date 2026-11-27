@@ -171,15 +171,34 @@ public class AgentApp {
     }
 
     private GitHubTokenProvider createGitHubTokenProvider() {
+        boolean github = "github".equals(config.getRepoProvider());
         GitHubTokenSource legacyFallback = null;
-        if ("pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
+        if (github && "pat".equals(config.getGitHubAuthMode()) && config.isAllowPat()) {
             legacyFallback = this::fetchLegacyPat;
         }
-        return new GitHubTokenProvider(
-            force -> apiService.requestGitHubToken(config.getProjectId(), force),
-            legacyFallback,
-            config.getGitHubAuthMode(),
-            config.isAllowPat());
+        return buildTokenProvider(
+            config,
+            force -> apiService.requestGitHubToken(
+                config.getProjectId(), config.getRepoProvider(), force),
+            legacyFallback);
+    }
+
+    /**
+     * The deployment-wide GitHub mode only constrains GitHub; a self-hosted
+     * provider's auth mode comes from the project repo config (applied before
+     * this provider is built). A stored self-hosted PAT is the normal
+     * credential, not the GitHub fallback, so it is always allowed.
+     */
+    static GitHubTokenProvider buildTokenProvider(
+            AgentConfig config,
+            GitHubTokenProvider.Fetcher fetcher,
+            GitHubTokenSource fallback) {
+        boolean github = "github".equals(config.getRepoProvider());
+        String expectedMode = github
+            ? config.getGitHubAuthMode()
+            : config.getRepoAuthMode();
+        boolean allowPat = !github || config.isAllowPat();
+        return new GitHubTokenProvider(fetcher, fallback, expectedMode, allowPat);
     }
 
     private String fetchGitHubToken(GitHubTokenProvider provider) {

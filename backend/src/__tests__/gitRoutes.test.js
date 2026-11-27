@@ -12,6 +12,14 @@ jest.mock('../services/PermissionService', () => ({
   hasAllPermissions: jest.fn().mockResolvedValue(true),
   hasPermission: jest.fn().mockResolvedValue(true),
 }));
+jest.mock('../services/GitHubAppAuthService', () => ({
+  getAuthMode: jest.fn().mockReturnValue('pat'),
+  mintToken: jest.fn(),
+}));
+jest.mock('../services/AgentNodeService', () => ({
+  authenticateAccessToken: jest.fn(),
+  getRuntimeForNode: jest.fn(),
+}));
 jest.mock('jsonwebtoken', () => ({
   verify: jest.fn().mockReturnValue({ userId: 'user-1', role: 'project_admin' }),
   sign: jest.fn().mockReturnValue('mock-token'),
@@ -32,8 +40,11 @@ jest.mock('../services/GitProjectService', () => ({
 jest.mock('../models/project');
 jest.mock('../models/ticket');
 
+const { pool } = require('../db');
 const app = require('../index');
 const GitProjectService = require('../services/GitProjectService');
+const GitHubAppAuthService = require('../services/GitHubAppAuthService');
+const AgentNodeService = require('../services/AgentNodeService');
 const PermissionService = require('../services/PermissionService');
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
@@ -46,13 +57,33 @@ function auth(req) {
   return req.set('Authorization', 'Bearer mock-token');
 }
 
+/** A node credential whose owner is not the project owner, but is granted. */
+function mockGrantedPoolNode(projectOwnerId = 3) {
+  Project.findById.mockResolvedValue({ id: 1, ownerId: projectOwnerId });
+  AgentNodeService.authenticateAccessToken.mockResolvedValue({
+    status: 'ok',
+    node: { id: 9, owner_id: 2 },
+  });
+  AgentNodeService.getRuntimeForNode.mockResolvedValue({
+    id: 5,
+    role: 'worker',
+    status: 'running',
+    current_project_id: 1,
+  });
+  pool.query.mockImplementation(async (sql) => (
+    String(sql).includes('agent_node_grants') ? { rows: [{ ok: 1 }] } : { rows: [] }
+  ));
+}
+
 describe('Generic Git routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     asUser();
     PermissionService.hasAnyPermission.mockResolvedValue(true);
+    GitHubAppAuthService.getAuthMode.mockReturnValue('pat');
     Project.findById.mockResolvedValue({ id: 1, ownerId: 'user-1' });
     Ticket.findById.mockResolvedValue({ id: 42, projectId: 1 });
+    pool.query.mockResolvedValue({ rows: [] });
   });
 
   it('lists registered providers and their capabilities', async () => {
@@ -310,5 +341,170 @@ describe('Generic Git routes', () => {
     expect(GitProjectService.getAgentCredential)
       .toHaveBeenCalledWith('1', { provider: null });
     expect(res.body.data).toEqual({ provider: 'github', ...credential });
+  });
+
+  it('lets a granted pool node read credentials for a project it does not own', async () => {
+    // The node is owned by one user and serves another user's project; the
+    // runtime project grant (and runtime project scope) is the authorization.
+    mockGrantedPoolNode();
+    GitProjectService.getAgentCredential.mockResolvedValue({
+      provider: 'forgejo',
+      repoUrl: 'https://git.example.com/g/r.git',
+      accessToken: 'scoped',
+      authMode: 'pat',
+    });
+
+    const res = await request(app)
+      .get('/api/v1/git/1/repo/agent')
+      .set('X-API-Key', 'at_node_token')
+      .set('X-Agent-Runtime', '5');
+
+    expect(res.statusCode).toBe(200);
+    expect(GitProjectService.getAgentCredential)
+      .toHaveBeenCalledWith('1', { provider: null });
+  });
+
+  it('lets a granted pool node request a token for a project it does not own', async () => {
+    mockGrantedPoolNode();
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'forgejo' });
+    GitProjectService.getAgentCredential.mockResolvedValue({
+      provider: 'forgejo',
+      accessToken: 'scoped',
+      authMode: 'pat',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token?provider=forgejo')
+      .set('X-API-Key', 'at_node_token')
+      .set('X-Agent-Runtime', '5')
+      .send({ operation: 'agent' });
+
+    expect(res.statusCode).toBe(200);
+    expect(GitProjectService.getAgentCredential)
+      .toHaveBeenCalledWith('1', { provider: 'forgejo' });
+    expect(res.body.data).toMatchObject({
+      provider: 'forgejo',
+      token: 'scoped',
+      mode: 'pat',
+    });
+  });
+
+  it('returns the stored provider token for a self-hosted agent', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    // A self-hosted provider must not inherit the deployment-wide GitHub mode.
+    GitHubAppAuthService.getAuthMode.mockReturnValue('app');
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'forgejo' });
+    GitProjectService.getAgentCredential.mockResolvedValue({
+      provider: 'forgejo',
+      accessToken: 'scoped-token',
+      authMode: 'pat',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token?provider=forgejo')
+      .set('X-API-Key', 'test-agent-key')
+      .send({ operation: 'agent' });
+
+    expect(res.statusCode).toBe(200);
+    expect(GitProjectService.getRepo).toHaveBeenCalledWith('1', { provider: 'forgejo' });
+    expect(GitHubAppAuthService.mintToken).not.toHaveBeenCalled();
+    expect(res.body.data).toEqual({
+      provider: 'forgejo',
+      token: 'scoped-token',
+      mode: 'pat',
+      expiresAt: null,
+    });
+  });
+
+  it('mints and audits a GitHub PAT through the generic route', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitHubAppAuthService.getAuthMode.mockReturnValue('pat');
+    GitHubAppAuthService.mintToken.mockResolvedValue({
+      token: 'stored-pat',
+      mode: 'pat',
+      expiresAt: null,
+      repo: 'owner/repo',
+    });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'github' });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({ operation: 'clone', repo: 'owner/repo' });
+
+    expect(res.statusCode).toBe(200);
+    // mintToken (not getAgentCredential) keeps the PAT audit + repo binding.
+    expect(GitHubAppAuthService.mintToken).toHaveBeenCalledWith('1', {
+      operation: 'clone',
+      repo: 'owner/repo',
+      forceRefresh: false,
+    });
+    expect(GitProjectService.getAgentCredential).not.toHaveBeenCalled();
+    expect(res.body.data).toEqual({
+      provider: 'github',
+      token: 'stored-pat',
+      mode: 'pat',
+      expiresAt: null,
+      repo: 'owner/repo',
+    });
+  });
+
+  it('mints a GitHub App token through the generic route', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitHubAppAuthService.getAuthMode.mockReturnValue('app');
+    GitHubAppAuthService.mintToken.mockResolvedValue({
+      token: 'ghs_minted',
+      mode: 'app',
+      expiresAt: '2026-11-26T04:00:00Z',
+    });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'github' });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({});
+
+    expect(res.statusCode).toBe(200);
+    expect(GitHubAppAuthService.mintToken).toHaveBeenCalledWith('1', {
+      operation: 'agent',
+      repo: undefined,
+      forceRefresh: false,
+    });
+    expect(res.body.data).toMatchObject({
+      provider: 'github',
+      token: 'ghs_minted',
+      mode: 'app',
+    });
+  });
+
+  it('rejects a token request for an SSH repository', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitProjectService.getRepo.mockResolvedValue({ provider: 'local' });
+    GitProjectService.getAgentCredential.mockResolvedValue({
+      provider: 'local',
+      accessToken: null,
+      sshKey: 'key',
+      authMode: 'ssh',
+    });
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({});
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.error.message).toContain('SSH');
+  });
+
+  it('returns 404 when no repository is connected', async () => {
+    Project.findById.mockResolvedValue({ id: 1, ownerId: 1 });
+    GitProjectService.getRepo.mockResolvedValue(null);
+
+    const res = await request(app)
+      .post('/api/v1/git/1/token')
+      .set('X-API-Key', 'test-agent-key')
+      .send({});
+
+    expect(res.statusCode).toBe(404);
   });
 });

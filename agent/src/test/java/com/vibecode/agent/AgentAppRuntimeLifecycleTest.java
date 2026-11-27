@@ -52,7 +52,8 @@ class AgentAppRuntimeLifecycleTest {
         }
 
         @Override
-        public Map<String, Object> requestGitHubToken(String projectId, boolean forceRefresh) {
+        public Map<String, Object> requestGitHubToken(
+                String projectId, String provider, boolean forceRefresh) {
             return Map.of("token", "ghs_runtime_lifecycle", "mode", "app");
         }
 

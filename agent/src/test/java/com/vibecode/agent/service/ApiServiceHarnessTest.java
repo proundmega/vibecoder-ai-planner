@@ -33,7 +33,8 @@ class ApiServiceHarnessTest {
 
     private record StubResponse(int status, String body) {}
 
-    private record RecordedRequest(String method, String path, String apiKey, String body) {}
+    private record RecordedRequest(
+        String method, String path, String query, String apiKey, String body) {}
 
     private HttpServer server;
     private ApiService api;
@@ -50,6 +51,7 @@ class ApiServiceHarnessTest {
             requests.add(new RecordedRequest(
                 exchange.getRequestMethod(),
                 exchange.getRequestURI().getPath(),
+                exchange.getRequestURI().getQuery(),
                 exchange.getRequestHeaders().getFirst("X-API-Key"),
                 body
             ));
@@ -475,5 +477,35 @@ class ApiServiceHarnessTest {
         respond("/api/v1/harness/runs/run-1/usage", 201,
             ok("{\"quotaExceeded\":true}"));
         assertTrue(api.recordHarnessUsage("run-1", Map.of("model", "gpt-4o")));
+    }
+
+    @Test
+    void fetchesRepoConfigFromTheProviderNeutralGitRoute() throws Exception {
+        respond("/api/v1/git/7/repo/agent", 200, ok(
+            "{\"provider\":\"forgejo\",\"repoUrl\":\"https://git.example.com/g/r.git\","
+                + "\"authMode\":\"pat\"}"));
+
+        Map<String, Object> data = api.getRepoConfig("7");
+
+        RecordedRequest request = lastRequest();
+        assertEquals("GET", request.method());
+        assertEquals("/api/v1/git/7/repo/agent", request.path());
+        assertEquals("forgejo", data.get("provider"));
+    }
+
+    @Test
+    void requestsTheTokenForTheConfiguredProvider() throws Exception {
+        respond("/api/v1/git/7/token", 200, ok(
+            "{\"provider\":\"forgejo\",\"token\":\"scoped\",\"mode\":\"pat\","
+                + "\"expiresAt\":null}"));
+
+        Map<String, Object> data = api.requestGitHubToken("7", "Forgejo", true);
+
+        RecordedRequest request = lastRequest();
+        assertEquals("POST", request.method());
+        assertEquals("/api/v1/git/7/token", request.path());
+        assertEquals("provider=Forgejo", request.query());
+        assertTrue(request.body().contains("\"forceRefresh\":true"), request.body());
+        assertEquals("scoped", data.get("token"));
     }
 }

@@ -694,6 +694,11 @@ public class ApiService implements QuestionBridge.Transport {
         return response.getData() != null ? response.getData() : Collections.emptyList();
     }
 
+    private static String providerQuery(String provider) {
+        if (provider == null || provider.isBlank()) return "";
+        return "?provider=" + java.net.URLEncoder.encode(provider.trim(), StandardCharsets.UTF_8);
+    }
+
     private <T> ApiResponse<T> executeGet(String url, TypeReference<ApiResponse<T>> typeRef) throws IOException {
         Request request = new Request.Builder()
             .url(url)
@@ -821,16 +826,26 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
-     * Request a short-lived, repo-scoped GitHub credential for the project.
-     * The backend chooses App or PAT mode and enforces the fallback flag.
+     * Request a short-lived, provider-scoped Git credential for the project.
+     * The backend chooses App/self-hosted mode and enforces the fallback flag.
      */
     public Map<String, Object> requestGitHubToken(String projectId) throws IOException {
-        return requestGitHubToken(projectId, false);
+        return requestGitHubToken(projectId, null, false);
     }
 
     public Map<String, Object> requestGitHubToken(String projectId, boolean forceRefresh)
             throws IOException {
-        String url = baseUrl + "/github/" + projectId + "/token";
+        return requestGitHubToken(projectId, null, forceRefresh);
+    }
+
+    /**
+     * Request the credential for one connected provider. Passing the provider
+     * keeps the token bound to the repository the workspace was configured
+     * with when a project has more than one active repo.
+     */
+    public Map<String, Object> requestGitHubToken(
+            String projectId, String provider, boolean forceRefresh) throws IOException {
+        String url = baseUrl + "/git/" + projectId + "/token" + providerQuery(provider);
         Map<String, Object> body = new java.util.HashMap<>();
         body.put("operation", "agent");
         body.put("forceRefresh", forceRefresh);
@@ -848,12 +863,16 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
-     * Get repository connection config (including GitHub PAT) for the project.
-     * PAT mode only; App mode returns no token and agents should use
-     * {@link #requestGitHubToken(String)}.
+     * Get the provider-neutral repository config (provider, URL, auth mode and
+     * any self-hosted credential) for the project.
+     *
+     * This discovery call is intentionally unscoped: the agent learns the
+     * provider from the response and sends it on subsequent token requests, so
+     * a multi-provider project binds the credential to the repository it was
+     * configured with.
      */
     public Map<String, Object> getRepoConfig(String projectId) throws IOException {
-        String url = baseUrl + "/github/" + projectId + "/repo/agent";
+        String url = baseUrl + "/git/" + projectId + "/repo/agent";
         ApiResponse<Map<String, Object>> response = executeGet(url, new TypeReference<ApiResponse<Map<String, Object>>>() {});
         
         if (response.hasError()) {

@@ -45,6 +45,20 @@ class AgentAppRepoConfigTest {
     }
 
     @Test
+    void appliesProviderAndAuthModeFromTheServerRepo() {
+        AgentConfig config = new AgentConfig();
+
+        boolean applied = AgentApp.applyRepoCoordinates(config, Map.of(
+            "repoUrl", "https://git.example.com/group/repo.git",
+            "provider", "Forgejo",
+            "authMode", "PAT"));
+
+        assertTrue(applied);
+        assertEquals("forgejo", config.getRepoProvider());
+        assertEquals("pat", config.getRepoAuthMode());
+    }
+
+    @Test
     void reviewModeNeverLoadsTheRepository() {
         ModeConfig config = new ModeConfig();
         config.review = true;
@@ -108,6 +122,54 @@ class AgentAppRepoConfigTest {
 
         assertEquals("server-org", config.owner);
         assertEquals("server-repo", config.name);
+    }
+
+    static class TokenModeConfig extends AgentConfig {
+        String provider = "github";
+        String repoMode;
+
+        @Override public String getRepoProvider() { return provider; }
+        @Override public String getRepoAuthMode() { return repoMode; }
+        @Override public String getGitHubAuthMode() { return "pat"; }
+        @Override public boolean isAllowPat() { return false; }
+    }
+
+    @Test
+    void selfHostedStoredPatIsAcceptedAsTheNormalCredential() throws Exception {
+        TokenModeConfig config = new TokenModeConfig();
+        config.provider = "forgejo";
+        config.repoMode = "pat";
+
+        var provider = AgentApp.buildTokenProvider(
+            config,
+            force -> Map.of("provider", "forgejo", "token", "scoped", "mode", "pat"),
+            null);
+
+        assertEquals("scoped", provider.get());
+    }
+
+    @Test
+    void selfHostedProviderRejectsACredentialModeMismatch() {
+        TokenModeConfig config = new TokenModeConfig();
+        config.provider = "forgejo";
+        config.repoMode = "pat";
+
+        var provider = AgentApp.buildTokenProvider(
+            config,
+            force -> Map.of("provider", "forgejo", "token", "x", "mode", "app"),
+            null);
+
+        assertThrows(IOException.class, provider::get);
+    }
+
+    @Test
+    void githubPatStillRequiresTheAllowPatFallbackFlag() {
+        var provider = AgentApp.buildTokenProvider(
+            new TokenModeConfig(),
+            force -> Map.of("token", "stored", "mode", "pat"),
+            null);
+
+        assertThrows(IOException.class, provider::get);
     }
 
     @Test

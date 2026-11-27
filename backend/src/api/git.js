@@ -7,6 +7,7 @@ const { requireAnyPermission } = require('../middleware/permissions');
 const { validate, validatePathParams } = require('../middleware/validate');
 const gitController = require('../controllers/gitController');
 const { connectRepoSchema, reviewRequestSchema, idPathParam } = require('../validators/git');
+const { tokenRequestSchema } = require('../validators/github');
 
 /**
  * @openapi
@@ -69,7 +70,8 @@ router.get('/:projectId/repo', verifyToken, validatePathParams({ projectId: idPa
  *         required: true
  *         schema: { $ref: '#/components/schemas/NumericId' }
  *     security:
- *       - apiKeyAuth: []
+ *       - ApiKeyAuth: []
+ *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: Provider, clone URL, auth mode and credential (or SSH key)
@@ -82,6 +84,53 @@ router.get(
   forProjectParam(),
   requireProjectGrant('worker'),
   gitController.getRepoForAgent
+);
+
+/**
+ * @openapi
+ * /git/{projectId}/token:
+ *   post:
+ *     tags: [Git]
+ *     summary: Mint or return the provider-scoped Git credential for the agent
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema: { $ref: '#/components/schemas/NumericId' }
+ *       - in: query
+ *         name: provider
+ *         required: false
+ *         description: Select one connected provider; defaults to the newest active repo
+ *         schema: { type: string }
+ *     security:
+ *       - ApiKeyAuth: []
+ *       - BearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               operation: { type: string }
+ *               repo: { type: string, description: Optional repo binding checked against the connected repo }
+ *               forceRefresh: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Token, mode, expiry and provider
+ *       400:
+ *         description: The repository uses SSH and cannot return a bearer token
+ *       404:
+ *         description: No repository connected to this project
+ */
+router.post(
+  '/:projectId/token',
+  verifyTokenOrAgent,
+  validatePathParams({ projectId: idPathParam }),
+  requireRuntime('running'),
+  forProjectParam(),
+  requireProjectGrant('worker'),
+  validate(tokenRequestSchema),
+  gitController.requestToken
 );
 
 /**
