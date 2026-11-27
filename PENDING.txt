@@ -47,9 +47,9 @@ dependencies, blockers and definition of done.
 merge protocol for the planner and GTD backlogs.
 
 **Background, not on the pilot critical path:** fg-34 remains in progress for
-D12/D24/D25/D26 hardening. fg-39 is done; its optional follow-ups (D1-D4, D10-D12
-and D15) are in the suite's deferred register and are not required for the first
-repo.
+D12/D24/D25/D26 hardening. fg-39 is done; its optional follow-ups (D1-D4, D10-D12,
+D15 and D17) are in the suite's deferred register and are not required for the
+first repo.
 fg-32 is blocked by fg-31.
 
 **Dependency guard:** do not start an optional row until its `Depends on`
@@ -171,7 +171,7 @@ Cross-cutting plans for the autonomous coding harness. See `planning/HARNESS_ROA
 | **fg-36** | `fg-36-merge-lifecycle` | P1 | fg-31, fg-32 | Default/base branch detection, mergeability, update/rebase, conflict worker, CI gate, merge queue, post-merge rollback. |
 | **fg-37** | `fg-37-agent-evaluation-harness` | P1 | fg-30/31/32 | Golden task corpus, objective grading, metrics, model/prompt A/B, reviewer calibration, adversarial cases. |
 | ~~**fg-38**~~ | `DONE/fg-38-harness-budgets-routing` | P1 | fg-30 Phase 1 | ✅ **Merged (#164, `65a1c9b`)** — live token/time/cost/tool metering, 80%/100% enforcement, `budget_exceeded` finish with no publish, per-project/day and per-agent quotas, free/paid routing with circuit breaker, versioned pricing, usage-to-billing flush and global/project kill switches. Dashboards/replay follow-up merged in #165. |
-| ~~**fg-39**~~ | `DONE/fg-39-repo-environment-profiles` | P1 | fg-34 | ✅ **Merged (#237, `607ebf1`)** — Slice 1 (#161), ephemeral service containers/health checks and the Project Settings profile editor (#167, `867b9f7`), slice 3 flaky-test retry/test-data hooks (`e2b94f1`, #225), slice 4a prebuilt per-stack images/pinned toolchains/stack-image detection (fg-39b, #232, `8a38cb8`), and slice 4b persistent per-project dependency caches (fg-39c, #237). All five stages build and the Python/monorepo local-wheel + pytest smoke passes under the sanitized PATH. FR4/D9, D13, D14 and D16 done; the other follow-ups (D1-D4, D10-D12 and D15) stay in the suite's 00 deferred register. |
+| ~~**fg-39**~~ | `DONE/fg-39-repo-environment-profiles` | P1 | fg-34 | ✅ **Merged (#237, `607ebf1`)** — Slice 1 (#161), ephemeral service containers/health checks and the Project Settings profile editor (#167, `867b9f7`), slice 3 flaky-test retry/test-data hooks (`e2b94f1`, #225), slice 4a prebuilt per-stack images/pinned toolchains/stack-image detection (fg-39b, #232, `8a38cb8`), and slice 4b persistent per-project dependency caches (fg-39c, #237). All five stages build and the Python/monorepo local-wheel + pytest smoke passes under the sanitized PATH. FR4/D9, D13, D14 and D16 done; the other follow-ups (D1-D4, D10-D12, D15 and D17) stay in the suite's 00 deferred register. |
 | **fg-40** | `fg-40-multi-agent-orchestration` | P2 | fg-33/36/38/39 | Roles, task graph, worktrees, handoff schema, scheduler, conflict avoidance, integrator, per-agent budgets. |
 | ~~**fg-41**~~ | `DONE/fg-41-harness-observability` | P1 | fg-33 | ✅ **Merged (#163, `5dff931`)** — append-only `harness_events`, versioned schema, trace/run correlation, emission/ingest redaction, replay timeline, dashboards/alerts, immutable publish/review audit and retention. Dashboards/audit follow-up merged in #165; merge/rollback audit waits for fg-36. |
 | ~~**fg-42**~~ | `DONE/fg-42-harness-privacy` | P1 | fg-34, fg-41 | ✅ **Merged (#166, `f6e9464`)** — data classification, secret/PII redaction, provider allowlist/no-training/residency, tenant-scoped privacy API, retention/deletion and local-model option. |

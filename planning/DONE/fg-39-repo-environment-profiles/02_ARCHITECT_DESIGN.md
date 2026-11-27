@@ -315,8 +315,10 @@ existing GitHub agent config route.
 - Only the current draft is editable. Viewing any other version, including an
   older draft, is read-only, and Save/Validate/Activate always target the
   current draft. A partial unique index enforces one draft per project; creating
-  a new draft retires the previous one as inactive, and retired drafts cannot be
-  activated. Detection asks before replacing unsaved form content.
+  a new draft retires the previous one as inactive, and retired drafts cannot
+  queue new validation or be activated. A dry run already queued before
+  retirement may finish but remains inert. Version-history rollback activation
+  is D17. Detection asks before replacing unsaved form content.
 - Does not expose deferred fields (`caches`, `flaky_tests`).
 
 ## Persistent caches (deferred)
