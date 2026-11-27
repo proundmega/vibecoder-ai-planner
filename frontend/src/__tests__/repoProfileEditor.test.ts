@@ -130,6 +130,62 @@ describe('RepoProfileEditor', () => {
     expect(wrapper.text()).not.toContain('Viewing version')
   })
 
+  it('offers rollback to a previously active version', async () => {
+    const historical = {
+      ...activeRow,
+      id: 'p-old-active',
+      version: 0,
+      status: 'inactive',
+      activated_at: '2026-11-20T00:00:00Z',
+    }
+    vi.mocked(getRepoProfile).mockResolvedValue({
+      active: activeRow, latest: activeRow, versions: [activeRow, historical],
+    } as never)
+
+    const wrapper = mount(RepoProfileEditor, {
+      props: { projectId: '1' },
+    })
+    await flushPromises()
+
+    expect(button(wrapper, 'Reactivate')).toBeTruthy()
+    const viewButtons = wrapper.findAll('button').filter(
+      (item) => item.text() === 'View',
+    )
+    await viewButtons[1].trigger('click')
+    const bannerAction = button(wrapper, 'Reactivate version 0')
+    expect(bannerAction).toBeTruthy()
+    await bannerAction!.trigger('click')
+    await flushPromises()
+
+    expect(activateRepoProfile).toHaveBeenCalledWith('1', 'p-old-active')
+    expect(wrapper.text()).toContain('Version 0 reactivated')
+  })
+
+  it('does not offer rollback for a retired draft', async () => {
+    const retired = {
+      ...row,
+      id: 'p-retired',
+      status: 'inactive',
+      activated_at: null,
+    }
+    vi.mocked(getRepoProfile).mockResolvedValue({
+      active: activeRow, latest: activeRow, versions: [activeRow, retired],
+    } as never)
+
+    const wrapper = mount(RepoProfileEditor, {
+      props: { projectId: '1' },
+    })
+    await flushPromises()
+
+    expect(button(wrapper, 'Reactivate')).toBeUndefined()
+    const viewButtons = wrapper.findAll('button').filter(
+      (item) => item.text() === 'View',
+    )
+    await viewButtons[1].trigger('click')
+    expect(button(wrapper, 'Reactivate version 1')).toBeUndefined()
+    expect(wrapper.text()).toContain('fields are read-only')
+  })
+
   it('does not edit an older draft in place', async () => {
     const wrapper = mount(RepoProfileEditor, {
       props: { projectId: '1' },
