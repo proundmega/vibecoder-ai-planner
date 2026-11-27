@@ -270,10 +270,12 @@ existing GitHub agent config route.
 
 ### Service lifecycle
 
-1. Create a per-run internal bridge network (`vibecode-services-<suffix>`).
-2. Start each service container with its env file, healthcheck flags, bounded
-   memory/PIDs/CPU, `no-new-privileges`, `NET_RAW` dropped, 1 MiB/1-file log
-   rotation and an owner label.
+1. Require every service image to exist locally (`docker image inspect`); a
+   missing image fails before any network is created. Then create a per-run
+   internal bridge network (`vibecode-services-<suffix>`).
+2. Start each service container with `--pull never`, its env file, healthcheck
+   flags, bounded memory/PIDs/CPU, `no-new-privileges`, `NET_RAW` dropped,
+   1 MiB/1-file log rotation and an owner label.
 3. Wait for Docker health `healthy`; fail fast on `unhealthy`, `exited`, `dead`
    or timeout.
 4. Read each service IP and add an `/etc/hosts` entry to the sandbox. The
@@ -297,12 +299,14 @@ existing GitHub agent config route.
   the sandbox boundary: they run as the image's user (often root) inside their
   own container with no host mounts, bounded resources, an internal-only
   network and no inbound sandbox access.
-- Service disk quota is not implemented (D12). Logs are bounded, `NET_RAW` is
-  dropped, and a noisy service can still write to its ephemeral container
-  layer.
-- Image pulls use the Docker daemon directly and are not governed by the
-  sandbox egress allowlist (D12). Operator-approved digests are the trust
-  decision.
+- Service disk quota is still not implemented (D12). Logs are bounded,
+  `NET_RAW` is dropped, and a noisy service can still write to its ephemeral
+  container layer.
+- Service images must already exist on the agent host. A preflight `docker
+  image inspect` fails closed and `docker run --pull never` prevents a
+  daemon-side pull during a run, so the sandbox egress allowlist is not
+  bypassed. Operators pre-pull the approved digest; sandbox/proxy base images
+  remain operator-provisioned. The disk-quota half of D12 remains open.
 
 ## Slice 5 profile editor
 
@@ -317,8 +321,16 @@ existing GitHub agent config route.
   current draft. A partial unique index enforces one draft per project; creating
   a new draft retires the previous one as inactive, and retired drafts cannot
   queue new validation or be activated. A dry run already queued before
-  retirement may finish but remains inert. Version-history rollback activation
-  is D17. Detection asks before replacing unsaved form content.
+  retirement may finish but remains inert. Previously active versions expose
+  **Reactivate** from version history and the historical banner; retired drafts
+  stay actionless, and the backend still requires the exact successful dry run.
+  Detection asks before replacing unsaved form content.
+- Profile lifecycle changes append `repo_profile_events` entries (`created`,
+  `updated` with `changed_fields`, `activated`/`reactivated` with the previous
+  active id, and `retired` with the superseded version). Reads are restricted
+  to the project owner/super admin. Writes are best-effort and
+  non-transactional, with no append-only guard or retention policy; D18 tracks
+  audit-grade hardening.
 - Does not expose deferred fields (`caches`, `flaky_tests`).
 
 ## Persistent caches (deferred)
