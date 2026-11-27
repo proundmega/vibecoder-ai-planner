@@ -44,6 +44,51 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void configuredNonHttpsOriginsFailClosed() {
+        for (String configured : List.of(
+            "http://git.example.com",
+            "ssh://git@git.example.com",
+            "not a url")) {
+            WorkspaceManager manager = new WorkspaceManager(
+                "/tmp/ws", "repo", false, "token", () -> "token", null, configured);
+
+            assertFalse(manager.shouldAuthenticate("https://git.example.com/group/repo.git"),
+                configured + " must not authenticate an https remote");
+            assertFalse(manager.shouldAuthenticate("http://git.example.com/group/repo.git"),
+                configured + " must not authenticate an http remote");
+            assertFalse(manager.shouldAuthenticate("ssh://git@git.example.com/group/repo.git"),
+                configured + " must not authenticate an ssh remote");
+        }
+    }
+
+    @Test
+    void configuredOriginWithoutAReadableRemoteFailsClosed() throws Exception {
+        WorkspaceManager configured = new WorkspaceManager(
+            tempDir.toString(), "repo", false, "token", () -> "token", null,
+            "https://git.example.com");
+        setRepoDir(configured, Files.createDirectories(tempDir.resolve("no-origin-repo")));
+        assertFalse(configured.shouldAuthenticateRemote(),
+            "a configured origin must not authenticate when the remote is unreadable");
+
+        WorkspaceManager legacy = new WorkspaceManager(
+            tempDir.toString(), "legacy-repo", false, "token", () -> "token");
+        setRepoDir(legacy, Files.createDirectories(tempDir.resolve("legacy-no-origin")));
+        assertTrue(legacy.shouldAuthenticateRemote(),
+            "legacy construction keeps the old behaviour");
+    }
+
+    @Test
+    void askPassScriptGuardsTheConfiguredHost() {
+        String guarded = WorkspaceManager.askPassScript("secret", "git.example.com");
+        assertTrue(guarded.contains("git.example.com"));
+        assertTrue(guarded.contains("exit 1"));
+
+        String legacy = WorkspaceManager.askPassScript("secret", null);
+        assertFalse(legacy.contains("exit 1"));
+        assertTrue(legacy.contains("secret"));
+    }
+
+    @Test
     void normalizesTheTokenOrigin() {
         assertEquals("https://github.com",
             WorkspaceManager.httpsOrigin("https://GitHub.com/owner/repo.git"));

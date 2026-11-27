@@ -126,6 +126,17 @@ class AgentAppRepoConfigTest {
         assertEquals("server-repo", config.name);
     }
 
+    @Test
+    void canonicalizesTheGitHubOwnerRepoShorthand() {
+        AgentConfig config = new AgentConfig();
+        config.setRepoUrl("owner/repo");
+
+        assertEquals("https://github.com/owner/repo.git", config.getRepoUrl());
+
+        config.setRepoProvider("forgejo");
+        assertEquals("owner/repo", config.getRepoUrl());
+    }
+
     static class TokenModeConfig extends AgentConfig {
         String provider = "github";
         String repoMode;

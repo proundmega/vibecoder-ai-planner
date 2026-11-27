@@ -95,6 +95,7 @@ public class WorkspaceManager {
     private final Path cloneRoot;
     private final String repoName;
     private final String allowedTokenOrigin;
+    private final boolean tokenOriginConfigured;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -102,6 +103,11 @@ public class WorkspaceManager {
     private Path askPassDirectory;
     private Path askPassScript;
 
+    /**
+     * Legacy constructors without a token origin. They keep the pre-D16
+     * unrestricted token behaviour for direct construction/tests; production
+     * wiring must use the origin-aware constructor.
+     */
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
         this(repoCloneDir, repoName, dryRun, githubToken, null);
     }
@@ -137,6 +143,7 @@ public class WorkspaceManager {
         this.tokenSource = tokenSource != null ? tokenSource : () -> githubToken;
         this.credentialHelperScript = null;
         this.repoDir = null;
+        this.tokenOriginConfigured = tokenOrigin != null && !tokenOrigin.isBlank();
         this.allowedTokenOrigin = httpsOrigin(tokenOrigin);
     }
 
@@ -1397,12 +1404,7 @@ public class WorkspaceManager {
         cleanupAskPass();
         askPassDirectory = Files.createTempDirectory("vibecode-askpass-");
         askPassScript = askPassDirectory.resolve("askpass.sh");
-        String token = shellSingleQuote(rawToken == null ? "" : rawToken);
-        String script = "#!/bin/sh\n"
-            + "case \"$1\" in\n"
-            + "  *Username*) printf '%s\\n' 'oauth2' ;;\n"
-            + "  *) printf '%s\\n' " + token + " ;;\n"
-            + "esac\n";
+        String script = askPassScript(rawToken, authorityOf(allowedTokenOrigin));
         Files.writeString(askPassScript, script, StandardCharsets.UTF_8);
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             Files.setPosixFilePermissions(
@@ -1431,6 +1433,35 @@ public class WorkspaceManager {
                 // Best effort.
             }
         }
+    }
+
+    /**
+     * Askpass helper. When an origin is configured, the prompt must mention its
+     * host before any credential is returned, so a redirected remote cannot
+     * harvest the token even if git follows it.
+     */
+    static String askPassScript(String rawToken, String allowedAuthority) {
+        String token = shellSingleQuote(rawToken == null ? "" : rawToken);
+        StringBuilder script = new StringBuilder("#!/bin/sh\n");
+        if (allowedAuthority != null && !allowedAuthority.isBlank()) {
+            script.append("case \"$1\" in\n")
+                .append("  *").append(shellSingleQuote(allowedAuthority)).append("*) ;;\n")
+                .append("  *) exit 1 ;;\n")
+                .append("esac\n");
+        }
+        return script
+            .append("case \"$1\" in\n")
+            .append("  *Username*) printf '%s\\n' 'oauth2' ;;\n")
+            .append("  *) printf '%s\\n' ").append(token).append(" ;;\n")
+            .append("esac\n")
+            .toString();
+    }
+
+    private static String authorityOf(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        return origin.startsWith("https://") ? origin.substring("https://".length()) : null;
     }
 
     private static String shellSingleQuote(String value) {
@@ -1543,9 +1574,11 @@ public class WorkspaceManager {
      * is never sent over http, to an ssh/file remote, or to another host.
      */
     boolean shouldAuthenticate(String repoUrl) {
-        if (allowedTokenOrigin == null) {
-            return true; // legacy direct construction; production passes an origin
+        if (!tokenOriginConfigured) {
+            return true; // legacy direct construction; production always configures one
         }
+        // A configured origin that does not normalize to https (http, ssh,
+        // malformed) must fail closed instead of falling into the legacy path.
         String origin = httpsOrigin(repoUrl);
         return origin != null && origin.equals(allowedTokenOrigin);
     }
@@ -1566,12 +1599,12 @@ public class WorkspaceManager {
      * cloned from. Direct construction (tests) with no configured origin keeps
      * the legacy authenticated behaviour.
      */
-    private boolean shouldAuthenticateRemote() {
+    boolean shouldAuthenticateRemote() {
         String remote = remoteOriginUrl();
         if (remote == null || remote.isBlank()) {
             // No readable remote: legacy direct construction keeps the old
-            // behaviour; a configured origin fails closed.
-            return allowedTokenOrigin == null;
+            // behaviour; any configured origin (https or not) fails closed.
+            return !tokenOriginConfigured;
         }
         return shouldAuthenticate(remote);
     }

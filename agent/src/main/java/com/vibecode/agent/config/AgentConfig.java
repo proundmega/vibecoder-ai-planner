@@ -254,7 +254,15 @@ public class AgentConfig {
 
     /** Canonical repository URL from the backend; falls back to GitHub coordinates. */
     public String getRepoUrl() {
-        if (repoUrl != null && !repoUrl.isBlank()) return repoUrl;
+        if (repoUrl != null && !repoUrl.isBlank()) {
+            String value = repoUrl.trim();
+            // GitHub accepts the owner/repo shorthand; the clone needs a URL.
+            if ("github".equals(repoProvider)
+                && value.matches("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) {
+                return "https://github.com/" + value + ".git";
+            }
+            return value;
+        }
         if (hasRepoCoordinates()) {
             return "https://github.com/" + repoOwner + "/" + repoName + ".git";
         }
