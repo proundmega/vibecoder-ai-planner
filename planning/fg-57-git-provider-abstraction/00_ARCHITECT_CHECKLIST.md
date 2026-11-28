@@ -1,14 +1,14 @@
 ---
 id: "fg-57"
 title: "Git Provider Abstraction and Self-Hosted Git Support"
-status: planned
+status: in_review
 priority: "P1"
 effort: "Large"
 scope: "Both"
 created: "2026-11-22"
-updated: "2026-11-27"
-pr: null
-branch: null
+updated: "2026-11-28"
+pr: 279
+branch: "feat/fg-57g-gitlab"
 depends_on: ["fg-35", "fg-54"]
 ---
 
@@ -76,27 +76,27 @@ deferred scope are owned by this document; `01`–`05` link here.
 
 | ID | Item | Source | Category | Follow-up | State |
 |---|---|---|---|---|---|
-| D1 | GitLab self-hosted as a first-class provider (MR API, project access tokens) | self | Integration | fg-57 slice 3 | open |
+| D1 | GitLab self-hosted as a first-class provider (MR API, project access tokens) | self | Integration | fg-57g (#279, in review) | open |
 | D2 | GitHub Enterprise Server support through a configurable API base URL | self | Integration | follow-up | open |
-| D3 | Local bare repository/SSH publishing as the no-PR fallback | self | Integration | fg-57 slice 1 | open |
+| D3 | Local bare repository/SSH publishing as the no-PR fallback | self | Integration | fg-57d2b1, fg-57d2b | done (#271, #275) |
 | D4 | Forgejo Actions/Gitea Actions CI trigger after push | self | CI | follow-up | open |
 | D5 | Signed commits and verified branch provenance | self | Security | follow-up | open |
 | D6 | Repository mirroring/sync between GitHub and a self-hosted primary | self | Operations | follow-up | open |
 | D7 | Per-provider rate limiting, retries and circuit breakers | self | Reliability | fg-57 | open |
-| D8 | Provider picker, connection status and MR/PR links in the UI | self | UX | fg-57 | open |
+| D8 | Provider picker, connection status and MR/PR links in the UI | self | UX | fg-57f3 | done (#261) |
 | D9 | Enforce local/self-hosted model providers for private code (Git residency is not model residency) | fg-42 | Privacy | fg-42 / follow-up | open |
 | D10 | Webhook-driven review state and merge events | self | Integration | follow-up | open |
 | D11 | Consolidate the private-host checks in `providers/generic`, `ProviderRegistryService` and `providers/git` | review | Security | follow-up | open |
 | D12 | Pin or revalidate the resolved base URL address at connect time (DNS rebinding) | review | Security | fg-57b / follow-up | open |
 | D13 | Local filesystem repo paths with a configured repository root; local repo/default-branch existence validation and the 04 integration test | review | Security | fg-57d2b1 | done (#271) |
 | D14 | Forgejo/Gitea `getFileContent` for repo-profile detection (returns null in fg-57e) | review | Functionality | fg-57f / follow-up | open |
-| D15 | Paginate Forgejo/Gitea branch and review listings beyond the first 50 items | review | Reliability | follow-up | open |
+| D15 | Paginate Forgejo/Gitea and GitLab branch and review listings beyond the first page (50/100 items) | review | Reliability | follow-up | open |
 | D16 | Pass the allowed provider origin into the agent `WorkspaceManager` so HTTPS token auth is scoped to the connected provider | review | Security | fg-57d2a | done (#263) |
 | D17 | Agent provider-neutral repo credential for clone/push and the `/git/:projectId/token` route | self | Functionality | fg-57f2 | done (#249) |
 | D18 | Project settings provider picker and connection status UI; regenerate the tracked `openapi-generated.json` (`npm run generate:spec`) before frontend codegen | self | UX | fg-57f3 | done (#261) |
 | D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b | done (#256) |
 | D20 | Permission-aware Git settings controls (hide connect/disconnect/branch/review actions the user cannot use) | review | UX | follow-up | open |
-| D21 | Agent SSH clone/push with a configured known-hosts file (transient `GIT_SSH` wrapper; `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`; refuse when no known-hosts file is configured) | review | Security | fg-57d2b (#275, in review) | open |
+| D21 | Agent SSH clone/push with a configured known-hosts file (transient `GIT_SSH` wrapper; `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`; refuse when no known-hosts file is configured) | review | Security | fg-57d2b | done (#275) |
 
 ## Decisions needed from the user
 

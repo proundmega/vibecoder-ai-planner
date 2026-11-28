@@ -116,14 +116,26 @@ if you already operate it.
    planner unless the host was sized for it.
 2. Create a test project and a project access token with `api` and
    `write_repository`.
-3. Connect with provider `gitlab`, the project clone URL, the GitLab base URL,
-   auth mode `project_token`, and the token.
-4. Run one ticket and verify the merge request, branch and cleanup.
+3. Connect with provider `gitlab`, the **HTTPS** project clone URL, the HTTPS
+   GitLab base URL, auth mode `project_token`, and the token. SSH/scp clone
+   URLs are rejected: the agent has no GitLab SSH credential path, and a
+   token-authenticated SSH connection would fail closed. The base URL must be
+   HTTPS because `PRIVATE-TOKEN` would travel in cleartext over HTTP.
+4. Run one ticket and verify the merge request, branch and cleanup. API
+   redirects are refused, so a 3xx cannot forward the token or reach an internal
+   host.
 5. Revoke the project token and delete the test project.
 
-If GitLab is too heavy for the environment, implement and test against a
-faithful API fake first; keep the real-instance verification as a later
-follow-up.
+Provider `gitlab` supports HTTPS clone URLs, subgroups (`group/sub/project`),
+a relative URL root, and project access tokens (`PRIVATE-TOKEN`). The API is
+derived from the base URL (`/api/v4`) and project paths are URL-encoded.
+Requests refuse redirects; file reads default a missing `ref` to the repository
+default branch (or `HEAD`); and diff patches quote paths containing spaces.
+Unit tests exercise connect, branch create/delete/list, MR create/reuse, review
+diff and review-head reads against a faithful API fake.
+
+If GitLab is too heavy for the environment, keep this smoke as a later
+follow-up; the fake covers the request/response contract in the meantime.
 
 ## Local filesystem repository
 

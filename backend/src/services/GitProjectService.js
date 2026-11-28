@@ -76,6 +76,10 @@ class GitProjectService {
       baseUrl,
       authMode,
     };
+    if (input.providerProjectId !== undefined && input.providerProjectId !== null
+        && String(input.providerProjectId).trim()) {
+      providerConfig.projectId = input.providerProjectId;
+    }
     const provider = gitProviders.registry.get(providerId, providerConfig);
     let parsedRepo;
     try {
@@ -515,8 +519,10 @@ class GitProjectService {
   }
 
   _extractReviewNumber(prUrl) {
-    // GitHub uses /pull/<n>; Forgejo/Gitea use /pulls/<n>.
-    const match = String(prUrl || '').match(/\/(?:pull|pulls)\/(\d+)\/?$/);
+    // GitHub uses /pull/<n>, Forgejo/Gitea use /pulls/<n>, and GitLab uses
+    // /-/merge_requests/<iid>.
+    const match = String(prUrl || '').match(
+      /\/(?:pull|pulls|merge_requests)\/(\d+)\/?$/);
     if (!match) throw new ValidationError(`Invalid PR URL: ${prUrl}`);
     return parseInt(match[1], 10);
   }
