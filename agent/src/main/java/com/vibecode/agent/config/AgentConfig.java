@@ -70,6 +70,9 @@ public class AgentConfig {
     private final int aiMaxTokens;
     private final boolean dryRun;
     private final int maxTicketsPerCycle;
+    private final boolean fixWorkerEnabled;
+    private final int fixLeaseTtlSeconds;
+    private final int fixMaxDurationMinutes;
     private final String repoCloneDir;
     private final String githubToken;
     private final String githubAuthMode;
@@ -130,6 +133,13 @@ public class AgentConfig {
         this.allowPat = "true".equalsIgnoreCase(getEnv("ALLOW_PAT", "false"));
         this.dryRun = "true".equalsIgnoreCase(getEnv("DRY_RUN", "false"));
         this.maxTicketsPerCycle = getIntEnv("MAX_TICKETS", 1);
+        // fg-32c2c3b: one worker runtime can also drain the fix queue. The flag
+        // is worker-local so the runtime role and DB grants stay unchanged.
+        this.fixWorkerEnabled = "true".equalsIgnoreCase(getEnv("FIX_WORKER_ENABLED", "false"));
+        this.fixLeaseTtlSeconds = boundedInt(
+            getIntEnv("FIX_LEASE_TTL_SECONDS", 1800), 60, 86_400);
+        this.fixMaxDurationMinutes = boundedInt(
+            getIntEnv("FIX_MAX_DURATION_MINUTES", 30), 1, 24 * 60);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
         this.harnessConfig = HarnessConfig.fromEnvironment();
         this.sandboxConfig = SandboxConfig.fromEnvironment();
@@ -370,6 +380,23 @@ public class AgentConfig {
     public int getAiMaxTokens() { return aiMaxTokens; }
     public boolean isDryRun() { return dryRun; }
     public int getMaxTicketsPerCycle() { return maxTicketsPerCycle; }
+
+    /** A worker that also drains the fix queue; never enabled on reviewers. */
+    public boolean isFixWorkerEnabled() {
+        return fixWorkerAllowed(fixWorkerEnabled, isReviewMode());
+    }
+
+    /** Reviewers and planners never drain the fix queue, whatever the flag. */
+    static boolean fixWorkerAllowed(boolean enabled, boolean reviewMode) {
+        return enabled && !reviewMode;
+    }
+
+    /** Clamp an env value into its supported range (floors also cap growth). */
+    static int boundedInt(int value, int floor, int ceiling) {
+        return Math.min(ceiling, Math.max(floor, value));
+    }
+    public int getFixLeaseTtlSeconds() { return fixLeaseTtlSeconds; }
+    public int getFixMaxDurationMinutes() { return fixMaxDurationMinutes; }
     public String getRepoCloneDir() { return repoCloneDir; }
     public String getGitHubToken() { return githubToken; }
     public String getGitHubAuthMode() { return githubAuthMode; }

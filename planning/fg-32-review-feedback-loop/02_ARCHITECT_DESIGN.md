@@ -272,10 +272,21 @@ like a build run; the fixer-only allowance covers only the PR/head guard.
 
 ### Worker mode and wiring
 
-- Add `AGENT_MODE=build|review|fix`.
-  - Default when unset: `review` if `REPO_OWNER` is blank, otherwise `build` (backward compatible with `AgentApp.processCycle()`).
-  - `fix` requires `REPO_OWNER`, `REPO_NAME`, and a distinct `AGENT_API_KEY` identity.
-- `AgentApp` constructs `FixTicketProcessor implements TicketWorker` for `AGENT_MODE=fix` and polls `GET /agents/fix-queue` instead of backlog or review tickets.
+- Worker mode (decided 2026-11-28, option 1): a **worker** runtime opts into
+  fixing with `FIX_WORKER_ENABLED=true` and polls `GET /agents/fix-queue` after
+  its build poll. `isFixWorkerEnabled()` is always false for reviewers and
+  planners, so the flag cannot turn a reviewer into a fixer. The runtime role,
+  DB grants and `AGENT_API_KEY` identity are unchanged, and
+  `HarnessRunService` keeps authorising a fix run with
+  `tickets.assigned_runtime_id` — no claim-based authorisation path is needed.
+  The trade-off is that one runtime does build and fix sequentially; a
+  dedicated fixer runtime (and its claim-based authorisation) is deferred until
+  fix throughput needs it.
+- `AgentApp` constructs `FixTicketProcessor implements TicketWorker` when the
+  flag is set; it drains at most one due request per cycle. A supervisor
+  poison pill (`AGENT_RUNTIME_STOP_FILE`) may stop a stuck fixer once its
+  workspace is idle; the supervisor must not kill a run after the `publishing`
+  checkpoint.
 - `FIX_LOOP_MODE=off|manual|auto` controls **dispatch** (who may create requests), not the worker mode. A deployment that wants build + fix in one container runs `AGENT_MODE=build` and a second process/container with `AGENT_MODE=fix`; they must not share the same `AGENT_API_KEY` identity.
 - The fix worker reuses the project's `REPO_OWNER`/`REPO_NAME` and provider config; it does not clone a different repository.
 
@@ -285,12 +296,12 @@ Add these to `AgentConfig` and to the existing `backend/src/services/PoolManager
 
 | Env | Default | Purpose |
 |---|---|---|
-| `AGENT_MODE` | derived | `build`, `review` or `fix`; unset = `review` when `REPO_OWNER` is blank, else `build` |
+| `FIX_WORKER_ENABLED` | `false` | a worker also drains the fix queue; never on reviewers/planners |
 | `FIX_LOOP_MODE` | `off` | dispatch default; `projects.fix_loop_mode` overrides |
 | `FIX_MAX_ROUNDS` | `2` | fix rounds after round 0 |
 | `FIX_MAX_ATTEMPTS` | `3` | fixer attempts per request before escalation |
-| `FIX_LEASE_TTL_SECONDS` | `1800` | claim lease; renewed via `fix/renew` |
-| `FIX_MAX_DURATION_MINUTES` | `30` | wall-clock hard stop |
+| `FIX_LEASE_TTL_SECONDS` | `1800` | claim lease (floor 60, cap 24h); renewed via `fix/renew` |
+| `FIX_MAX_DURATION_MINUTES` | `30` | wall-clock hard stop (floor 1) |
 
 Mirror them in `agent/.env.example` and the README agent env table, and document that `FIX_LOOP_MODE` is dispatch-only while `AGENT_MODE=fix` selects the worker.
 
