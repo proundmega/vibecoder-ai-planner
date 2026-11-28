@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { encrypt, decrypt } = require('../utils/crypto');
+const crypto = require('crypto');
 const dns = require('dns');
 const net = require('net');
 
@@ -93,12 +94,26 @@ function defaultBase(providerType) {
     case 'anthropic':
       return 'https://api.anthropic.com';
     case 'openai':
-    case 'opencode':
-    case 'opencode-go':
       return 'https://api.openai.com';
+    case 'opencode':
+      return 'https://opencode.ai/inference/openai';
+    case 'opencode-go':
+      return 'https://opencode.ai/inference/go/openai';
     default:
       return null;
   }
+}
+
+function withOpencodeSession(providerType, headers) {
+  if (providerType !== 'opencode' && providerType !== 'opencode-go') {
+    return headers;
+  }
+  return {
+    ...headers,
+    // OpenCode Go requires a stable per-conversation routing id on every
+    // request, including health checks and model verification.
+    'x-opencode-session': `ses_${crypto.randomBytes(16).toString('hex')}`,
+  };
 }
 
 async function fetchJson(url, options = {}, timeoutMs = 10000) {
@@ -400,7 +415,9 @@ class ProviderRegistryService {
 
     let response;
     try {
-      response = await fetchJson(url, { headers });
+      response = await fetchJson(url, {
+        headers: withOpencodeSession(credential.provider_type, headers),
+      });
     } catch (error) {
       const message = error.name === 'AbortError' ? 'Provider timeout' : 'Provider unreachable';
       throw fail(502, 'DISCOVERY_FAILED', message);
@@ -467,7 +484,7 @@ class ProviderRegistryService {
     try {
       const response = await fetchJson(url, {
         method: 'POST',
-        headers,
+        headers: withOpencodeSession(credential.provider_type, headers),
         body: JSON.stringify(payload),
       });
       if (!response.ok) {

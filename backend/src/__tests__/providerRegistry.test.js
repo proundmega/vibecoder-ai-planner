@@ -128,6 +128,52 @@ describe('ProviderRegistryService (FR5-FR9, FR18, FR19)', () => {
     );
   });
 
+  it('uses the OpenCode Go endpoint and session header for verification', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 9, model: 'beam-free', credential_id: 1, owner_id: 7, project_id: null }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          owner_id: 7,
+          provider_type: 'opencode-go',
+          api_key_encrypted: 'enc:sk',
+          base_url: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: 9, status: 'verified' }] });
+    global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => '{}' });
+
+    await ProviderRegistryService.testModel(user, 9);
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://opencode.ai/inference/go/openai/v1/chat/completions');
+    expect(options.headers['x-opencode-session']).toMatch(/^ses_[0-9a-f]{32}$/);
+  });
+
+  it('sends the OpenCode session header during model discovery', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1, owner_id: 7, provider_type: 'opencode-go',
+          api_key_encrypted: 'enc:sk', base_url: null,
+        }],
+      })
+      .mockResolvedValue({ rows: [] });
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ data: [{ id: 'beam-free' }] }),
+    });
+
+    await ProviderRegistryService.discover(user, 1);
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://opencode.ai/inference/go/openai/v1/models');
+    expect(options.headers['x-opencode-session']).toMatch(/^ses_[0-9a-f]{32}$/);
+  });
+
   it('maps discovery transport failures to 502', async () => {
     pool.query.mockResolvedValueOnce({
       rows: [{
