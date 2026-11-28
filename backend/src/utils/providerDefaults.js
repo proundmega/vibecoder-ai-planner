@@ -2,18 +2,18 @@
  * Built-in defaults for cloud providers that expose a fixed OpenAI-compatible
  * endpoint. Keeping them here means the API, validators and UI do not drift.
  *
- * OpenCode Zen is pay-per-use; OpenCode Go is the subscription gateway. Both
- * speak OpenAI Chat Completions at the listed base URL.
+ * OpenCode Console is pay-per-use; OpenCode Go is the subscription gateway.
+ * Both speak OpenAI Chat Completions at the listed inference base URL.
  */
 const PROVIDER_DEFAULTS = Object.freeze({
   opencode: Object.freeze({
-    label: 'OpenCode (Zen)',
-    endpointUrl: 'https://opencode.ai/zen/v1',
+    label: 'OpenCode (Console)',
+    endpointUrl: 'https://opencode.ai/inference/openai/v1',
     requiresModel: true,
   }),
   'opencode-go': Object.freeze({
     label: 'OpenCode Go',
-    endpointUrl: 'https://opencode.ai/zen/go/v1',
+    endpointUrl: 'https://opencode.ai/inference/go/openai/v1',
     requiresModel: true,
   }),
 });

@@ -116,7 +116,7 @@ describe('ProviderService', () => {
       const result = await ProviderService.resolveProvider({}, 1, 7);
 
       expect(result.max_tokens).toBe(4096);
-      expect(result.endpoint_url).toBe('https://opencode.ai/zen/v1');
+      expect(result.endpoint_url).toBe('https://opencode.ai/inference/openai/v1');
     });
 
 
