@@ -25,6 +25,11 @@ const providers = [
     supportsInstallations: false, requiresBaseUrl: true,
     reviewRequestName: 'pull request', authModes: ['pat', 'project_token'], registered: true,
   },
+  {
+    id: 'local', label: 'Local', supportsReviewRequests: false,
+    supportsInstallations: false, requiresBaseUrl: false,
+    reviewRequestName: 'branch', authModes: ['ssh', 'none'], registered: true,
+  },
 ]
 
 const repoRow = {
@@ -105,6 +110,17 @@ describe('useGit', () => {
       token: 'scoped-token',
     })
     expect(git.showConnectForm.value).toBe(false)
+  })
+
+  it('defaults local connections to no credential', async () => {
+    const git = useGit(1)
+    await git.load()
+    await flushPromises()
+
+    git.applyProviderDefaults('local')
+
+    expect(git.form.authMode).toBe('none')
+    expect(git.form.token).toBe('')
   })
 
   it('connects a local repository without sending a credential', async () => {

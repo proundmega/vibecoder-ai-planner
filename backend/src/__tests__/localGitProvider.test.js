@@ -89,6 +89,18 @@ describe('local filesystem provider', () => {
     }
   });
 
+  it('rejects a subdirectory of a work tree', async () => {
+    const repo = initRepo(path.join(root, 'worktree'));
+    const sub = path.join(repo, 'sub');
+    fs.mkdirSync(sub);
+    const provider = new LocalGitProvider({ authMode: 'none' });
+
+    await expect(provider.validateRepoAccess(sub, null)).resolves.toMatchObject({
+      accessible: false,
+      error: 'Path must be the repository root',
+    });
+  });
+
   it('requires LOCAL_GIT_ROOT for filesystem paths', () => {
     const repo = initRepo(path.join(root, 'project'));
     delete process.env.LOCAL_GIT_ROOT;

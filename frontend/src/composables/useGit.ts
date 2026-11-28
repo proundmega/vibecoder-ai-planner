@@ -63,7 +63,8 @@ export function useGit(projectId: string | number) {
   function applyProviderDefaults(provider: string): void {
     const capabilities = providers.value.find((row) => row.id === provider)
     if (!capabilities) return
-    form.authMode = capabilities.authModes[0] ?? 'pat'
+    // A filesystem local repository needs no credential; SSH is manual.
+    form.authMode = provider === 'local' ? 'none' : capabilities.authModes[0] ?? 'pat'
     form.token = ''
     form.sshKey = ''
     if (!capabilities.requiresBaseUrl) form.baseUrl = ''

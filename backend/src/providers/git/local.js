@@ -148,7 +148,17 @@ class LocalGitProvider {
     const parsed = this.parseRepoUrl(repoUrl);
     if (parsed.protocol === 'file') {
       try {
-        gitOutput(parsed.path, ['rev-parse', '--is-bare-repository']);
+        const isBare = gitOutput(parsed.path, ['rev-parse', '--is-bare-repository']) === 'true';
+        if (!isBare) {
+          const top = gitOutput(parsed.path, ['rev-parse', '--show-toplevel']);
+          if (fs.realpathSync(top) !== parsed.path) {
+            return {
+              accessible: false,
+              defaultBranch: null,
+              error: 'Path must be the repository root',
+            };
+          }
+        }
         let defaultBranch = '';
         try {
           defaultBranch = gitOutput(parsed.path, ['symbolic-ref', '--short', 'HEAD']);

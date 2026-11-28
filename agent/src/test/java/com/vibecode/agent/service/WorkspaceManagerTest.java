@@ -64,6 +64,70 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void localCloneAndPushDoNotFetchAToken() throws Exception {
+        Path source = initRepo("local-no-token-source");
+        Path bare = initBare("local-no-token.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        final int[] tokenCalls = {0};
+        GitHubTokenSource sourceWithFailingToken = new GitHubTokenSource() {
+            @Override
+            public String get() throws IOException {
+                tokenCalls[0] += 1;
+                throw new IOException("token route 400");
+            }
+
+            @Override
+            public String refresh() throws IOException {
+                tokenCalls[0] += 1;
+                throw new IOException("token route 400");
+            }
+        };
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "local-no-token-ws", false, null,
+            sourceWithFailingToken, null, bare.toUri().toString());
+        manager.setLocalRepoRoot(tempDir.toString());
+
+        manager.cloneRepo(bare.toUri().toString(), "vibecode/ticket-1");
+        Files.writeString(manager.getRepoDir().resolve("change.txt"), "change\n");
+        String pushed = manager.commitAndPush("test change", "vibecode/ticket-1");
+
+        assertEquals(0, tokenCalls[0],
+            "a local repository must not request an HTTPS token");
+        assertEquals(pushed,
+            gitOutput(bare, "rev-parse", "refs/heads/vibecode/ticket-1"));
+    }
+
+    @Test
+    void cloneExistingBranchHonorsTheLocalRoot() throws Exception {
+        Path source = initRepo("existing-root-source");
+        Path bare = initBare("existing-root.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/vibecode/fix");
+        String sha = gitOutput(source, "rev-parse", "HEAD");
+        Path allowed = Files.createDirectories(tempDir.resolve("existing-allowed-root"));
+
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "existing-outside-ws", false, null);
+        manager.setLocalRepoRoot(allowed.toString());
+
+        assertThrows(IOException.class, () -> manager.cloneExistingBranch(
+            bare.toUri().toString(), "vibecode/fix", sha));
+    }
+
+    @Test
+    void rejectsARelativeLocalRoot() {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "relative-root", false, null);
+        manager.setLocalRepoRoot("relative/root");
+
+        assertThrows(IOException.class,
+            () -> manager.cloneRepo("file:///tmp/outside.git", "vibecode/ticket-1"));
+    }
+
+    @Test
     void rejectsALocalCloneWhenTheRootIsConfiguredButMissing() {
         WorkspaceManager manager = new WorkspaceManager(
             tempDir.toString(), "local-no-root", false, null);
@@ -104,19 +168,19 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void configuredOriginWithoutAReadableRemoteFailsClosed() throws Exception {
+    void unreadableRemotesNeverFetchAToken() throws Exception {
         WorkspaceManager configured = new WorkspaceManager(
             tempDir.toString(), "repo", false, "token", () -> "token", null,
             "https://git.example.com");
         setRepoDir(configured, Files.createDirectories(tempDir.resolve("no-origin-repo")));
-        assertFalse(configured.shouldAuthenticateRemote(),
+        assertFalse(configured.httpsPublishingRemote(),
             "a configured origin must not authenticate when the remote is unreadable");
 
         WorkspaceManager legacy = new WorkspaceManager(
             tempDir.toString(), "legacy-repo", false, "token", () -> "token");
         setRepoDir(legacy, Files.createDirectories(tempDir.resolve("legacy-no-origin")));
-        assertTrue(legacy.shouldAuthenticateRemote(),
-            "legacy construction keeps the old behaviour");
+        assertFalse(legacy.httpsPublishingRemote(),
+            "an unreadable remote cannot be treated as an HTTPS publishing remote");
     }
 
     @Test
@@ -645,6 +709,8 @@ class WorkspaceManagerTest {
         Path failedOnce = tempDir.resolve("push-auth-failed-once");
         Path capturedAskpass = tempDir.resolve("push-refreshed-askpass.sh");
         String script = "#!/bin/sh\n"
+            + "case \"$*\" in *\"remote get-url origin\"*) "
+            + "echo 'https://git.example.com/group/repo.git'; exit 0 ;; esac\n"
             + "while [ $# -gt 0 ] && [ \"$1\" != \"ls-remote\" ] && [ \"$1\" != \"push\" ]; do shift; done\n"
             + "[ $# -eq 0 ] && exit 0\n"
             + "cmd=\"$1\"\n"
@@ -2091,7 +2157,9 @@ class WorkspaceManagerTest {
         FixRepo repo = initWithFixBranch("ff-auth");
         Path log = tempDir.resolve("ff-auth-askpass.log");
         Path git = wrapperGit("ff-auth-bin",
-            "case \"$cmd\" in\n"
+            "if [ \"$cmd\" = \"remote\" ]; then "
+            + "echo 'https://git.example.com/group/repo.git'; exit 0; fi\n"
+            + "case \"$cmd\" in\n"
             + "  fetch|push)\n"
             + "    printf '%s ASKPASS=%s\\n' \"$cmd\" \"$GIT_ASKPASS\" >> '" + log + "'\n"
             + "    case \"$GIT_ASKPASS\" in\n"
@@ -2124,7 +2192,9 @@ class WorkspaceManagerTest {
         Path failedOnce = tempDir.resolve("ff-auth-refresh-failed-once");
         Path captured = tempDir.resolve("ff-auth-refresh-askpass.sh");
         Path git = wrapperGit("ff-auth-refresh-bin",
-            "case \"$cmd\" in\n"
+            "if [ \"$cmd\" = \"remote\" ]; then "
+            + "echo 'https://git.example.com/group/repo.git'; exit 0; fi\n"
+            + "case \"$cmd\" in\n"
             + "  fetch)\n"
             + "    if [ ! -f '" + failedOnce + "' ]; then\n"
             + "      touch '" + failedOnce + "'\n"
@@ -2229,7 +2299,9 @@ class WorkspaceManagerTest {
         Path fetchCount = tempDir.resolve("ff-reread-auth-fetch-count");
         Path pushCount = tempDir.resolve("ff-reread-auth-push-count");
         Path git = wrapperGit("ff-reread-auth-bin",
-            "case \"$cmd\" in\n"
+            "if [ \"$cmd\" = \"remote\" ]; then "
+            + "echo 'https://git.example.com/group/repo.git'; exit 0; fi\n"
+            + "case \"$cmd\" in\n"
             + "  fetch)\n"
             + "    count=0\n"
             + "    [ -f '" + fetchCount + "' ] && count=$(cat '" + fetchCount + "')\n"
