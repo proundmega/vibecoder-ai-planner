@@ -159,6 +159,8 @@ class WorkspaceManagerTest {
         assertTrue(WorkspaceManager.isSshUrl("ssh://git@git.example.com/group/repo.git"));
         assertTrue(WorkspaceManager.isSshUrl("git@git.example.com:group/repo.git"));
         assertTrue(WorkspaceManager.isSshUrl("git.example.com:group/repo.git"));
+        assertTrue(WorkspaceManager.isSshUrl("git@git.example.com:/srv/git/repo.git"));
+        assertTrue(WorkspaceManager.isSshUrl("git.example.com:/srv/git/repo.git"));
         assertFalse(WorkspaceManager.isSshUrl("https://git.example.com/group/repo.git"));
         assertFalse(WorkspaceManager.isSshUrl("file:///srv/git/repo.git"));
         assertFalse(WorkspaceManager.isSshUrl("/srv/git/repo.git"));
@@ -195,7 +197,7 @@ class WorkspaceManagerTest {
         Path keyPath = manager.sshKeyFilePath();
         try {
             String script = Files.readString(scriptPath);
-            assertTrue(script.contains("ssh -i"));
+            assertTrue(script.contains("ssh -F /dev/null -i"));
             assertTrue(script.contains("IdentitiesOnly=yes"));
             assertTrue(script.contains("StrictHostKeyChecking=yes"));
             assertTrue(script.contains("UserKnownHostsFile="));
@@ -218,7 +220,7 @@ class WorkspaceManagerTest {
         manager.setSshCredentials("pem", null, null);
 
         assertThrows(IOException.class,
-            () -> manager.cloneRepo("git@git.example.com:group/repo.git", "vibecode/ticket-1"));
+            () -> manager.cloneRepo("git@git.example.com:/srv/git/repo.git", "vibecode/ticket-1"));
     }
 
     @Test

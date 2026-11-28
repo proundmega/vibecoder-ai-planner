@@ -31,6 +31,13 @@ class RepoCoordinatesTest {
     }
 
     @Test
+    void acceptsSingleSegmentSshPaths() {
+        assertParsed("git@github.com:widgets.git", "github.com", "widgets");
+        assertParsed("ssh://git@git.example.com/repo.git", "git.example.com", "repo");
+        assertParsed("ssh://git@git.example.com:22/repo.git", "git.example.com", "repo");
+    }
+
+    @Test
     void keepsNumericScpOwners() {
         assertParsed("git@github.com:123/repo.git", "123", "repo");
         // A numeric SCP owner is not a port even when a subgroup follows.

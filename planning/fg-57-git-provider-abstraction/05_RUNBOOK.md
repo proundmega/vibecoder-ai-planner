@@ -191,7 +191,10 @@ follow-up.
    agent as the project deploy key. Give the agent a **verified known-hosts
    file** (`ssh-keyscan` then verify the fingerprint): set
    `GIT_SSH_KNOWN_HOSTS=/etc/vibecode/known_hosts` and mount the file read-only
-   into the supervisor. `GIT_SSH_KEY_FILE` is an alternative mounted key.
+   into the supervisor. The connect API requires a deploy key, so the normal
+   path uses the project key; a mounted `GIT_SSH_KEY_FILE` is a direct/dev
+   fallback used only when no project key is delivered. A mounted key must be
+   owned by the agent user (uid 100) and mode `0600`.
    The agent runs SSH with `StrictHostKeyChecking=yes`, `IdentitiesOnly=yes`,
    `BatchMode=yes`, only the configured `UserKnownHostsFile` and
    `GlobalKnownHostsFile=/dev/null`; without the known-hosts file it fails
@@ -199,8 +202,17 @@ follow-up.
    The backend resolves the SSH host on connect. A host only the agent can
    resolve is rejected; use a name both sides resolve, or set
    `ALLOW_PRIVATE_HOSTS=1` / `GIT_ALLOW_PRIVATE_HOSTS=1` for a private host.
-4. Run one ticket. The harness pushes the branch and finishes with a branch/SHA,
-   no PR URL. Review the diff locally or in the Git UI.
+4. Smoke before the ticket (from the supervisor container), then run one
+   ticket:
+
+   ```bash
+   ssh -F /dev/null -i <key> -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+     -o UserKnownHostsFile=/etc/vibecode/known_hosts -o BatchMode=yes git@git.example.com
+   git -C /srv/git/private-app.git show-ref refs/heads/vibecode/ticket-1-...
+   ```
+
+   Confirm the pushed branch/SHA and the ticket in `review` with branch
+   evidence (no PR URL). Review the diff locally or in the Git UI.
 5. Clean up the branch, deploy key and bare repo.
 
 ## Verification checklist

@@ -135,7 +135,8 @@ sweep_legacy() {
             freed=$((freed + ${size:-0}))
         fi
     done < <(find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -type d \
-        \( -name 'opencode-harness-*' -o -name 'vibecode-askpass-*' \) -print 2>/dev/null)
+        \( -name 'opencode-harness-*' -o -name 'vibecode-askpass-*' \
+           -o -name 'vibecode-ssh-*' \) -print 2>/dev/null)
 }
 
 sweep_orphans() {

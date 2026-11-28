@@ -96,7 +96,7 @@ deferred scope are owned by this document; `01`–`05` link here.
 | D18 | Project settings provider picker and connection status UI; regenerate the tracked `openapi-generated.json` (`npm run generate:spec`) before frontend codegen | self | UX | fg-57f3 | done (#261) |
 | D19 | Agent backend-proxied Forgejo/Gitea review client (agent-side PR creation) | self | Functionality | fg-57f2b | done (#256) |
 | D20 | Permission-aware Git settings controls (hide connect/disconnect/branch/review actions the user cannot use) | review | UX | follow-up | open |
-| D21 | Agent SSH clone/push with a configured known-hosts file (`GIT_SSH_COMMAND`, `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`; refuse when no known-hosts file is configured) | review | Security | fg-57d2b (#275, in review) | open |
+| D21 | Agent SSH clone/push with a configured known-hosts file (transient `GIT_SSH` wrapper; `IdentitiesOnly=yes`, `StrictHostKeyChecking=yes`; refuse when no known-hosts file is configured) | review | Security | fg-57d2b (#275, in review) | open |
 
 ## Decisions needed from the user
 

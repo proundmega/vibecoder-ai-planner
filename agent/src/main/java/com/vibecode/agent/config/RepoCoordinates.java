@@ -29,6 +29,8 @@ public record RepoCoordinates(String owner, String name) {
 
         int scheme = value.indexOf("://");
         boolean hasScheme = scheme >= 0;
+        boolean sshScheme = hasScheme
+            && value.substring(0, scheme).equalsIgnoreCase("ssh");
         if (hasScheme) {
             value = value.substring(scheme + 3);
         }
@@ -44,6 +46,7 @@ public record RepoCoordinates(String owner, String name) {
         // owner path `123/group/repo`. Ports only exist in a scheme authority.
         int colon = value.indexOf(':');
         int slash = value.indexOf('/');
+        boolean scpLike = false;
         if (colon >= 0 && (slash < 0 || colon < slash)) {
             String after = value.substring(colon + 1);
             int nextSlash = after.indexOf('/');
@@ -52,12 +55,14 @@ public record RepoCoordinates(String owner, String name) {
                 // ssh://host:22/owner/repo — drop the explicit port.
                 value = value.substring(0, colon) + after.substring(port.length());
             } else if (!hasScheme) {
+                scpLike = true;
                 value = value.substring(0, colon) + "/" + after;
             }
         }
 
         int pathStart = value.indexOf('/');
         if (pathStart < 0) return Optional.empty();
+        String host = value.substring(0, pathStart).replaceFirst(":.*$", "");
         String path = stripQueryAndFragment(value.substring(pathStart + 1));
         if (path.endsWith("/")) path = path.substring(0, path.length() - 1);
         path = stripGitSuffix(path);
@@ -66,7 +71,16 @@ public record RepoCoordinates(String owner, String name) {
         for (String segment : path.split("/")) {
             if (!segment.isBlank()) segments.add(segment);
         }
-        if (segments.size() < 2) return Optional.empty();
+        if (segments.size() == 1) {
+            // ssh://host/repo.git and host:repo.git are valid even without an
+            // owner path; use the host as the synthetic owner.
+            String single = segments.get(0);
+            if ((sshScheme || scpLike) && !host.isBlank() && !single.isBlank()) {
+                return Optional.of(new RepoCoordinates(host, stripGitSuffix(single)));
+            }
+            return Optional.empty();
+        }
+        if (segments.isEmpty()) return Optional.empty();
 
         String name = segments.get(segments.size() - 1);
         String owner = String.join("/", segments.subList(0, segments.size() - 1));

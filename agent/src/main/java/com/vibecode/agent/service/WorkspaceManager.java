@@ -82,7 +82,7 @@ public class WorkspaceManager {
     private static final Pattern WORKSPACE_DIR_PATTERN =
         Pattern.compile("^[0-9a-f]{8}-.+");
     private static final List<String> TEMP_DIR_PREFIXES = List.of(
-        "opencode-harness-", "vibecode-askpass-");
+        "opencode-harness-", "vibecode-askpass-", "vibecode-ssh-");
 
     private Path repoDir;
     private String workspaceKey;
@@ -1606,7 +1606,11 @@ public class WorkspaceManager {
         return origin.startsWith("https://") ? origin.substring("https://".length()) : null;
     }
 
-    /** ssh:// or scp-like (git@host:path); https/file are not SSH. */
+    /**
+     * ssh:// or scp-like (git@host:path), including an absolute path
+     * (host:/srv/git/repo.git); https/file are not SSH. A Windows drive path
+     * also matches the scp shape; the Linux agent treats it as scp-like.
+     */
     static boolean isSshUrl(String repoUrl) {
         if (repoUrl == null) {
             return false;
@@ -1618,8 +1622,7 @@ public class WorkspaceManager {
         if (value.contains("://")) {
             return false;
         }
-        // Scp-like syntax: [user@]host:path. Reject a bare Windows drive path.
-        return value.matches("^(?:[^@/\\s]+@)?[^:/\\s]+:[^/].*$");
+        return value.matches("^(?:[^@/\\s]+@)?[^:/\\s]+:.+$");
     }
 
     /**
@@ -1659,7 +1662,7 @@ public class WorkspaceManager {
             }
             sshWrapperScript = sshHelperDir.resolve("ssh.sh");
             String script = "#!/bin/sh\n"
-                + "exec ssh -i " + shellSingleQuote(key.toString())
+                + "exec ssh -F /dev/null -i " + shellSingleQuote(key.toString())
                 + " -o IdentitiesOnly=yes"
                 + " -o StrictHostKeyChecking=yes"
                 + " -o UserKnownHostsFile=" + shellSingleQuote(known.toString())
