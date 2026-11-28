@@ -381,9 +381,23 @@ prompt carries the ticket's acceptance criteria (`GET
 
 ### Fast-forward-only publishing
 
-The existing `WorkspaceManager.pushCommit()` reads the remote SHA and uses `--force-with-lease` against that fresh value (`WorkspaceManager.java:217-231`). A human push during a fix would therefore be overwritten. Fix mode must **not** reuse it.
+The original `WorkspaceManager.pushCommit()` read the remote SHA and used
+`--force-with-lease` against that fresh value, so a human push made earlier in
+the run was silently overwritten. Publishing now follows one rule for builds
+and fixes (`publishBuildCommit`, fg-32c2c3c):
 
-Add `WorkspaceManager.publishFastForward(commitSha, branch, reviewedSha)`:
+- the branch is absent → push creates it, never forced;
+- the branch is an ancestor of the new commit → fast-forward;
+- the branch diverged but every commit above our base carries the agent
+  identity as author and committer → a previous attempt of ours, so a retry
+  may replace it with a lease pinned to the head just read;
+- anything else → `remote_head_moved`; the human commit wins.
+
+Ownership is a heuristic (the agent writes `agent@vibecode.ai`), not a security
+boundary. Fix mode is stricter and never replaces: it only fast-forwards from
+`reviewed_sha`.
+
+`WorkspaceManager.publishFastForward(commitSha, branch, reviewedSha)`:
 
 1. `git fetch origin <branch>` immediately before pushing.
 2. Resolve the remote head. If it is not `reviewedSha`, abort with `remote_head_moved`; never force or overwrite.
