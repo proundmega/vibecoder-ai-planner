@@ -199,4 +199,69 @@ class ApiServiceFixQueueTest {
         assertTrue(api.renewFix(42, 0));
         assertEquals("{}", requests.get(1).body());
     }
+
+    @Test
+    void startsAFixRunWithPurposeAndClaim() throws Exception {
+        stub("/api/v1/harness/runs", 200,
+            "{\"success\":true,\"data\":{\"id\":\"run-1\",\"purpose\":\"fix\"}}");
+
+        Map<String, Object> run = api.startFixHarnessRun(
+            42L, "feat/fix", "/work/repo", "anthropic", "claude", 2,
+            "22222222-2222-4222-8222-222222222222", "a".repeat(40));
+
+        assertEquals("run-1", run.get("id"));
+        assertEquals("3", requests.get(0).runtime());
+        assertEquals("test-agent-key", requests.get(0).apiKey());
+        String body = requests.get(0).body();
+        assertTrue(body.contains("\"purpose\":\"fix\""), body);
+        assertTrue(body.contains("\"fixRequestId\":\"22222222-2222-4222-8222-222222222222\""), body);
+        assertTrue(body.contains("\"baseSha\":\"" + "a".repeat(40) + "\""), body);
+    }
+
+    @Test
+    void aBuildRunOmitsTheFixFields() throws Exception {
+        stub("/api/v1/harness/runs", 200,
+            "{\"success\":true,\"data\":{\"id\":\"run-1\",\"purpose\":\"build\"}}");
+
+        api.startHarnessRun(42L, "feat/build", "/work/repo", "anthropic", "claude", 1);
+
+        String body = requests.get(0).body();
+        assertFalse(body.contains("purpose"), body);
+        assertFalse(body.contains("fixRequestId"), body);
+        assertFalse(body.contains("baseSha"), body);
+    }
+
+    @Test
+    void startsAFixRunWithARepoProfile() throws Exception {
+        stub("/api/v1/harness/runs", 200,
+            "{\"success\":true,\"data\":{\"id\":\"run-1\"}}");
+
+        api.startFixHarnessRun(42L, "feat/fix", null, "anthropic", "claude", 1,
+            "22222222-2222-4222-8222-222222222222", "a".repeat(40),
+            "11111111-1111-4111-8111-111111111111", 3);
+
+        String body = requests.get(0).body();
+        assertTrue(body.contains("\"repoProfileId\":\"11111111-1111-4111-8111-111111111111\""), body);
+        assertTrue(body.contains("\"repoProfileVersion\":3"), body);
+    }
+
+    @Test
+    void aFixRunRequiresTheClaimAndBaseSha() {
+        assertThrows(IllegalArgumentException.class, () -> api.startFixHarnessRun(
+            42L, "b", null, null, null, 1, " ", "a".repeat(40)));
+        assertThrows(IllegalArgumentException.class, () -> api.startFixHarnessRun(
+            42L, "b", null, null, null, 1,
+            "22222222-2222-4222-8222-222222222222", " "));
+    }
+
+    @Test
+    void aFixRunValidatesTheProfilePair() {
+        assertThrows(IllegalArgumentException.class, () -> api.startFixHarnessRun(
+            42L, "b", null, null, null, 1,
+            "22222222-2222-4222-8222-222222222222", "a".repeat(40), " ", 3));
+        assertThrows(IllegalArgumentException.class, () -> api.startFixHarnessRun(
+            42L, "b", null, null, null, 1,
+            "22222222-2222-4222-8222-222222222222", "a".repeat(40),
+            "11111111-1111-4111-8111-111111111111", 0));
+    }
 }
