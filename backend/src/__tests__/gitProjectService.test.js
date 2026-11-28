@@ -948,6 +948,36 @@ describe('GitProjectService', () => {
       expect(provider.getReviewDiff).toHaveBeenCalledWith(repo, 1);
     });
 
+    it('extracts the review number from a GitLab merge-request URL', async () => {
+      const provider = fakeProvider({
+        getReviewDiff: jest.fn().mockResolvedValue({ files: [] }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      Ticket.findById.mockResolvedValue({
+        id: 42,
+        projectId: 1,
+        prUrl: 'https://gitlab.example.com/group/sub/repo/-/merge_requests/7',
+      });
+      pool.query.mockResolvedValue({
+        rows: [{
+          provider: 'gitlab',
+          repo_url: 'group/sub/repo',
+          access_token_encrypted: 'enc:token',
+          provider_base_url: 'https://gitlab.example.com',
+          auth_mode: 'pat',
+        }],
+      });
+      const repo = {
+        provider: 'gitlab',
+        repoUrl: 'group/sub/repo',
+        accessTokenEncrypted: 'enc:token',
+      };
+
+      await expect(GitProjectService.getReviewDiff(1, 42, { repo }))
+        .resolves.toEqual({ files: [] });
+      expect(provider.getReviewDiff).toHaveBeenCalledWith(repo, 7);
+    });
+
     it('does not clear ticket state when the local provider refuses branch deletion', async () => {
       jest.spyOn(gitProviders.registry, 'get');
       pool.query.mockResolvedValue({

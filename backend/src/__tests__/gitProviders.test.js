@@ -653,3 +653,254 @@ describe('Forgejo/Gitea provider', () => {
     }
   });
 });
+
+describe('GitLab provider', () => {
+  const baseUrl = 'https://gitlab.example.com';
+  const response = (status, body) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => JSON.stringify(body),
+  });
+  const provider = (base = baseUrl) => git.gitlab.createProvider({
+    baseUrl: base,
+    credential: 'token',
+  });
+
+  it('registers and parses HTTPS, SSH, subgroup and shorthand URLs', () => {
+    expect(git.registry.has('gitlab')).toBe(true);
+    expect(provider().parseRepoUrl('https://gitlab.example.com/group/sub/repo.git'))
+      .toMatchObject({
+        owner: 'group/sub',
+        repo: 'repo',
+        protocol: 'https',
+        cloneUrl: 'https://gitlab.example.com/group/sub/repo.git',
+      });
+    expect(provider().parseRepoUrl('ssh://git@gitlab.example.com:2222/group/sub/repo.git'))
+      .toMatchObject({ owner: 'group/sub', repo: 'repo', protocol: 'ssh' });
+    expect(provider().parseRepoUrl('git@gitlab.example.com:group/sub/repo.git'))
+      .toMatchObject({ host: 'gitlab.example.com', owner: 'group/sub', repo: 'repo' });
+    expect(provider().parseRepoUrl('group/sub/repo'))
+      .toMatchObject({
+        owner: 'group/sub',
+        repo: 'repo',
+        cloneUrl: 'https://gitlab.example.com/group/sub/repo.git',
+      });
+  });
+
+  it('round-trips a shorthand clone URL on a sub-path base', () => {
+    const subPath = provider('https://gitlab.example.com/gitlab');
+    const parsed = subPath.parseRepoUrl('group/sub/repo');
+    expect(parsed.cloneUrl).toBe('https://gitlab.example.com/gitlab/group/sub/repo.git');
+    expect(subPath.parseRepoUrl(parsed.cloneUrl)).toMatchObject({
+      owner: 'group/sub',
+      repo: 'repo',
+      cloneUrl: parsed.cloneUrl,
+    });
+    expect(() => subPath.parseRepoUrl('https://gitlab.example.com/other/group/repo'))
+      .toThrow('base URL path');
+  });
+
+  it('accepts the configured base port only', () => {
+    const portBase = provider('https://gitlab.example.com:8443');
+    expect(portBase.parseRepoUrl('https://gitlab.example.com:8443/group/repo'))
+      .toMatchObject({ owner: 'group', repo: 'repo' });
+    expect(() => portBase.parseRepoUrl('https://gitlab.example.com/group/repo'))
+      .toThrow('scheme and port');
+    expect(portBase.parseRepoUrl('ssh://git@gitlab.example.com:2222/group/repo'))
+      .toMatchObject({ host: 'gitlab.example.com', protocol: 'ssh' });
+  });
+
+  it('rejects mismatched origins, credentials and path traversal', () => {
+    const reject = (repoUrl, message) => expect(() => provider().parseRepoUrl(repoUrl))
+      .toThrow(message);
+    reject('https://other.example.com/group/repo', 'host must match');
+    reject('https://gitlab.example.com:8443/group/repo', 'scheme and port');
+    reject('http://gitlab.example.com/group/repo', 'scheme and port');
+    reject('ssh://git@evil.example.com/group/repo.git', 'host must match');
+    reject('git@evil.example.com:group/repo.git', 'host must match');
+    reject('https://user:pass@gitlab.example.com/group/repo', 'must not contain credentials');
+    reject('https://token@gitlab.example.com/group/repo', 'must not contain credentials');
+    reject('ssh://token@gitlab.example.com/group/repo', 'git user');
+    reject('git:pass@gitlab.example.com:group/repo.git', 'git user');
+    reject('git@gitlab.example.com:../admin.git', 'plain path segments');
+    reject('../admin', 'plain path segments');
+    reject('group/..', 'plain path segments');
+    reject('group/../admin', 'plain path segments');
+    reject('https://gitlab.example.com/group/repo?ref=main', 'query or fragment');
+    reject('https://gitlab.example.com/group/repo#readme', 'query or fragment');
+  });
+
+  it('validates access and reuses an existing merge request', async () => {
+    const merge = {
+      id: 1,
+      iid: 7,
+      web_url: 'https://gitlab.example.com/group/sub/repo/-/merge_requests/7',
+      source_branch: 'vibecode/ticket-1-change',
+      state: 'opened',
+    };
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(response(200, { default_branch: 'main', visibility: 'private' }))
+      .mockResolvedValueOnce(response(201, merge))
+      .mockResolvedValueOnce(response(409, { message: 'Another open merge request already exists' }))
+      .mockResolvedValueOnce(response(200, [merge]));
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      await expect(provider().validateRepoAccess('group/sub/repo'))
+        .resolves.toMatchObject({ accessible: true, defaultBranch: 'main', private: true });
+      const repo = { repoUrl: 'group/sub/repo', defaultBranch: 'main' };
+      const first = await provider().createReviewRequest(
+        repo, 1, 'Change', 'vibecode/ticket-1-change', 'body');
+      const second = await provider().createReviewRequest(
+        repo, 1, 'Change', 'vibecode/ticket-1-change', 'body');
+
+      expect(fetchMock.mock.calls[0][0])
+        .toBe('https://gitlab.example.com/api/v4/projects/group%2Fsub%2Frepo');
+      expect(fetchMock.mock.calls[0][1].headers['PRIVATE-TOKEN']).toBe('token');
+      expect(first).toEqual({
+        id: 1,
+        number: 7,
+        url: merge.web_url,
+        state: 'open',
+      });
+      expect(second).toEqual(first);
+      expect(fetchMock.mock.calls[3][0])
+        .toContain('source_branch=vibecode%2Fticket-1-change');
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('manages branches, reads files and forwards an explicit project id', async () => {
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(response(201, {}))
+      .mockResolvedValueOnce(response(204, {}))
+      .mockResolvedValueOnce(response(200, [
+        { name: 'vibecode/ticket-1-x' },
+        { name: 'main' },
+      ]))
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => 'file body' });
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const repo = { repoUrl: 'group/sub/repo', providerProjectId: 123, defaultBranch: 'main' };
+      await expect(provider().createBranch(repo, 1, 'Change'))
+        .resolves.toBe('vibecode/ticket-1-change');
+      await expect(provider().deleteBranch(repo, 'vibecode/ticket-1-change'))
+        .resolves.toBeUndefined();
+      await expect(provider().listBranches(repo)).resolves.toEqual(['vibecode/ticket-1-x']);
+      await expect(provider().getFileContent(repo, 'src/a.js', 'main'))
+        .resolves.toBe('file body');
+
+      expect(fetchMock.mock.calls[0][0])
+        .toBe('https://gitlab.example.com/api/v4/projects/123/repository/branches');
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body))
+        .toEqual({ branch: 'vibecode/ticket-1-change', ref: 'main' });
+      expect(fetchMock.mock.calls[3][0])
+        .toBe('https://gitlab.example.com/api/v4/projects/123/repository/files/'
+          + 'src%2Fa.js/raw?ref=main');
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('reads merge-request changes and review-head data', async () => {
+    const changes = {
+      changes: [
+        {
+          old_path: 'src/a.js',
+          new_path: 'src/a.js',
+          diff: '@@ -1 +1,2 @@\n-old\n+new\n+more',
+        },
+        {
+          old_path: 'logo.png',
+          new_path: 'logo.png',
+          new_file: true,
+          diff: '',
+        },
+        {
+          old_path: 'gone.js',
+          new_path: 'gone.js',
+          deleted_file: true,
+          diff: '@@ -1 +0,0 @@\n-gone',
+        },
+        {
+          old_path: 'a.txt',
+          new_path: 'b.txt',
+          renamed_file: true,
+          diff: '',
+        },
+      ],
+    };
+    const fetchMock = jest.fn()
+      .mockResolvedValueOnce(response(200, changes))
+      .mockResolvedValueOnce(response(200, {
+        iid: 7,
+        source_branch: 'vibecode/ticket-1-change',
+        sha: 'a'.repeat(40),
+        web_url: 'https://gitlab.example.com/group/sub/repo/-/merge_requests/7',
+        state: 'opened',
+      }));
+    const original = global.fetch;
+    global.fetch = fetchMock;
+    try {
+      const repo = { repoUrl: 'group/sub/repo', defaultBranch: 'main' };
+      const diff = await provider().getReviewDiff(repo, 7);
+      expect(fetchMock.mock.calls[0][0])
+        .toBe('https://gitlab.example.com/api/v4/projects/group%2Fsub%2Frepo'
+          + '/merge_requests/7/changes');
+      expect(diff.prNumber).toBe(7);
+      expect(diff.files).toHaveLength(4);
+      expect(diff.files[0]).toMatchObject({
+        filename: 'src/a.js', status: 'modified', additions: 2, deletions: 1, changes: 3,
+      });
+      expect(diff.files[0].patch).toContain('-old');
+      expect(diff.files[1]).toMatchObject({
+        filename: 'logo.png', status: 'added', additions: 0, deletions: 0, patch: '',
+      });
+      expect(diff.files[2]).toMatchObject({
+        filename: 'gone.js', status: 'removed', additions: 0, deletions: 1,
+      });
+      expect(diff.files[3]).toMatchObject({
+        filename: 'b.txt', status: 'renamed', additions: 0, deletions: 0,
+      });
+
+      await expect(provider().getReviewRequest(repo, 7)).resolves.toEqual({
+        number: 7,
+        branch: 'vibecode/ticket-1-change',
+        headSha: 'a'.repeat(40),
+        url: 'https://gitlab.example.com/group/sub/repo/-/merge_requests/7',
+        state: 'open',
+      });
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('lists open merge requests for vibecode branches only', async () => {
+    const original = global.fetch;
+    global.fetch = jest.fn().mockResolvedValue(response(200, [
+      {
+        id: 2,
+        iid: 9,
+        web_url: 'open-mr',
+        state: 'opened',
+        source_branch: 'vibecode/ticket-2-y',
+      },
+      {
+        id: 3,
+        iid: 10,
+        web_url: 'other',
+        state: 'opened',
+        source_branch: 'feature',
+      },
+    ]));
+    try {
+      await expect(provider().listReviewRequests({ repoUrl: 'group/sub/repo' }))
+        .resolves.toEqual([{ id: 2, number: 9, url: 'open-mr', state: 'open' }]);
+      expect(global.fetch.mock.calls[0][0]).toContain('merge_requests?state=opened');
+    } finally {
+      global.fetch = original;
+    }
+  });
+});
