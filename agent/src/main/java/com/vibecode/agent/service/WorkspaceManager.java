@@ -105,19 +105,26 @@ public class WorkspaceManager {
 
     /**
      * Legacy constructors without a token origin. They keep the pre-D16
-     * unrestricted token behaviour for direct construction/tests; production
-     * wiring must use the origin-aware constructor.
+     * unrestricted token behaviour and are for tests/direct construction only;
+     * production wiring must use the origin-aware constructor.
+     *
+     * @deprecated use the constructor that takes the provider token origin
      */
+    @Deprecated
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
-        this(repoCloneDir, repoName, dryRun, githubToken, null);
+        this(repoCloneDir, repoName, dryRun, githubToken, null, null, null);
     }
 
+    /** @deprecated use the constructor that takes the provider token origin */
+    @Deprecated
     public WorkspaceManager(
         String repoCloneDir, String repoName, boolean dryRun,
         String githubToken, GitHubTokenSource tokenSource) {
-        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, null);
+        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, null, null);
     }
 
+    /** @deprecated use the constructor that takes the provider token origin */
+    @Deprecated
     public WorkspaceManager(
         String repoCloneDir, String repoName, boolean dryRun,
         String githubToken, GitHubTokenSource tokenSource, String workspaceKey) {
@@ -1446,7 +1453,16 @@ public class WorkspaceManager {
         if (allowedAuthority != null && !allowedAuthority.isBlank()) {
             String exact = "https://" + allowedAuthority;
             String allowed = shellSingleQuote(exact);
-            if (!allowedAuthority.contains(":")) {
+            // A colon inside an IPv6 literal is not a port separator.
+            boolean hasPort;
+            if (allowedAuthority.startsWith("[")) {
+                int close = allowedAuthority.indexOf(']');
+                hasPort = close >= 0 && close + 1 < allowedAuthority.length()
+                    && allowedAuthority.charAt(close + 1) == ':';
+            } else {
+                hasPort = allowedAuthority.contains(":");
+            }
+            if (!hasPort) {
                 // Only the default port is additionally valid when none was
                 // configured explicitly.
                 allowed += "|" + shellSingleQuote(exact + ":443");
@@ -1466,6 +1482,7 @@ public class WorkspaceManager {
                 .append("  https://*)\n")
                 .append("    authority=${url#https://}\n")
                 .append("    authority=${authority##*@}\n")
+                .append("    authority=$(printf '%s' \"$authority\" | tr 'A-Z' 'a-z')\n")
                 .append("    url=\"https://$authority\"\n")
                 .append("    ;;\n")
                 .append("  *) exit 1 ;;\n")

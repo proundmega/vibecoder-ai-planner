@@ -91,6 +91,11 @@ class WorkspaceManagerTest {
             runAskPass(script, "Password for 'https://oauth2@git.example.com:443':"));
         assertEquals("secret",
             runAskPass(script, "Password for 'https://user:pass@git.example.com':"));
+        // Hosts are case-insensitive; the guard normalizes the authority.
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://oauth2@Git.Example.COM':"));
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://GIT.EXAMPLE.COM:443':"));
         assertEquals("oauth2", runAskPass(script, "Username for 'https://git.example.com/':"));
 
         for (String prompt : List.of(
@@ -100,6 +105,7 @@ class WorkspaceManagerTest {
             "Password for 'http://oauth2@git.example.com':",
             "Password for 'https://git.example.com:444':",
             "Password for 'https://oauth2@git.example.com:444':",
+            "Password for 'https://oauth2@GIT.EXAMPLE.COM.EVIL.COM':",
             "Password for 'https://evil.com/?next=https://git.example.com':")) {
             assertNotEquals("secret", runAskPass(script, prompt), prompt);
         }
@@ -115,6 +121,15 @@ class WorkspaceManagerTest {
             runAskPass(portScript, "Password for 'https://git.example.com:443':"));
         assertNotEquals("secret",
             runAskPass(portScript, "Password for 'https://git.example.com:8443.evil.com':"));
+
+        Path ipv6 = writeAskPassScript("[::1]");
+        assertEquals("secret", runAskPass(ipv6, "Password for 'https://[::1]':"));
+        assertEquals("secret", runAskPass(ipv6, "Password for 'https://[::1]:443':"));
+        assertNotEquals("secret", runAskPass(ipv6, "Password for 'https://[::1]:444':"));
+
+        Path ipv6Port = writeAskPassScript("[::1]:8443");
+        assertEquals("secret", runAskPass(ipv6Port, "Password for 'https://[::1]:8443':"));
+        assertNotEquals("secret", runAskPass(ipv6Port, "Password for 'https://[::1]:443':"));
     }
 
     private Path writeAskPassScript(String authority) throws Exception {
