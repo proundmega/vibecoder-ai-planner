@@ -55,6 +55,7 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D6 | fg-33's publish-evidence `startRun` guard blocks fixer runs on an existing PR; add an explicit fixer-only allow path validated against the claimed fix request, branch and `reviewed_sha` (FR13) | fg-33 | Reliability / Integration | fg-32 (this ticket) | open |
 | D7 | Email notifications for fix requests and escalations (no existing email-notification ticket; bp-71 is account lockout) | new | UX | TBD | open |
 | D8 | Explicit shorter fix lease override for faster crash recovery (the lease is derived as budget + 10 min) | fg-32c2c3b review | Ops | fg-32c2c3b | open |
+| D9 | Retry `completeFix` when a fix attempt returns `DONE` with a warning (the publish succeeded but `finishRun(succeeded)` failed twice), so a live commit is not left half-recorded | fg-32c2c3b3a review | Reliability | fg-32d2 | open |
 
 ## Relationship to fg-54 (planned)
 

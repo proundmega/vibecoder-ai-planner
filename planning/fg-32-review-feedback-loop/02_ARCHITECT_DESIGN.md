@@ -366,6 +366,16 @@ Add `WorkspaceManager.publishFastForward(commitSha, branch, reviewedSha)`:
 4. Re-read the remote head and require it to equal `<commitSha>`.
 5. On `remote_head_moved`, fail the request with a clear reason and escalate for review; the human commit wins.
 
+The supervisor's `Publisher` seam follows the same rule: **a throw means
+"not published"**. If the push may have landed but the acknowledgement was
+lost, the adapter must check the remote head and return the SHA; it must not
+throw. A blank SHA is not a publication, so the processor fails the run.
+
+A publish that succeeded is never downgraded: if `finishRun(succeeded)` fails
+after the push, the processor returns `DONE` with a warning (the run is
+retried once, and fg-33's finish is idempotent). fg-32d2 must retry
+`completeFix` when it sees that warning, so completion is not lost.
+
 ### Fix prompt
 
 `PromptBuilder.buildFix(...)` must include:
