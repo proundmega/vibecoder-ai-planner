@@ -2,7 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { LocalGitProvider } = require('../providers/git/local');
+const { LocalGitProvider, gitArgs } = require('../providers/git/local');
 
 function git(args) {
   return execFileSync('git', args, {
@@ -119,6 +119,17 @@ describe('local filesystem provider', () => {
         accessible: false,
         error: 'Path is not a git repository',
       });
+  });
+
+  it('trusts the resolved local path for cross-UID reads', () => {
+    expect(gitArgs('/srv/git/repo.git', ['rev-parse', 'HEAD'])).toEqual([
+      '-C',
+      '/srv/git/repo.git',
+      '-c',
+      'safe.directory=/srv/git/repo.git',
+      'rev-parse',
+      'HEAD',
+    ]);
   });
 
   it('keeps accepting SSH URLs', () => {

@@ -100,8 +100,17 @@ function parseFilePath(raw) {
   };
 }
 
+/**
+ * The API and agent often run as different users (1000 vs 100), so a local
+ * repository owned by the agent is "dubious" to the API. Trust exactly this
+ * resolved path for the connect-time read; it is already under the root.
+ */
+function gitArgs(repoPath, args) {
+  return ['-C', repoPath, '-c', `safe.directory=${repoPath}`, ...args];
+}
+
 function gitOutput(repoPath, args) {
-  return execFileSync('git', ['-C', repoPath, ...args], {
+  return execFileSync('git', gitArgs(repoPath, args), {
     encoding: 'utf8',
     timeout: 10000,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -280,4 +289,4 @@ function createProvider(config) {
   return new LocalGitProvider(config);
 }
 
-module.exports = { LocalGitProvider, createProvider };
+module.exports = { LocalGitProvider, createProvider, gitArgs };

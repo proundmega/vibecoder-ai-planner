@@ -54,6 +54,9 @@ services:
       - REPO_OWNER=${REPO_OWNER:-}
       - REPO_NAME=${REPO_NAME:-}
       - REPO_CLONE_DIR=${REPO_CLONE_DIR:-/repos}
+      # Local filesystem Git repositories (D13). The root must be mounted at
+      # the same absolute path as the API, and writable by uid 100 for pushes.
+      - GIT_LOCAL_ROOT=${GIT_LOCAL_ROOT:-}
       - AI_PROVIDER=${AI_PROVIDER:-claude}
       - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-30000}
@@ -125,6 +128,9 @@ services:
       # The bind is host-owned; make it writable by the agent user (uid 100,
       # gid 101), for example: mkdir -p repos && chown 100:101 repos
       - ${REPO_HOST_PATH:-./repos}:/repos
+      # D13 local Git root: same host path and target as the API. Make it
+      # writable by the agent user: chown -R 100:101 <host path>
+      - ${GIT_LOCAL_ROOT_HOST_PATH:-/srv/git}:${GIT_LOCAL_ROOT:-/srv/git}
       - agent_credentials:/credentials
     restart: unless-stopped
     networks:

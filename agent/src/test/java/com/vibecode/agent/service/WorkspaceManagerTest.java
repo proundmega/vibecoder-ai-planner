@@ -155,6 +155,16 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void gitOptionsTrustOnlyTheResolvedLocalSource() {
+        List<String> withLocal = WorkspaceManager.gitOptions("/srv/git/repo.git");
+        assertTrue(withLocal.contains("safe.directory=/srv/git/repo.git"));
+        assertTrue(withLocal.contains("-c"));
+
+        List<String> withoutLocal = WorkspaceManager.gitOptions(null);
+        assertFalse(withoutLocal.stream().anyMatch(value -> value.startsWith("safe.directory=")));
+    }
+
+    @Test
     void onlyAuthenticatesAgainstTheConfiguredProviderOrigin() {
         WorkspaceManager manager = new WorkspaceManager(
             "/tmp/ws", "repo", false, "token", () -> "token", null,

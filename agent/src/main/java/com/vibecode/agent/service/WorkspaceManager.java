@@ -98,6 +98,7 @@ public class WorkspaceManager {
     private final boolean tokenOriginConfigured;
     private String localRepoRoot;
     private boolean localRootConfigured;
+    private String localSourcePath;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -1370,7 +1371,7 @@ public class WorkspaceManager {
     ) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(gitBinary);
-        command.addAll(SAFE_GIT_OPTIONS);
+        command.addAll(gitOptions(localSourcePath));
         command.addAll(List.of(args));
 
         ProcessBuilder pb = new ProcessBuilder(command);
@@ -1405,6 +1406,20 @@ public class WorkspaceManager {
             log.warn("HARNESS_FSCK=false/0: skipping git object-integrity checks for {}; "
                 + "use only for trusted, very large repositories", repoDir);
         }
+    }
+
+    /**
+     * Supervisor git options. A local source owned by another user (the API)
+     * is trusted for this workspace only; the path was already confined to
+     * the configured root.
+     */
+    static List<String> gitOptions(String localSourcePath) {
+        List<String> options = new ArrayList<>(SAFE_GIT_OPTIONS);
+        if (localSourcePath != null && !localSourcePath.isBlank()) {
+            options.add("-c");
+            options.add("safe.directory=" + localSourcePath);
+        }
+        return options;
     }
 
     static boolean fsckEnabled(String value) {
@@ -1712,7 +1727,9 @@ public class WorkspaceManager {
             throw new IOException("Local repository is outside the configured root");
         }
         // Clone the resolved path so a symlink swap after the check is less
-        // likely to redirect the clone.
+        // likely to redirect the clone. Remember it for safe.directory: the
+        // source is often owned by the API user, not the agent user.
+        this.localSourcePath = repo.toString();
         return repo.toUri().toString();
     }
 

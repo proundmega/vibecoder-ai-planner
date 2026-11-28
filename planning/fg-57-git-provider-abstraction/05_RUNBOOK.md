@@ -137,11 +137,28 @@ follow-up.
 
    - backend: `LOCAL_GIT_ROOT=/srv/git`
    - agent: `GIT_LOCAL_ROOT=/srv/git`
+   - Compose: `GIT_LOCAL_ROOT_HOST_PATH=/srv/vibecode-local-git` and
+     `GIT_LOCAL_ROOT=/srv/git`. Both `docker-compose.yml` (API) and
+     `agent/docker-compose.yml` (supervisor) mount that host path at the same
+     target; the Docker sandbox sees the workspace bind, not the source root.
 
-   Host mode shares the filesystem. Bind the root at the same absolute path
-   into the API container and, in Docker sandbox mode, into the sandbox; a path
-   either side cannot see fails the clone. The backend image includes `git` for
-   the connect-time repository check.
+   The API runs as `node` (uid 1000) and the agent as `agent` (uid 100). Make
+   the source root writable by the agent user for pushes
+   (`chown -R 100:101 /srv/vibecode-local-git`); the API only reads it and
+   trusts the exact repository path with `safe.directory`, so a different
+   owner is still readable. A cross-owned source is cloneable but a push fails
+   in `receive-pack`, hence the agent ownership requirement.
+
+   Host mode shares the filesystem. The backend image includes `git` for the
+   connect-time repository check. The Docker smoke is:
+
+   ```bash
+   docker compose exec api git -C /srv/git/private-app.git rev-parse --is-bare-repository
+   docker compose -f agent/docker-compose.yml exec supervisor \
+     git -C /srv/git/private-app.git rev-parse --is-bare-repository
+   ```
+
+   A path either side cannot see fails the clone.
 
 3. Connect with provider `local`, `file:///srv/git/private-app.git` (or the
    absolute path) and auth mode `none` (omitting auth mode for a file path

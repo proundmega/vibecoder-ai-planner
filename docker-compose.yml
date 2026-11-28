@@ -129,6 +129,10 @@ services:
       - SANDBOX_APPARMOR_PROFILE=${SANDBOX_APPARMOR_PROFILE:-}
       - SANDBOX_CONTAINER_WORKSPACE_ROOT=${SANDBOX_CONTAINER_WORKSPACE_ROOT:-/repos}
       - SANDBOX_HOST_WORKSPACE_ROOT=${SANDBOX_HOST_WORKSPACE_ROOT:-}
+      # Local filesystem Git repositories (D13). Empty disables them; the
+      # agent uses the same value as GIT_LOCAL_ROOT. Source repos must be
+      # writable by the agent user (uid 100).
+      - LOCAL_GIT_ROOT=${GIT_LOCAL_ROOT:-}
       - SANDBOX_CONTROL_NETWORK=${SANDBOX_CONTROL_NETWORK:-${COMPOSE_PROJECT_NAME:-vibecode}-sandbox-control}
       - REDIS_URL=redis://redis:6379
     # Optional GitHub App private key: set
@@ -137,6 +141,9 @@ services:
     volumes:
       - uploads_data:/app/uploads
       - vibecode_repos:/repos
+      # Same host root at the same absolute path as the agent supervisor.
+      # The API reads it as node; git safe.directory is scoped to the repo.
+      - ${GIT_LOCAL_ROOT_HOST_PATH:-/srv/git}:${GIT_LOCAL_ROOT:-/srv/git}
     networks:
       - default
       - sandbox-control
