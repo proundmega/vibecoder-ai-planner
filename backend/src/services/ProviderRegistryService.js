@@ -88,6 +88,9 @@ function publicCredential(row) {
   return copy;
 }
 
+// Registry verification uses the inference endpoints. The legacy agent runtime
+// still resolves its own defaults (zen/...) in providerDefaults.js; these
+// converge only when the harness path carries the OpenCode session header.
 function defaultBase(providerType) {
   switch (providerType) {
     case 'claude':
@@ -110,8 +113,8 @@ function withOpencodeSession(providerType, headers) {
   }
   return {
     ...headers,
-    // OpenCode Go requires a stable per-conversation routing id on every
-    // request, including health checks and model verification.
+    // Discovery and verification are one-shot requests, so a fresh routing id
+    // per request is fine. Chat loops should reuse one id per conversation.
     'x-opencode-session': `ses_${crypto.randomBytes(16).toString('hex')}`,
   };
 }
