@@ -76,6 +76,10 @@ class GitProjectService {
       baseUrl,
       authMode,
     };
+    if (input.providerProjectId !== undefined && input.providerProjectId !== null
+        && String(input.providerProjectId).trim()) {
+      providerConfig.projectId = input.providerProjectId;
+    }
     const provider = gitProviders.registry.get(providerId, providerConfig);
     let parsedRepo;
     try {

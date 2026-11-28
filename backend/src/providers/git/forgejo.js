@@ -294,6 +294,7 @@ class ForgejoGitProvider {
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
+        redirect: 'error',
         signal: controller.signal,
       });
       const text = await response.text();

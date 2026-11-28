@@ -223,6 +223,41 @@ describe('GitProjectService', () => {
         'https://git.example.com/group/repo.git');
     });
 
+    it('passes an explicit provider project id to the provider', async () => {
+      const provider = fakeProvider();
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      jest.spyOn(gitProviders, 'assertSafeBaseUrl').mockResolvedValue('https://gitlab.example.com');
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'gitlab',
+          repo_url: 'https://gitlab.example.com/group/repo',
+          default_branch: 'main',
+          provider_base_url: 'https://gitlab.example.com',
+          provider_project_id: 456,
+          auth_mode: 'project_token',
+        }],
+      });
+
+      await GitProjectService.connect(1, {
+        provider: 'gitlab',
+        repoUrl: 'https://gitlab.example.com/group/repo',
+        baseUrl: 'https://gitlab.example.com',
+        token: 'secret',
+        authMode: 'project_token',
+        providerProjectId: 456,
+      }, 100);
+
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('gitlab', {
+        credential: 'secret',
+        baseUrl: 'https://gitlab.example.com',
+        authMode: 'project_token',
+        projectId: 456,
+      });
+      expect(pool.query.mock.calls[0][1][6]).toBe(456);
+    });
+
     it('connects a shorthand repository on a sub-path base URL', async () => {
       jest.spyOn(gitProviders, 'assertSafeBaseUrl').mockResolvedValue('https://host/forgejo');
       const original = global.fetch;

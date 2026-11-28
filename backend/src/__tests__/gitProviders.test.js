@@ -473,6 +473,7 @@ describe('Forgejo/Gitea provider', () => {
       });
       expect(second).toEqual(first);
       expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('token token');
+      expect(fetchMock.mock.calls[0][1].redirect).toBe('error');
       expect(fetchMock.mock.calls[3][0]).toContain('pulls?state=open');
     } finally {
       global.fetch = original;
@@ -666,7 +667,7 @@ describe('GitLab provider', () => {
     credential: 'token',
   });
 
-  it('registers and parses HTTPS, SSH, subgroup and shorthand URLs', () => {
+  it('registers and parses HTTPS, subgroup and shorthand URLs', () => {
     expect(git.registry.has('gitlab')).toBe(true);
     expect(provider().parseRepoUrl('https://gitlab.example.com/group/sub/repo.git'))
       .toMatchObject({
@@ -675,10 +676,6 @@ describe('GitLab provider', () => {
         protocol: 'https',
         cloneUrl: 'https://gitlab.example.com/group/sub/repo.git',
       });
-    expect(provider().parseRepoUrl('ssh://git@gitlab.example.com:2222/group/sub/repo.git'))
-      .toMatchObject({ owner: 'group/sub', repo: 'repo', protocol: 'ssh' });
-    expect(provider().parseRepoUrl('git@gitlab.example.com:group/sub/repo.git'))
-      .toMatchObject({ host: 'gitlab.example.com', owner: 'group/sub', repo: 'repo' });
     expect(provider().parseRepoUrl('group/sub/repo'))
       .toMatchObject({
         owner: 'group/sub',
@@ -706,8 +703,6 @@ describe('GitLab provider', () => {
       .toMatchObject({ owner: 'group', repo: 'repo' });
     expect(() => portBase.parseRepoUrl('https://gitlab.example.com/group/repo'))
       .toThrow('scheme and port');
-    expect(portBase.parseRepoUrl('ssh://git@gitlab.example.com:2222/group/repo'))
-      .toMatchObject({ host: 'gitlab.example.com', protocol: 'ssh' });
   });
 
   it('rejects mismatched origins, credentials and path traversal', () => {
@@ -728,6 +723,10 @@ describe('GitLab provider', () => {
     reject('group/../admin', 'plain path segments');
     reject('https://gitlab.example.com/group/repo?ref=main', 'query or fragment');
     reject('https://gitlab.example.com/group/repo#readme', 'query or fragment');
+    reject('ssh://git@gitlab.example.com/group/repo.git', 'HTTPS clone URL');
+    reject('git@gitlab.example.com:group/repo.git', 'HTTPS clone URL');
+    expect(() => provider('http://gitlab.example.com').parseRepoUrl('group/repo'))
+      .toThrow('must use https');
   });
 
   it('validates access and reuses an existing merge request', async () => {
@@ -771,6 +770,42 @@ describe('GitLab provider', () => {
     }
   });
 
+  it('refuses redirects instead of forwarding the token', async () => {
+    const original = global.fetch;
+    const fetchMock = jest.fn((url, options) => {
+      expect(options.redirect).toBe('error');
+      return Promise.reject(new TypeError('unexpected redirect'));
+    });
+    global.fetch = fetchMock;
+    try {
+      await expect(provider().validateRepoAccess('group/sub/repo'))
+        .resolves.toMatchObject({ accessible: false, error: 'unexpected redirect' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('validates through an explicit project id', async () => {
+    const original = global.fetch;
+    const fetchMock = jest.fn()
+      .mockResolvedValue(response(200, { default_branch: 'main' }));
+    global.fetch = fetchMock;
+    try {
+      const explicit = git.gitlab.createProvider({
+        baseUrl,
+        credential: 'token',
+        projectId: 123,
+      });
+      await expect(explicit.validateRepoAccess('group/sub/repo'))
+        .resolves.toMatchObject({ accessible: true, defaultBranch: 'main' });
+      expect(fetchMock.mock.calls[0][0])
+        .toBe('https://gitlab.example.com/api/v4/projects/123');
+    } finally {
+      global.fetch = original;
+    }
+  });
+
   it('manages branches, reads files and forwards an explicit project id', async () => {
     const fetchMock = jest.fn()
       .mockResolvedValueOnce(response(201, {}))
@@ -789,7 +824,7 @@ describe('GitLab provider', () => {
       await expect(provider().deleteBranch(repo, 'vibecode/ticket-1-change'))
         .resolves.toBeUndefined();
       await expect(provider().listBranches(repo)).resolves.toEqual(['vibecode/ticket-1-x']);
-      await expect(provider().getFileContent(repo, 'src/a.js', 'main'))
+      await expect(provider().getFileContent(repo, 'src/a.js'))
         .resolves.toBe('file body');
 
       expect(fetchMock.mock.calls[0][0])
@@ -799,6 +834,22 @@ describe('GitLab provider', () => {
       expect(fetchMock.mock.calls[3][0])
         .toBe('https://gitlab.example.com/api/v4/projects/123/repository/files/'
           + 'src%2Fa.js/raw?ref=main');
+    } finally {
+      global.fetch = original;
+    }
+  });
+
+  it('defaults a missing file ref to HEAD', async () => {
+    const original = global.fetch;
+    const fetchMock = jest.fn()
+      .mockResolvedValue({ ok: true, status: 200, text: async () => 'body' });
+    global.fetch = fetchMock;
+    try {
+      await expect(provider().getFileContent({ repoUrl: 'group/sub/repo' }, 'README.md'))
+        .resolves.toBe('body');
+      expect(fetchMock.mock.calls[0][0])
+        .toBe('https://gitlab.example.com/api/v4/projects/group%2Fsub%2Frepo'
+          + '/repository/files/README.md/raw?ref=HEAD');
     } finally {
       global.fetch = original;
     }
@@ -830,6 +881,11 @@ describe('GitLab provider', () => {
           renamed_file: true,
           diff: '',
         },
+        {
+          old_path: 'dir/a b.js',
+          new_path: 'dir/a b.js',
+          diff: '@@ -1 +1,2 @@\n-old\n+new\n++header-like\n---footer-like',
+        },
       ],
     };
     const fetchMock = jest.fn()
@@ -850,7 +906,7 @@ describe('GitLab provider', () => {
         .toBe('https://gitlab.example.com/api/v4/projects/group%2Fsub%2Frepo'
           + '/merge_requests/7/changes');
       expect(diff.prNumber).toBe(7);
-      expect(diff.files).toHaveLength(4);
+      expect(diff.files).toHaveLength(5);
       expect(diff.files[0]).toMatchObject({
         filename: 'src/a.js', status: 'modified', additions: 2, deletions: 1, changes: 3,
       });
@@ -864,6 +920,11 @@ describe('GitLab provider', () => {
       expect(diff.files[3]).toMatchObject({
         filename: 'b.txt', status: 'renamed', additions: 0, deletions: 0,
       });
+      expect(diff.files[4]).toMatchObject({
+        filename: 'dir/a b.js', status: 'modified', additions: 2, deletions: 2,
+      });
+      expect(diff.files[4].patch).toContain(
+        'diff --git a/"dir/a b.js" b/"dir/a b.js"');
 
       await expect(provider().getReviewRequest(repo, 7)).resolves.toEqual({
         number: 7,

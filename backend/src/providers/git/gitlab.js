@@ -3,6 +3,7 @@ const { getCapabilities } = require('./GitProvider');
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const REPO_SEGMENT = /^[A-Za-z0-9._-]+$/;
+const HTTPS_ONLY = 'GitLab connections require an HTTPS clone URL; SSH push is not supported';
 
 function lowerHost(value) {
   return String(value || '').toLowerCase().replace(/\.+$/, '');
@@ -33,11 +34,16 @@ function splitRepoPath(pathname) {
 
 function baseOrigin(baseUrl, id) {
   if (!baseUrl) throw new ValidationError(`${id} base URL is required`);
+  let url;
   try {
-    return new URL(baseUrl);
+    url = new URL(baseUrl);
   } catch {
     throw new ValidationError(`${id} base URL must be an absolute URL`);
   }
+  if (url.protocol !== 'https:') {
+    throw new ValidationError(`${id} base URL must use https`);
+  }
+  return url;
 }
 
 function assertBaseHost(hostname, base) {
@@ -138,6 +144,12 @@ function reviewState(value) {
   return value === 'opened' ? 'open' : value;
 }
 
+function quoteGitPath(path) {
+  if (!/[\s"\\]/.test(path)) return path;
+  return `"${path.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    .replace(/\t/g, '\\t').replace(/\n/g, '\\n')}"`;
+}
+
 function parseChanges(data) {
   const changes = Array.isArray(data && data.changes) ? data.changes : [];
   return changes.map((change) => {
@@ -147,9 +159,11 @@ function parseChanges(data) {
     const diff = String(change.diff || '');
     let additions = 0;
     let deletions = 0;
+    // GitLab's per-file diff starts at the hunk and has no ---/+++ headers, so
+    // a content line beginning with ++ or -- is a real addition/removal.
     for (const line of diff.split('\n')) {
-      if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
-      else if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+      if (line.startsWith('+')) additions += 1;
+      else if (line.startsWith('-')) deletions += 1;
     }
     return {
       filename,
@@ -159,7 +173,7 @@ function parseChanges(data) {
       additions,
       deletions,
       changes: additions + deletions,
-      patch: diff ? `diff --git a/${oldPath} b/${newPath}\n${diff}` : '',
+      patch: diff ? `diff --git a/${quoteGitPath(oldPath)} b/${quoteGitPath(newPath)}\n${diff}` : '',
     };
   });
 }
@@ -183,9 +197,13 @@ class GitLabGitProvider {
     const raw = String(repoUrl || '').trim();
     if (!raw) throw new ValidationError('Repository URL is required');
     const base = baseOrigin(this.baseUrl, this.id);
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) return parseFullUrl(raw, base);
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+      const parsed = parseFullUrl(raw, base);
+      if (parsed.protocol === 'ssh') throw new ValidationError(HTTPS_ONLY);
+      return parsed;
+    }
     const scp = parseScp(raw, base);
-    if (scp) return scp;
+    if (scp) throw new ValidationError(HTTPS_ONLY);
     if (/[\s@:?\\]/.test(raw) || !/^[^/]+\/.+$/.test(raw)) {
       throw new ValidationError('GitLab repository must be group/project');
     }
@@ -212,6 +230,7 @@ class GitLabGitProvider {
           ...(body ? { 'Content-Type': 'application/json' } : {}),
         },
         body: body ? JSON.stringify(body) : undefined,
+        redirect: 'error',
         signal: controller.signal,
       });
       const text = await response.text();
@@ -221,12 +240,19 @@ class GitLabGitProvider {
     }
   }
 
+  _configuredProjectId() {
+    const value = this.config && this.config.projectId;
+    return value !== null && value !== undefined && String(value).trim()
+      ? encodeURIComponent(String(value).trim())
+      : null;
+  }
+
   _projectId(projectRepo) {
     const explicit = projectRepo && projectRepo.providerProjectId;
     if (explicit !== null && explicit !== undefined && String(explicit).trim()) {
       return encodeURIComponent(String(explicit).trim());
     }
-    return projectKey(this.parseRepoUrl(projectRepo.repoUrl));
+    return this._configuredProjectId() || projectKey(this.parseRepoUrl(projectRepo.repoUrl));
   }
 
   _baseBranch(projectRepo) {
@@ -240,8 +266,9 @@ class GitLabGitProvider {
     this.token = credential;
     try {
       const parsed = this.parseRepoUrl(repoUrl);
+      const projectId = this._configuredProjectId() || projectKey(parsed);
       const { response, text } = await this.request(
-        'GET', `/projects/${projectKey(parsed)}`);
+        'GET', `/projects/${projectId}`);
       if (!response.ok) {
         return { accessible: false, defaultBranch: null, error: `HTTP ${response.status}` };
       }
@@ -273,7 +300,8 @@ class GitLabGitProvider {
 
   async getFileContent(projectRepo, path, ref = null) {
     const encodedPath = encodeURIComponent(String(path || '').replace(/^\/+/, ''));
-    const query = ref ? `?ref=${encodeURIComponent(ref)}` : '';
+    const effectiveRef = ref || projectRepo.defaultBranch || projectRepo.default_branch || 'HEAD';
+    const query = `?ref=${encodeURIComponent(effectiveRef)}`;
     const { response, text } = await this.request(
       'GET',
       `/projects/${this._projectId(projectRepo)}/repository/files/${encodedPath}/raw${query}`,
