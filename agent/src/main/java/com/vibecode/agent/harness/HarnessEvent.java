@@ -2,6 +2,8 @@ package com.vibecode.agent.harness;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.util.Locale;
+
 /**
  * A single event received from an execution harness.
  */
@@ -40,14 +42,20 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
      * human (or the supervisor) replies.
      */
     public boolean isQuestionEvent() {
-        if (contains(type, "question") || contains(type, "permission")) {
-            return true;
-        }
-        if (payload == null) {
+        String eventType = type == null ? "" : type;
+        String payloadType = payload == null ? "" : payload.path("type").asText("");
+        if (!contains(eventType, "question") && !contains(eventType, "permission")
+            && !contains(payloadType, "question") && !contains(payloadType, "permission")) {
             return false;
         }
-        String payloadType = payload.path("type").asText("");
-        return contains(payloadType, "question") || contains(payloadType, "permission");
+        // OpenCode publishes question.replied/rejected (and permission.replied)
+        // on the same stream. Only *.asked blocks the session and needs a human;
+        // treating the resolved events as new requests creates phantom questions.
+        return isAsked(eventType) || isAsked(payloadType);
+    }
+
+    private static boolean isAsked(String value) {
+        return value != null && value.toLowerCase(Locale.ROOT).endsWith(".asked");
     }
 
     /** `permission` for permission requests, `question` otherwise. */
@@ -67,21 +75,29 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         if (payload == null) {
             return null;
         }
-        String value = firstText(payload,
-            "id", "requestID", "requestId", "questionID", "questionId",
-            "permissionID", "permissionId");
+        String[] names = {
+            "requestID", "requestId", "id", "questionID", "questionId",
+            "permissionID", "permissionId"
+        };
+        // Prefer the nested request id. The SSE envelope id is `evt_...`, while
+        // OpenCode question ids are `que_...` and permission ids are `per_...`.
+        String value = firstText(payload.path("properties"), names);
         if (value != null) {
             return value;
         }
-        JsonNode properties = payload.path("properties");
-        value = firstText(properties,
-            "id", "requestID", "requestId", "questionID", "questionId",
-            "permissionID", "permissionId");
+        value = firstText(payload.path("data"), names);
         if (value != null) {
             return value;
         }
-        return firstText(properties.path("info"),
-            "id", "requestID", "requestId", "questionID", "questionId");
+        value = firstText(payload.path("properties").path("info"), names);
+        if (value != null) {
+            return value;
+        }
+        value = firstText(payload.path("info"), names);
+        if (value != null) {
+            return value;
+        }
+        return firstText(payload, names);
     }
 
     /** Best-effort human-readable prompt carried by the event. */
@@ -98,6 +114,16 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         if (value != null) {
             return value;
         }
+        JsonNode questions = properties.path("questions");
+        if (!questions.isArray()) {
+            questions = payload.path("questions");
+        }
+        if (questions.isArray() && questions.size() > 0) {
+            value = firstText(questions.get(0), "question", "text", "message", "header");
+            if (value != null) {
+                return value;
+            }
+        }
         return firstText(properties.path("info"), "prompt", "question", "text", "message", "title");
     }
 
@@ -108,6 +134,11 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         JsonNode options = payload.path("options");
         if (options.isMissingNode() || options.isNull()) {
             options = payload.path("properties").path("options");
+        }
+        JsonNode questions = payload.path("properties").path("questions");
+        if ((options.isMissingNode() || options.isNull())
+            && questions.isArray() && questions.size() > 0) {
+            options = questions.get(0).path("options");
         }
         if (options.isMissingNode() || options.isNull()) {
             options = payload.path("properties").path("info").path("options");

@@ -269,8 +269,25 @@ public final class OpenCodeClient implements HarnessClient {
                 Map.of("response", permissionResponse(answer)));
             return;
         }
-        postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
-            Map.of("answers", List.of(Map.of("text", answer == null ? "" : answer))));
+        postJsonExpectingTrue("/question/" + requestId + "/reply",
+            Map.of("answers", List.of(List.of(answer == null ? "" : answer))));
+    }
+
+    @Override
+    public String findQuestionRequestId(String sessionId) throws IOException {
+        JsonNode root = getJson("/question");
+        if (!root.isArray()) {
+            return null;
+        }
+        for (JsonNode request : root) {
+            if (sessionId != null && sessionId.equals(request.path("sessionID").asText())) {
+                String id = request.path("id").asText("");
+                if (!id.isBlank()) {
+                    return id;
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -284,8 +301,8 @@ public final class OpenCodeClient implements HarnessClient {
                 Map.of("response", "reject"));
             return;
         }
-        postJson("/session/" + sessionId + "/questions/" + requestId + "/reply",
-            Map.of("reject", true));
+        postJsonExpectingTrue("/question/" + requestId + "/reject",
+            Map.of());
     }
 
     /**
@@ -572,6 +589,20 @@ public final class OpenCodeClient implements HarnessClient {
                 );
             }
             return text.isBlank() ? objectMapper.createObjectNode() : objectMapper.readTree(text);
+        }
+    }
+
+    /**
+     * The pinned question routes answer with the JSON literal `true`. Require
+     * that confirmation so an unknown route that falls back to the SPA's 200
+     * HTML (or any empty success body) cannot be mistaken for a resumed session.
+     */
+    private void postJsonExpectingTrue(String path, Object body) throws IOException {
+        JsonNode root = postJson(path, body);
+        if (!root.isBoolean() || !root.asBoolean()) {
+            throw new IOException(
+                "OpenCode did not confirm the question request: " + redact(truncate(root.toString()))
+            );
         }
     }
 

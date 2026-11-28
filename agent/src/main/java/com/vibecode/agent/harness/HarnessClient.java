@@ -34,6 +34,14 @@ public interface HarnessClient extends AutoCloseable {
         throw new IOException("This harness cannot resume a question");
     }
 
+    /**
+     * Resolve the OpenCode question request id when the event payload does not
+     * carry it. Returns null when the harness has no such lookup.
+     */
+    default String findQuestionRequestId(String sessionId) throws IOException {
+        return null;
+    }
+
     /** Reject/abort a blocked question (timeout or operator abort). */
     default void rejectQuestion(String sessionId, String requestId, String kind)
         throws IOException {

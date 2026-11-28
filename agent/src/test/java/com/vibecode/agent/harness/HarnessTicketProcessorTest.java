@@ -264,8 +264,29 @@ class HarnessTicketProcessorTest {
     private HarnessEvent questionEvent() throws Exception {
         return new HarnessEvent("question.asked",
             new ObjectMapper().readTree(
-                "{\"type\":\"question.asked\",\"properties\":{"
-                    + "\"id\":\"evt_1\",\"text\":\"Which helper?\"}}"),
+                "{\"id\":\"evt_1\",\"type\":\"question.asked\",\"properties\":{"
+                    + "\"id\":\"que_1\",\"sessionID\":\"ses_test\",\"questions\":[{"
+                    + "\"question\":\"Which helper?\",\"header\":\"Helper\","
+                    + "\"options\":[{\"label\":\"Use the helper.\","
+                    + "\"description\":\"Reuse the existing helper\"}]}]}}"),
+            System.currentTimeMillis());
+    }
+
+    private HarnessEvent questionEventWithoutNestedId() throws Exception {
+        return new HarnessEvent("question.asked",
+            new ObjectMapper().readTree(
+                "{\"id\":\"evt_1\",\"type\":\"question.asked\",\"properties\":{"
+                    + "\"sessionID\":\"ses_test\",\"questions\":[{"
+                    + "\"question\":\"Which helper?\"}]}}"),
+            System.currentTimeMillis());
+    }
+
+    private HarnessEvent questionRepliedEvent() throws Exception {
+        return new HarnessEvent("question.replied",
+            new ObjectMapper().readTree(
+                "{\"id\":\"evt_reply\",\"type\":\"question.replied\",\"properties\":{"
+                    + "\"sessionID\":\"ses_test\",\"requestID\":\"que_1\","
+                    + "\"answers\":[[\"Use the helper.\"]]}}"),
             System.currentTimeMillis());
     }
 
@@ -1188,15 +1209,85 @@ class HarnessTicketProcessorTest {
         processorWithQuestionLoop(2000).processTicket(ticket());
 
         verify(apiService).createHarnessQuestion(
-            eq("run-1"), eq("evt_1"), eq("question"), eq("Which helper?"),
+            eq("run-1"), eq("que_1"), eq("question"), eq("Which helper?"),
             any(), any());
         verify(harness).replyToQuestion(
-            "ses_test", "evt_1", "question", "Use the helper.");
+            "ses_test", "que_1", "question", "Use the helper.");
+        verify(harness, never()).findQuestionRequestId(anyString());
         verify(apiService, never()).expireHarnessQuestion(anyString(), anyLong());
         verify(apiService, atLeastOnce()).emitHarnessEvent(argThat(
             (Map<String, Object> emitted) -> "question.asked".equals(emitted.get("type"))));
         verify(apiService, atLeastOnce()).emitHarnessEvent(argThat(
             (Map<String, Object> emitted) -> "question.answered".equals(emitted.get("type"))));
+    }
+
+    @Test
+    void questionLoopResolvesThePendingQuestionIdWhenTheEventOnlyHasTheEnvelopeId()
+        throws Exception {
+        AtomicReference<Consumer<HarnessEvent>> listener = new AtomicReference<>();
+        HarnessEvent event = questionEventWithoutNestedId();
+        doAnswer(invocation -> {
+            listener.set(invocation.getArgument(1));
+            return null;
+        }).when(harness).subscribe(anyString(), any());
+        doAnswer(invocation -> {
+            listener.get().accept(event);
+            return null;
+        }).when(harness).sendPrompt(anyString(), anyString());
+        when(harness.findQuestionRequestId("ses_test")).thenReturn("que_1");
+        when(apiService.createHarnessQuestion(
+            anyString(), anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(7L);
+        when(apiService.getHarnessQuestion("run-1", 7L))
+            .thenReturn(Map.of("status", "answered", "answer", "Use the helper."));
+
+        processorWithQuestionLoop(2000).processTicket(ticket());
+
+        verify(harness).findQuestionRequestId("ses_test");
+        verify(apiService).createHarnessQuestion(
+            eq("run-1"), eq("que_1"), eq("question"), eq("Which helper?"),
+            any(), any());
+        verify(harness).replyToQuestion(
+            "ses_test", "que_1", "question", "Use the helper.");
+        verify(apiService, never()).createHarnessQuestion(
+            eq("run-1"), eq("evt_1"), anyString(), anyString(), any(), any());
+    }
+
+    @Test
+    void questionRepliedEventDoesNotCreateAPhantomQuestion() throws Exception {
+        AtomicReference<Consumer<HarnessEvent>> listener = new AtomicReference<>();
+        HarnessEvent asked = questionEvent();
+        HarnessEvent replied = questionRepliedEvent();
+        doAnswer(invocation -> {
+            listener.set(invocation.getArgument(1));
+            return null;
+        }).when(harness).subscribe(anyString(), any());
+        doAnswer(invocation -> {
+            listener.get().accept(asked);
+            listener.get().accept(replied);
+            return null;
+        }).when(harness).sendPrompt(anyString(), anyString());
+        when(apiService.createHarnessQuestion(
+            anyString(), anyString(), anyString(), anyString(), any(), any()))
+            .thenReturn(7L);
+        when(apiService.getHarnessQuestion("run-1", 7L))
+            .thenReturn(Map.of("status", "answered", "answer", "Use the helper."));
+
+        processorWithQuestionLoop(2000).processTicket(ticket());
+
+        verify(apiService, times(1)).createHarnessQuestion(
+            anyString(), anyString(), anyString(), anyString(), any(), any());
+        verify(apiService).createHarnessQuestion(
+            eq("run-1"), eq("que_1"), eq("question"), eq("Which helper?"),
+            any(), any());
+        verify(apiService, never()).createHarnessQuestion(
+            eq("run-1"), eq("evt_reply"), anyString(), anyString(), any(), any());
+        verify(harness, times(1)).replyToQuestion(
+            anyString(), anyString(), anyString(), anyString());
+        verify(harness).replyToQuestion(
+            "ses_test", "que_1", "question", "Use the helper.");
+        verify(apiService, never()).finishHarnessRun(
+            eq("run-1"), eq("failed"), eq("question_timeout"), any(), any());
     }
 
     @Test

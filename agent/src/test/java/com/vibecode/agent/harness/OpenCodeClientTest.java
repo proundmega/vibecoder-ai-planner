@@ -113,8 +113,50 @@ class OpenCodeClientTest {
             client.replyToQuestion("ses_test", "perm_1", "permission", "always");
             assertEquals("{\"response\":\"always\"}", server.lastPermissionBody());
 
+            assertEquals("que_1", client.findQuestionRequestId("ses_test"));
             client.replyToQuestion("ses_test", "question_1", "question", "Use the helper.");
-            assertTrue(server.lastQuestionReplyBody().contains("Use the helper."));
+            assertEquals("{\"answers\":[[\"Use the helper.\"]]}",
+                server.lastQuestionReplyBody());
+            client.close();
+        }
+    }
+
+    @Test
+    void questionReplyRejectsA200ThatDoesNotConfirmSuccess() throws Exception {
+        try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
+            OpenCodeClient client = new OpenCodeClient(server.url(), "password", tempDir);
+            client.start(tempDir);
+
+            server.setQuestionReplyResponse("{}");
+            IOException notConfirmed = assertThrows(IOException.class,
+                () -> client.replyToQuestion("ses_test", "que_1", "question", "Use it."));
+            assertTrue(notConfirmed.getMessage().contains("did not confirm"),
+                notConfirmed.getMessage());
+
+            // An unknown route falls back to the SPA's 200 HTML; that must fail
+            // closed instead of looking like a resumed session.
+            server.setQuestionReplyResponse("<html>spa fallback</html>");
+            assertThrows(IOException.class,
+                () -> client.replyToQuestion("ses_test", "que_1", "question", "Use it."));
+            client.close();
+        }
+    }
+
+    @Test
+    void questionRejectRejectsA200ThatDoesNotConfirmSuccess() throws Exception {
+        try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
+            OpenCodeClient client = new OpenCodeClient(server.url(), "password", tempDir);
+            client.start(tempDir);
+
+            server.setQuestionRejectResponse("{}");
+            IOException notConfirmed = assertThrows(IOException.class,
+                () -> client.rejectQuestion("ses_test", "que_1", "question"));
+            assertTrue(notConfirmed.getMessage().contains("did not confirm"),
+                notConfirmed.getMessage());
+
+            server.setQuestionRejectResponse("<html>spa fallback</html>");
+            assertThrows(IOException.class,
+                () -> client.rejectQuestion("ses_test", "que_1", "question"));
             client.close();
         }
     }
