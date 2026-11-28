@@ -1458,6 +1458,18 @@ public class WorkspaceManager {
                 .append("case \"$url\" in\n")
                 .append("  */) url=${url%/} ;;\n")
                 .append("esac\n")
+                // Git's password prompt repeats the username it just received
+                // (https://oauth2@host). Strip only authority userinfo; a path
+                // or query is not a valid auth prompt and is rejected.
+                .append("case \"$url\" in\n")
+                .append("  https://*/*) exit 1 ;;\n")
+                .append("  https://*)\n")
+                .append("    authority=${url#https://}\n")
+                .append("    authority=${authority##*@}\n")
+                .append("    url=\"https://$authority\"\n")
+                .append("    ;;\n")
+                .append("  *) exit 1 ;;\n")
+                .append("esac\n")
                 .append("case \"$url\" in\n")
                 .append("  ").append(allowed).append(") ;;\n")
                 .append("  *) exit 1 ;;\n")

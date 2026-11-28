@@ -84,21 +84,31 @@ class WorkspaceManagerTest {
 
         assertEquals("secret", runAskPass(script, "Password for 'https://git.example.com':"));
         assertEquals("secret", runAskPass(script, "Password for 'https://git.example.com:443':"));
+        // Git repeats the username in the password prompt after oauth2.
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://oauth2@git.example.com':"));
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://oauth2@git.example.com:443':"));
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://user:pass@git.example.com':"));
         assertEquals("oauth2", runAskPass(script, "Username for 'https://git.example.com/':"));
 
         for (String prompt : List.of(
             "Password for 'https://git.example.com.evil.com':",
             "Password for 'https://notgit.example.com':",
             "Password for 'http://git.example.com':",
+            "Password for 'http://oauth2@git.example.com':",
             "Password for 'https://git.example.com:444':",
-            "Password for 'https://evil.com/?next=https://git.example.com':",
-            "Password for 'https://user@git.example.com':")) {
+            "Password for 'https://oauth2@git.example.com:444':",
+            "Password for 'https://evil.com/?next=https://git.example.com':")) {
             assertNotEquals("secret", runAskPass(script, prompt), prompt);
         }
 
         Path portScript = writeAskPassScript("git.example.com:8443");
         assertEquals("secret",
             runAskPass(portScript, "Password for 'https://git.example.com:8443/':"));
+        assertEquals("secret",
+            runAskPass(portScript, "Password for 'https://oauth2@git.example.com:8443':"));
         assertNotEquals("secret",
             runAskPass(portScript, "Password for 'https://git.example.com':"));
         assertNotEquals("secret",
