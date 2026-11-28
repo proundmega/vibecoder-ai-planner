@@ -66,6 +66,10 @@ services:
       # Local filesystem Git repositories (D13). The root must be mounted at
       # the same absolute path as the API, and writable by uid 100 for pushes.
       - GIT_LOCAL_ROOT=${GIT_LOCAL_ROOT:-}
+      # D21 SSH: mount a verified known_hosts file read-only and point these
+      # at it. Without GIT_SSH_KNOWN_HOSTS, SSH remotes fail closed.
+      - GIT_SSH_KNOWN_HOSTS=${GIT_SSH_KNOWN_HOSTS:-}
+      - GIT_SSH_KEY_FILE=${GIT_SSH_KEY_FILE:-}
       - AI_PROVIDER=${AI_PROVIDER:-claude}
       - AI_MODEL=${AI_MODEL:-claude-sonnet-4-20250514}
       - POLL_INTERVAL_MS=${POLL_INTERVAL_MS:-30000}

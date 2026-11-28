@@ -17,7 +17,7 @@ FROM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338
 ARG OPENCODE_VERSION=1.19.5
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      openjdk-17-jre-headless git ripgrep bash curl jq python3 make \
+      openjdk-17-jre-headless git openssh-client ripgrep bash curl jq python3 make \
       libstdc++6 util-linux ca-certificates procps \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,12 +30,13 @@ WORKDIR /app
 # Copy the shaded JAR from the build stage (maven-shade-plugin creates artifactId-version.jar)
 COPY --from=build /app/target/agent-*.jar agent.jar
 
-# Create the same non-root identity used by the previous image (100:101) so
-# an existing credentials volume remains readable.
-RUN groupadd --gid 101 agent \
-    && useradd --uid 100 --gid 101 --home-dir /home/agent --create-home --shell /bin/bash agent \
+# Create the same numeric non-root identity used by the previous image (100:101)
+# so an existing credentials volume remains readable. openssh-client now creates
+# the system `_ssh` group at GID 101, so use the numeric GID rather than
+# groupadd (which would collide) and keep the agent user on that group.
+RUN useradd --uid 100 --gid 101 --home-dir /home/agent --create-home --shell /bin/bash agent \
     && mkdir -p /repos /tmp/opencode /home/agent /credentials \
-    && chown -R agent:agent /repos /tmp/opencode /home/agent /credentials
+    && chown -R 100:101 /repos /tmp/opencode /home/agent /credentials
 USER agent
 
 ENV HOME=/home/agent

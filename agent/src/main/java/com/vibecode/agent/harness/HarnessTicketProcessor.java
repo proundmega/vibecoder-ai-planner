@@ -183,6 +183,10 @@ public final class HarnessTicketProcessor implements TicketWorker {
                     config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken,
                     tokenSource, null, tokenOrigin(config));
                 manager.setLocalRepoRoot(config.getLocalRepoRoot());
+                manager.setSshCredentials(
+                    config.getGitSshKeyPem(),
+                    config.getGitSshKeyFile(),
+                    config.getGitSshKnownHosts());
                 return manager;
             },
             (tempDir, bridge, effectiveConfig) ->

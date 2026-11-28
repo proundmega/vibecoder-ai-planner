@@ -323,6 +323,10 @@ public class AgentApp {
         if (authMode instanceof String value && !value.isBlank()) {
             config.setRepoAuthMode(value);
         }
+        Object sshKey = repoConfig.get("sshKey");
+        if (sshKey instanceof String value && !value.isBlank()) {
+            config.setGitSshKeyPem(value);
+        }
         return RepoCoordinates.parse(String.valueOf(url)).map(coordinates -> {
             config.setRepoCoordinates(coordinates.owner(), coordinates.name());
             log.info("Using project repository {}/{} from the backend", coordinates.owner(), coordinates.name());

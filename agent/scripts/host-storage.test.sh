@@ -70,12 +70,15 @@ if run --apply --legacy >/dev/null 2>&1; then pass "legacy apply reaps runtime r
 [[ ! -e "$REPO/runtimes/99" ]] && pass "--legacy does not skip runtime roots" || fail "--legacy does not skip runtime roots"
 
 # Legacy and temp fixtures.
-mkdir -p "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" "$TMP_ROOT/vibecode-askpass-y"
-touch -d '30 hours ago' "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" "$TMP_ROOT/vibecode-askpass-y"
+mkdir -p "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" \
+  "$TMP_ROOT/vibecode-askpass-y" "$TMP_ROOT/vibecode-ssh-z"
+touch -d '30 hours ago' "$REPO/abcdef12-repo" "$TMP_ROOT/opencode-harness-x" \
+  "$TMP_ROOT/vibecode-askpass-y" "$TMP_ROOT/vibecode-ssh-z"
 if run --apply --legacy >/dev/null 2>&1; then pass "legacy apply succeeds"; else fail "legacy apply succeeds"; fi
 [[ ! -e "$REPO/abcdef12-repo" ]] && pass "legacy removes the old random clone" || fail "legacy removes the old random clone"
 [[ ! -e "$TMP_ROOT/opencode-harness-x" ]] && pass "legacy removes opencode temp dirs" || fail "legacy removes opencode temp dirs"
 [[ ! -e "$TMP_ROOT/vibecode-askpass-y" ]] && pass "legacy removes askpass temp dirs" || fail "legacy removes askpass temp dirs"
+[[ ! -e "$TMP_ROOT/vibecode-ssh-z" ]] && pass "legacy removes ssh temp dirs" || fail "legacy removes ssh temp dirs"
 
 # Fake Docker: --images dry-run lists dangling images and never prunes.
 FAKE_BIN="$TMP_DIR/bin"

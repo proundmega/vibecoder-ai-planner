@@ -127,6 +127,36 @@ class AgentAppRepoConfigTest {
     }
 
     @Test
+    void appliesTheProjectSshDeployKey() {
+        AgentConfig config = new AgentConfig();
+
+        boolean applied = AgentApp.applyRepoCoordinates(config, Map.of(
+            "repoUrl", "ssh://git@git.example.com/group/repo.git",
+            "provider", "local",
+            "authMode", "ssh",
+            "sshKey", "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n"));
+
+        assertTrue(applied);
+        assertEquals("ssh", config.getRepoAuthMode());
+        assertEquals("-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n", config.getGitSshKeyPem());
+    }
+
+    @Test
+    void appliesASingleSegmentSshRepository() {
+        AgentConfig config = new AgentConfig();
+
+        boolean applied = AgentApp.applyRepoCoordinates(config, Map.of(
+            "repoUrl", "git@git.example.com:repo.git",
+            "provider", "local",
+            "authMode", "ssh",
+            "sshKey", "pem"));
+
+        assertTrue(applied);
+        assertEquals("git.example.com", config.getRepoOwner());
+        assertEquals("repo", config.getRepoName());
+    }
+
+    @Test
     void canonicalizesTheGitHubOwnerRepoShorthand() {
         AgentConfig config = new AgentConfig();
         config.setRepoUrl("owner/repo");

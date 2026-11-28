@@ -155,6 +155,95 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void detectsSshUrls() {
+        assertTrue(WorkspaceManager.isSshUrl("ssh://git@git.example.com/group/repo.git"));
+        assertTrue(WorkspaceManager.isSshUrl("git@git.example.com:group/repo.git"));
+        assertTrue(WorkspaceManager.isSshUrl("git.example.com:group/repo.git"));
+        assertTrue(WorkspaceManager.isSshUrl("git@git.example.com:/srv/git/repo.git"));
+        assertTrue(WorkspaceManager.isSshUrl("git.example.com:/srv/git/repo.git"));
+        assertFalse(WorkspaceManager.isSshUrl("https://git.example.com/group/repo.git"));
+        assertFalse(WorkspaceManager.isSshUrl("file:///srv/git/repo.git"));
+        assertFalse(WorkspaceManager.isSshUrl("/srv/git/repo.git"));
+        assertFalse(WorkspaceManager.isSshUrl(null));
+    }
+
+    @Test
+    void sshRemotesRequireKnownHostsAndAKey() throws Exception {
+        Path known = Files.createFile(tempDir.resolve("known_hosts"));
+
+        WorkspaceManager noKnownHosts = new WorkspaceManager(
+            tempDir.toString(), "ssh-no-known", false, null);
+        noKnownHosts.setSshCredentials("pem", null, null);
+        assertThrows(IOException.class, noKnownHosts::ensureSshHelper);
+
+        WorkspaceManager noKey = new WorkspaceManager(
+            tempDir.toString(), "ssh-no-key", false, null);
+        noKey.setSshCredentials(null, null, known.toString());
+        assertThrows(IOException.class, noKey::ensureSshHelper);
+    }
+
+    @Test
+    void sshHelperUsesStrictHostCheckingAndATemporaryKey() throws Exception {
+        Path known = Files.createFile(tempDir.resolve("known_hosts"));
+        Files.writeString(known, "git.example.com ssh-ed25519 AAAA\n");
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "ssh-helper", false, null);
+        manager.setSshCredentials(
+            "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----\n",
+            null, known.toString());
+
+        manager.ensureSshHelper();
+        Path scriptPath = manager.sshWrapperScriptPath();
+        Path keyPath = manager.sshKeyFilePath();
+        try {
+            String script = Files.readString(scriptPath);
+            assertTrue(script.contains("ssh -F /dev/null -i"));
+            assertTrue(script.contains("IdentitiesOnly=yes"));
+            assertTrue(script.contains("StrictHostKeyChecking=yes"));
+            assertTrue(script.contains("UserKnownHostsFile="));
+            assertTrue(script.contains("GlobalKnownHostsFile=/dev/null"));
+            assertTrue(script.contains("ProxyCommand=none"));
+            assertTrue(script.contains("BatchMode=yes"));
+            assertEquals("rw-------",
+                java.nio.file.attribute.PosixFilePermissions.toString(
+                    Files.getPosixFilePermissions(keyPath)));
+        } finally {
+            manager.cleanupSshHelper();
+        }
+        assertFalse(Files.exists(scriptPath));
+        assertFalse(Files.exists(keyPath));
+    }
+
+    @Test
+    void sshRejectsSymlinkedKnownHostsAndKey() throws Exception {
+        Path realKnown = Files.createFile(tempDir.resolve("real-known-hosts"));
+        Path knownLink = tempDir.resolve("known_hosts_link");
+        Files.createSymbolicLink(knownLink, realKnown);
+        WorkspaceManager linkedKnown = new WorkspaceManager(
+            tempDir.toString(), "ssh-link-known", false, null);
+        linkedKnown.setSshCredentials("pem", null, knownLink.toString());
+        assertThrows(IOException.class, linkedKnown::ensureSshHelper);
+
+        Path realKey = Files.createFile(tempDir.resolve("real-key"));
+        Path keyLink = tempDir.resolve("key_link");
+        Files.createSymbolicLink(keyLink, realKey);
+        WorkspaceManager linkedKey = new WorkspaceManager(
+            tempDir.toString(), "ssh-link-key", false, null);
+        linkedKey.setSshCredentials(null, keyLink.toString(), realKnown.toString());
+        assertThrows(IOException.class, linkedKey::ensureSshHelper);
+    }
+
+    @Test
+    void sshCloneFailsClosedWithoutKnownHosts() {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "ssh-clone", false, null);
+        manager.setSshCredentials("pem", null, null);
+
+        assertThrows(IOException.class,
+            () -> manager.cloneRepo("git@git.example.com:/srv/git/repo.git", "vibecode/ticket-1"));
+    }
+
+    @Test
     void gitOptionsTrustOnlyTheResolvedLocalSource() {
         List<String> withLocal = WorkspaceManager.gitOptions("/srv/git/repo.git");
         assertTrue(withLocal.contains("safe.directory=/srv/git/repo.git"));

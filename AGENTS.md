@@ -230,6 +230,18 @@ same target; the source must be writable by the agent user (uid 100) for
 publishing, while the API trusts the exact path with `safe.directory`. The
 sandbox sees the workspace bind, not the source root.
 
+Local/SSH remotes require `GIT_SSH_KNOWN_HOSTS` on the agent (mount a verified
+file read-only); the connect API requires a project deploy key, so the normal
+path uses that key. `GIT_SSH_KEY_FILE` is a direct/dev fallback used only when
+no project key is delivered, owned by the agent user (uid 100) with mode `0600`.
+The known-hosts file and a mounted key must be regular files; symlinks are
+rejected (use `subPath` for Kubernetes projected mounts). The agent sets a
+transient `GIT_SSH` wrapper with `ssh -F /dev/null` (ignores both user and
+system SSH config), `StrictHostKeyChecking=yes`, `IdentitiesOnly=yes`,
+`BatchMode=yes`, `ProxyCommand=none`, only the configured `UserKnownHostsFile`
+and `GlobalKnownHostsFile=/dev/null`, and refuses SSH when the known-hosts file
+is missing. The agent image includes `openssh-client`.
+
 Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` sandboxes install/verification
 and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_REQUIRE`, `SANDBOX_CPUS`,

@@ -21,7 +21,7 @@ final class StorageSweeper {
 
     private static final Logger log = LoggerFactory.getLogger(StorageSweeper.class);
     private static final Pattern LEGACY = Pattern.compile("^[0-9a-f]{8}-.+");
-    private static final String[] TEMP_PREFIXES = {"opencode-harness-", "vibecode-askpass-"};
+    private static final String[] TEMP_PREFIXES = {"opencode-harness-", "vibecode-askpass-", "vibecode-ssh-"};
 
     private StorageSweeper() {
     }
