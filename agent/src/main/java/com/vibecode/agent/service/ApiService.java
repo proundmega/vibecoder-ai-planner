@@ -268,6 +268,32 @@ public class ApiService implements QuestionBridge.Transport {
         this.providerRegionContext = region;
     }
 
+    /**
+     * Start a fixer run: the fixed ticket already has a PR, so the backend
+     * authorises it from the claimed fix request instead of the publish guard.
+     */
+    public Map<String, Object> startFixHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model,
+        int attempt,
+        String fixRequestId,
+        String baseSha
+    ) throws IOException {
+        if (fixRequestId == null || fixRequestId.isBlank()) {
+            throw new IllegalArgumentException("fixRequestId is required for a fix run");
+        }
+        if (baseSha == null || baseSha.isBlank()) {
+            throw new IllegalArgumentException("baseSha is required for a fix run");
+        }
+        return startHarnessRun(
+            ticketId, branch, workspacePath, provider, model, attempt,
+            null, null, providerBaseUrlContext, providerRegionContext,
+            "fix", fixRequestId, baseSha);
+    }
+
     public Map<String, Object> startHarnessRun(
         Long ticketId,
         String branch,
@@ -280,10 +306,40 @@ public class ApiService implements QuestionBridge.Transport {
         String providerBaseUrl,
         String providerRegion
     ) throws IOException {
+        return startHarnessRun(
+            ticketId, branch, workspacePath, provider, model, attempt,
+            repoProfileId, repoProfileVersion, providerBaseUrl, providerRegion,
+            "build", null, null);
+    }
+
+    private Map<String, Object> startHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model,
+        int attempt,
+        String repoProfileId,
+        Integer repoProfileVersion,
+        String providerBaseUrl,
+        String providerRegion,
+        String purpose,
+        String fixRequestId,
+        String baseSha
+    ) throws IOException {
         Map<String, Object> body = new HashMap<>();
         body.put("ticketId", ticketId);
         body.put("branch", branch);
         body.put("attempt", attempt);
+        if (baseSha != null && !baseSha.isBlank()) {
+            body.put("baseSha", baseSha);
+        }
+        if (purpose != null && !purpose.isBlank() && !"build".equals(purpose)) {
+            body.put("purpose", purpose);
+        }
+        if (fixRequestId != null && !fixRequestId.isBlank()) {
+            body.put("fixRequestId", fixRequestId);
+        }
         if (workspacePath != null && !workspacePath.isBlank()) {
             body.put("workspacePath", workspacePath);
         }
