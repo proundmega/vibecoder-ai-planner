@@ -312,12 +312,16 @@ public class ApiService implements QuestionBridge.Transport {
         Integer repoProfileVersion
     ) throws IOException {
         if (repoProfileId == null || repoProfileId.isBlank()) {
+            if (repoProfileVersion != null) {
+                throw new IllegalArgumentException(
+                    "repoProfileVersion requires repoProfileId");
+            }
             return startFixHarnessRun(ticketId, branch, workspacePath, provider, model,
                 attempt, fixRequestId, baseSha);
         }
-        if (repoProfileVersion == null) {
+        if (repoProfileVersion == null || repoProfileVersion <= 0) {
             throw new IllegalArgumentException(
-                "repoProfileVersion is required with repoProfileId");
+                "repoProfileVersion must be positive with repoProfileId");
         }
         if (fixRequestId == null || fixRequestId.isBlank()) {
             throw new IllegalArgumentException("fixRequestId is required for a fix run");

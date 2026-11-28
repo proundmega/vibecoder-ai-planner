@@ -253,4 +253,15 @@ class ApiServiceFixQueueTest {
             42L, "b", null, null, null, 1,
             "22222222-2222-4222-8222-222222222222", " "));
     }
+
+    @Test
+    void aFixRunValidatesTheProfilePair() {
+        assertThrows(IllegalArgumentException.class, () -> api.startFixHarnessRun(
+            42L, "b", null, null, null, 1,
+            "22222222-2222-4222-8222-222222222222", "a".repeat(40), " ", 3));
+        assertThrows(IllegalArgumentException.class, () -> api.startFixHarnessRun(
+            42L, "b", null, null, null, 1,
+            "22222222-2222-4222-8222-222222222222", "a".repeat(40),
+            "11111111-1111-4111-8111-111111111111", 0));
+    }
 }
