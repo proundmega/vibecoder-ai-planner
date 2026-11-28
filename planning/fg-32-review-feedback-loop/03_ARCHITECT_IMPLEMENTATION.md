@@ -20,12 +20,12 @@
 - [ ] Implement `FIX_LOOP_MODE=off|manual|auto` and `projects.fix_loop_mode` (decided)
 - [ ] Add the human JWT path (`TICKET_STATUS_CHANGE`) and normalize `metadata.reason` / `metadata.feedback`
 - [ ] Set max rounds (2 fix rounds after round 0), `FIX_MAX_ATTEMPTS` (default 3) and the no-progress rule
-- [ ] Propagate `AGENT_MODE` and `FIX_*` through `AgentConfig`, the existing `PoolManager` env allowlist, `agent/.env.example` and README
+- [ ] Propagate `FIX_WORKER_ENABLED` and `FIX_*` through `AgentConfig`, the existing `PoolManager` env allowlist, `agent/.env.example` and README
 - [ ] Implement phase-aware escalation (`review -> human_approval`, `in_progress -> review -> human_approval`, no-op in `human_approval`) and phase-history audit
 - [ ] Resolve `reviewed_sha` for manual requests (latest completed attempt, else PR head) and include `feedback` in the fix prompt
 - [ ] Make `fix/fail` reset to `queued` with `next_attempt_at` backoff; select only due queued rows; escalate at `FIX_MAX_ATTEMPTS`
 - [ ] Keep the `review_state` cache consistent: `changes_requested` on requeue, `fixing` on claim, `fix_failed`/`escalated` on termination
-- [ ] Add `AGENT_MODE=fix` wiring for `FixTicketProcessor` with a distinct agent identity
+- [ ] Add `FIX_WORKER_ENABLED` wiring for `FixTicketProcessor` on the worker runtime (option 1: shared identity; a dedicated fixer identity is deferred)
 - [ ] Add `WorkspaceManager` support for checking out an existing PR branch pinned to `reviewed_sha`
 - [ ] Add a fast-forward-only publish path; do not reuse `pushCommit()` for shared PR branches
 - [ ] Abort on `remote_head_moved` and never overwrite a human push

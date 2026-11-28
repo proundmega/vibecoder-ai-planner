@@ -103,8 +103,8 @@ class AgentConfigTest {
         AgentConfig config = new AgentConfig();
 
         assertFalse(config.isFixWorkerEnabled());
-        assertEquals(1800, config.getFixLeaseTtlSeconds());
         assertEquals(30, config.getFixMaxDurationMinutes());
+        assertEquals(2400, config.getFixLeaseSeconds());
     }
 
     @Test
@@ -113,6 +113,15 @@ class AgentConfigTest {
         assertTrue(AgentConfig.fixWorkerAllowed(true, false));
         assertFalse(AgentConfig.fixWorkerAllowed(true, true));
         assertFalse(AgentConfig.fixWorkerAllowed(false, true));
+    }
+
+    @Test
+    void theFixBudgetCapsAndLeaseFollowIt() {
+        assertEquals(60, AgentConfig.boundedInt(120, 1, 60));
+        assertEquals(4200, AgentConfig.fixLeaseSeconds(60));
+        assertEquals(1, AgentConfig.boundedInt(0, 1, 60));
+        assertEquals(660, AgentConfig.fixLeaseSeconds(1));
+        assertEquals(86_400, AgentConfig.fixLeaseSeconds(10_000));
     }
 
     @Test

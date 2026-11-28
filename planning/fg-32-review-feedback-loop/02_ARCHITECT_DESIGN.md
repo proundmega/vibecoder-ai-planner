@@ -11,7 +11,7 @@
 | 1 | Fix-request creation contract contradicts itself | fg-31 writes the completed attempt/findings, then calls `POST /tickets/:id/review/request-changes` with `attempt_id`. fg-32 consumes the attempt, creates the fix request and transitions. fg-32 never writes attempts. |
 | 2 | Escalation is not phase-aware | Escalation reads the current phase: `review -> human_approval` when in `review`, `in_progress -> review -> human_approval` when in `in_progress`, and a no-op when already in `human_approval`. Other phases fail closed; `in_progress -> human_approval` is never attempted. |
 | 3 | Force-with-lease can overwrite a human commit | Add a fast-forward-only publish path pinned to `reviewed_sha`; never reuse `WorkspaceManager.pushCommit()` for shared PR branches. |
-| 4 | Fixer worker mode/wiring undefined | `AGENT_MODE` = `build`, `review` or `fix`; `FixTicketProcessor` is constructed for `AGENT_MODE=fix`. `FIX_LOOP_MODE` only controls dispatch. |
+| 4 | Fixer worker mode/wiring undefined | Decided 2026-11-28 (option 1): a worker runtime sets `FIX_WORKER_ENABLED=true` and constructs `FixTicketProcessor`; `AGENT_MODE=fix` is deferred. `FIX_LOOP_MODE` only controls dispatch. |
 | 5 | Queue/lease schema incomplete | Add `ticket_fix_requests` with lease owner/expiry, attempts, error and active uniqueness; add `POST /tickets/:id/fix/renew`. |
 | 6 | Duplicate fix requests not prevented | `UNIQUE(attempt_id)` for automated requests and a partial unique index for one active request per ticket; the POST is idempotent. |
 | 7 | Manual mode has no human-auth path | The request-changes endpoint accepts reviewer `X-API-Key` or human JWT; `PhaseService.transition()` to `in_progress` also creates/ensures the request. Normalize `metadata.reason` and `metadata.feedback`. |
@@ -35,7 +35,7 @@ POST /tickets/:id/review/request-changes { attempt_id }   (idempotent)
 ticket_fix_requests (queued) + ticket review state
         |
         v
-FixTicketProcessor (AGENT_MODE=fix)
+FixTicketProcessor (FIX_WORKER_ENABLED=true)
   - checkout existing PR branch pinned to reviewed_sha
   - prompt with findings + previous verification
   - verify, commit from reviewed_sha
@@ -282,12 +282,21 @@ like a build run; the fixer-only allowance covers only the PR/head guard.
   The trade-off is that one runtime does build and fix sequentially; a
   dedicated fixer runtime (and its claim-based authorisation) is deferred until
   fix throughput needs it.
+- Deadline and lease: `FIX_MAX_DURATION_MINUTES` is the only knob. The
+  deadline is checked before clone/session/verify and ignored once the
+  `publishing` checkpoint exists; the lease is derived as budget + 10 min so a
+  full-budget fix still has a live lease when it publishes. Renewal happens
+  before each long phase.
+- Future exploration: a crashed fixer holds its request until the derived
+  lease expires (40 min at the default). If faster recovery is ever needed,
+  reintroduce an explicit shorter lease override — tracked in the suite's
+  deferred register.
 - `AgentApp` constructs `FixTicketProcessor implements TicketWorker` when the
   flag is set; it drains at most one due request per cycle. A supervisor
   poison pill (`AGENT_RUNTIME_STOP_FILE`) may stop a stuck fixer once its
   workspace is idle; the supervisor must not kill a run after the `publishing`
   checkpoint.
-- `FIX_LOOP_MODE=off|manual|auto` controls **dispatch** (who may create requests), not the worker mode. A deployment that wants build + fix in one container runs `AGENT_MODE=build` and a second process/container with `AGENT_MODE=fix`; they must not share the same `AGENT_API_KEY` identity.
+- `FIX_LOOP_MODE=off|manual|auto` controls **dispatch** (who may create requests), not the worker mode. Option 1: the same worker runtime sets `FIX_WORKER_ENABLED=true` and drains the fix queue after its build poll, reusing its identity and `assigned_runtime_id`. A dedicated fixer identity (and a claim-based run authorisation) is deferred until fix throughput needs it.
 - The fix worker reuses the project's `REPO_OWNER`/`REPO_NAME` and provider config; it does not clone a different repository.
 
 ### Configuration propagation
@@ -300,10 +309,9 @@ Add these to `AgentConfig` and to the existing `backend/src/services/PoolManager
 | `FIX_LOOP_MODE` | `off` | dispatch default; `projects.fix_loop_mode` overrides |
 | `FIX_MAX_ROUNDS` | `2` | fix rounds after round 0 |
 | `FIX_MAX_ATTEMPTS` | `3` | fixer attempts per request before escalation |
-| `FIX_LEASE_TTL_SECONDS` | `1800` | claim lease (floor 60, cap 24h); renewed via `fix/renew` |
-| `FIX_MAX_DURATION_MINUTES` | `30` | wall-clock hard stop (floor 1) |
+| `FIX_MAX_DURATION_MINUTES` | `30` | fix budget (floor 1, cap 60) and the agent's only lease knob: the lease sent to the backend is budget + 10 min (capped 24 h). `FIX_LEASE_TTL_SECONDS` remains a backend-only fallback when no lease is sent. |
 
-Mirror them in `agent/.env.example` and the README agent env table, and document that `FIX_LOOP_MODE` is dispatch-only while `AGENT_MODE=fix` selects the worker.
+Mirror them in `agent/.env.example` and the README agent env table, and document that `FIX_LOOP_MODE` is dispatch-only while `FIX_WORKER_ENABLED` selects the fix worker. `FIX_LEASE_TTL_SECONDS` stays a **backend-only fallback** for `FixQueueService` when a caller omits the lease; the agent always sends the derived value (budget + 10 min).
 
 ### API client
 
