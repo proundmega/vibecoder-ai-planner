@@ -2045,6 +2045,7 @@ class DockerSandboxRunnerTest {
                   *"State.Health"*) echo healthy ;;
                   *"IPAddress"*) echo 172.18.0.5 ;;
                   *"State.Running"*) echo true ;;
+                  *".SizeRw"*) echo 0 ;;
                   *) echo true ;;
                 esac
                 ;;
@@ -2082,12 +2083,16 @@ class DockerSandboxRunnerTest {
         }
 
         String calls = Files.readString(log);
+        String serviceRun = Files.readAllLines(log).stream()
+            .filter((line) -> line.startsWith("run -d --name vibecode-service-"))
+            .findFirst().orElseThrow();
         assertTrue(calls.contains("network create --driver bridge --internal"), calls);
         assertTrue(calls.contains("vibecode-services-"), calls);
         assertTrue(calls.contains("--health-cmd pg_isready -U vibecode -d test"), calls);
         assertTrue(calls.contains("--env-file"), calls);
         assertTrue(calls.contains("--add-host postgres:172.18.0.5"), calls);
-        assertTrue(calls.contains("--cap-drop NET_RAW"), calls);
+        assertTrue(serviceRun.contains("--cap-drop NET_RAW"), serviceRun);
+        assertTrue(serviceRun.contains("--ulimit fsize=5368709120"), serviceRun);
         assertTrue(calls.contains("--log-opt max-size=1m"), calls);
         assertTrue(calls.contains("--log-opt max-file=1"), calls);
         assertTrue(calls.contains("--pull never"), calls);
@@ -2152,6 +2157,221 @@ class DockerSandboxRunnerTest {
         assertFalse(calls.contains("vibecode-services-"), calls);
     }
 
+
+    @Test
+    void enforcesServiceDiskQuota() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("service-quota.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              inspect) case "$*" in *".SizeRw"*) echo 2097152 ;; esac ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_MEMORY_MB", "256",
+            "SANDBOX_PIDS", "512",
+            "SANDBOX_NOFILE", "1024",
+            "SANDBOX_TMPFS_MB", "64",
+            "SANDBOX_CPUS", "2.0",
+            "SANDBOX_DISK_MB", "1"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            AtomicBoolean exceeded = new AtomicBoolean(false);
+            runner.checkServiceQuota(
+                "vibecode-sandbox-quota", List.of("service-a"), exceeded);
+            assertTrue(exceeded.get());
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains("inspect --size -f {{.SizeRw}} service-a"), calls);
+        assertTrue(calls.contains("kill --signal KILL vibecode-sandbox-quota"), calls);
+    }
+
+    @Test
+    void failsClosedWhenServiceDiskMeasurementFails() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("service-quota-failure.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              inspect) case "$*" in *".SizeRw"*) echo "denied" >&2; exit 1 ;; esac ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_MEMORY_MB", "256",
+            "SANDBOX_PIDS", "512",
+            "SANDBOX_NOFILE", "1024",
+            "SANDBOX_TMPFS_MB", "64",
+            "SANDBOX_CPUS", "2.0",
+            "SANDBOX_DISK_MB", "1"
+        )::get);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(config)) {
+            AtomicBoolean exceeded = new AtomicBoolean(false);
+            runner.checkServiceQuota(
+                "vibecode-sandbox-quota", List.of("service-a"), exceeded);
+            assertTrue(exceeded.get());
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains("inspect --size -f {{.SizeRw}} service-a"), calls);
+        assertTrue(calls.contains("kill --signal KILL vibecode-sandbox-quota"), calls);
+    }
+
+    @Test
+    void serviceWatchdogCompletesCleanupAfterQuotaExceeded() throws Exception {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("service-watchdog-cleanup.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              image) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+              run) exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Health"*) echo healthy ;;
+                  *"IPAddress"*) echo 172.18.0.5 ;;
+                  *".SizeRw"*) echo 2097152 ;;
+                  *"State.Running"*) echo true ;;
+                  *) echo true ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+              exec) echo OK ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_MEMORY_MB", "256",
+            "SANDBOX_PIDS", "512",
+            "SANDBOX_NOFILE", "1024",
+            "SANDBOX_TMPFS_MB", "64",
+            "SANDBOX_CPUS", "2.0",
+            "SANDBOX_DISK_MB", "1",
+            "SANDBOX_DISK_CHECK_INTERVAL_SECONDS", "1"
+        )::get);
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {
+              "schema_version": 1,
+              "verify": ["true"],
+              "services": [{
+                "name": "postgres",
+                "image": "postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "connection_env": "DATABASE_URL",
+                "connection_url": "postgresql://vibecode@${host}:5432/test",
+                "healthcheck": {
+                  "command": "pg_isready -U vibecode -d test",
+                  "interval_seconds": 1,
+                  "timeout_seconds": 2,
+                  "retries": 2
+                }
+              }]
+            }
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace()));
+            awaitCondition(Duration.ofSeconds(10), () -> {
+                try {
+                    String calls = Files.readString(log);
+                    return calls.contains("rm -f -v vibecode-service-")
+                        && calls.contains("network rm vibecode-services-");
+                } catch (IOException e) {
+                    return false;
+                }
+            });
+            runner.destroy(handle);
+        }
+
+        String calls = Files.readString(log);
+        assertTrue(calls.contains("rm -f -v vibecode-service-"), calls);
+        assertTrue(calls.contains("network disconnect -f vibecode-services-"), calls);
+        assertTrue(calls.contains("network rm vibecode-services-"), calls);
+        assertTrue(calls.contains("kill --signal KILL vibecode-sandbox-"), calls);
+    }
+
+    @Test
+    void passesStorageOptToServicesWhenDiskEnforcementIsOn() throws IOException {
+        Assumptions.assumeFalse(windows(), "fake docker script relies on POSIX sh");
+        Path log = tempDir.resolve("service-storage-opt.log");
+        Path script = fakeDocker(log, """
+            case "$1" in
+              network) exit 0 ;;
+              image) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+              run) exit 0 ;;
+              inspect)
+                case "$*" in
+                  *"State.Health"*) echo healthy ;;
+                  *"IPAddress"*) echo 172.18.0.5 ;;
+                  *"State.Running"*) echo true ;;
+                  *".SizeRw"*) echo 0 ;;
+                  *) echo true ;;
+                esac
+                ;;
+              rm) exit 0 ;;
+              exec) echo OK ;;
+              *) exit 0 ;;
+            esac
+            """);
+        SandboxConfig config = SandboxConfig.from(env(
+            "SANDBOX_MODE", "docker",
+            "SANDBOX_IMAGE", "test:img",
+            "SANDBOX_DOCKER_BIN", script.toString(),
+            "SANDBOX_USER", "1000:1000",
+            "SANDBOX_MEMORY_MB", "256",
+            "SANDBOX_PIDS", "512",
+            "SANDBOX_NOFILE", "1024",
+            "SANDBOX_TMPFS_MB", "64",
+            "SANDBOX_CPUS", "2.0",
+            "SANDBOX_DISK_MB", "1",
+            "SANDBOX_DISK_ENFORCE", "true"
+        )::get);
+        RepoProfile profile = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+            {
+              "schema_version": 1,
+              "verify": ["true"],
+              "services": [{
+                "name": "postgres",
+                "image": "postgres@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "connection_env": "DATABASE_URL",
+                "connection_url": "postgresql://vibecode@${host}:5432/test",
+                "healthcheck": {
+                  "command": "pg_isready -U vibecode -d test",
+                  "interval_seconds": 1,
+                  "timeout_seconds": 2,
+                  "retries": 2
+                }
+              }]
+            }
+            """, RepoProfile.class);
+        SandboxConfig effective = config.withRepoProfile(profile, "1", 1);
+
+        try (DockerSandboxRunner runner = new DockerSandboxRunner(effective)) {
+            SandboxHandle handle = runner.create(effective.specFor(workspace()));
+            runner.destroy(handle);
+        }
+
+        String serviceRun = Files.readAllLines(log).stream()
+            .filter((line) -> line.startsWith("run -d --name vibecode-service-"))
+            .findFirst().orElseThrow();
+        assertTrue(serviceRun.contains("--ulimit fsize=1048576"), serviceRun);
+        assertTrue(serviceRun.contains("--storage-opt size=1048576"), serviceRun);
+    }
 
     @Test
     void createFailsAndCleansUpWhenAProfileServiceIsUnhealthy() throws IOException {
@@ -2431,6 +2651,18 @@ class DockerSandboxRunnerTest {
         String calls = Files.readString(log);
         int attempts = calls.split("rm -f -v vibecode-service-", -1).length - 1;
         assertTrue(attempts >= 2, calls);
+    }
+
+    private static void awaitCondition(Duration timeout, Supplier<Boolean> condition)
+        throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            if (condition.get()) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        assertTrue(condition.get(), "condition not met within " + timeout);
     }
 
     private Path fakeDocker(Path log, String body) throws IOException {
