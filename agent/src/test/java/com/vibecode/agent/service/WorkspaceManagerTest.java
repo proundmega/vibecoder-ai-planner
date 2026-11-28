@@ -202,6 +202,7 @@ class WorkspaceManagerTest {
             assertTrue(script.contains("StrictHostKeyChecking=yes"));
             assertTrue(script.contains("UserKnownHostsFile="));
             assertTrue(script.contains("GlobalKnownHostsFile=/dev/null"));
+            assertTrue(script.contains("ProxyCommand=none"));
             assertTrue(script.contains("BatchMode=yes"));
             assertEquals("rw-------",
                 java.nio.file.attribute.PosixFilePermissions.toString(
@@ -211,6 +212,25 @@ class WorkspaceManagerTest {
         }
         assertFalse(Files.exists(scriptPath));
         assertFalse(Files.exists(keyPath));
+    }
+
+    @Test
+    void sshRejectsSymlinkedKnownHostsAndKey() throws Exception {
+        Path realKnown = Files.createFile(tempDir.resolve("real-known-hosts"));
+        Path knownLink = tempDir.resolve("known_hosts_link");
+        Files.createSymbolicLink(knownLink, realKnown);
+        WorkspaceManager linkedKnown = new WorkspaceManager(
+            tempDir.toString(), "ssh-link-known", false, null);
+        linkedKnown.setSshCredentials("pem", null, knownLink.toString());
+        assertThrows(IOException.class, linkedKnown::ensureSshHelper);
+
+        Path realKey = Files.createFile(tempDir.resolve("real-key"));
+        Path keyLink = tempDir.resolve("key_link");
+        Files.createSymbolicLink(keyLink, realKey);
+        WorkspaceManager linkedKey = new WorkspaceManager(
+            tempDir.toString(), "ssh-link-key", false, null);
+        linkedKey.setSshCredentials(null, keyLink.toString(), realKnown.toString());
+        assertThrows(IOException.class, linkedKey::ensureSshHelper);
     }
 
     @Test

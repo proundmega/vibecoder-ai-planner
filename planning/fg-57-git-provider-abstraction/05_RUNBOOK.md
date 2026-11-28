@@ -195,19 +195,26 @@ follow-up.
    path uses the project key; a mounted `GIT_SSH_KEY_FILE` is a direct/dev
    fallback used only when no project key is delivered. A mounted key must be
    owned by the agent user (uid 100) and mode `0600`.
+   The known-hosts file and a mounted key must be regular files; symlinks are
+   rejected, so a Kubernetes projected Secret/ConfigMap needs a `subPath` mount
+   or the PEM through the credential store.
    The agent runs SSH with `StrictHostKeyChecking=yes`, `IdentitiesOnly=yes`,
-   `BatchMode=yes`, only the configured `UserKnownHostsFile` and
-   `GlobalKnownHostsFile=/dev/null`; without the known-hosts file it fails
-   closed. Never use `StrictHostKeyChecking=no`.
+   `BatchMode=yes`, `ProxyCommand=none`, only the configured
+   `UserKnownHostsFile` and `GlobalKnownHostsFile=/dev/null`; `-F /dev/null`
+   ignores both `~/.ssh/config` and `/etc/ssh/ssh_config`, and without the
+   known-hosts file it fails closed. Never use `StrictHostKeyChecking=no`.
    The backend resolves the SSH host on connect. A host only the agent can
    resolve is rejected; use a name both sides resolve, or set
    `ALLOW_PRIVATE_HOSTS=1` / `GIT_ALLOW_PRIVATE_HOSTS=1` for a private host.
 4. Smoke before the ticket (from the supervisor container), then run one
-   ticket:
+   ticket. The automated tests cover URL detection, wrapper content,
+   fail-closed behavior and key cleanup only; this live clone/push is the D21
+   acceptance evidence.
 
    ```bash
    ssh -F /dev/null -i <key> -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-     -o UserKnownHostsFile=/etc/vibecode/known_hosts -o BatchMode=yes git@git.example.com
+     -o UserKnownHostsFile=/etc/vibecode/known_hosts -o ProxyCommand=none \
+     -o BatchMode=yes git@git.example.com
    git -C /srv/git/private-app.git show-ref refs/heads/vibecode/ticket-1-...
    ```
 

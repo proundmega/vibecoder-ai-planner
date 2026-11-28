@@ -1629,6 +1629,11 @@ public class WorkspaceManager {
      * Build the transient GIT_SSH wrapper: host-key checking is mandatory and
      * only the configured known-hosts file is trusted. The key is a 0600 temp
      * file when it came from the backend.
+     *
+     * <p>The known-hosts file and a mounted key must be regular files; symlinks
+     * are rejected so a projected secret cannot be swapped underneath us. A
+     * Kubernetes-style symlinked mount needs {@code subPath} or the PEM through
+     * the credential store.
      */
     void ensureSshHelper() throws IOException {
         if (sshWrapperScript != null && Files.isRegularFile(sshWrapperScript)) {
@@ -1640,7 +1645,9 @@ public class WorkspaceManager {
         }
         Path known = Paths.get(sshKnownHosts).toAbsolutePath();
         if (!Files.isRegularFile(known, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("GIT_SSH_KNOWN_HOSTS does not exist: " + sshKnownHosts);
+            throw new IOException(
+                "GIT_SSH_KNOWN_HOSTS must be a regular file (symlinks rejected): "
+                    + sshKnownHosts);
         }
         Path key;
         sshHelperDir = Files.createTempDirectory("vibecode-ssh-");
@@ -1654,19 +1661,24 @@ public class WorkspaceManager {
             } else if (sshKeyFile != null) {
                 key = Paths.get(sshKeyFile).toAbsolutePath();
                 if (!Files.isRegularFile(key, LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("GIT_SSH_KEY_FILE does not exist: " + sshKeyFile);
+                    throw new IOException(
+                        "GIT_SSH_KEY_FILE must be a regular file (symlinks rejected): "
+                            + sshKeyFile);
                 }
             } else {
                 throw new IOException(
                     "An SSH key is required (project deploy key or GIT_SSH_KEY_FILE)");
             }
             sshWrapperScript = sshHelperDir.resolve("ssh.sh");
+            // -F /dev/null ignores both ~/.ssh/config and /etc/ssh/ssh_config
+            // (ssh(1)); ProxyCommand=none is explicit belt-and-braces hardening.
             String script = "#!/bin/sh\n"
                 + "exec ssh -F /dev/null -i " + shellSingleQuote(key.toString())
                 + " -o IdentitiesOnly=yes"
                 + " -o StrictHostKeyChecking=yes"
                 + " -o UserKnownHostsFile=" + shellSingleQuote(known.toString())
                 + " -o GlobalKnownHostsFile=/dev/null"
+                + " -o ProxyCommand=none"
                 + " -o BatchMode=yes \"$@\"\n";
             Files.writeString(sshWrapperScript, script, StandardCharsets.UTF_8);
             restrictPermissions(sshWrapperScript, "rwx------");
