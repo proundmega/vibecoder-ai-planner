@@ -274,8 +274,9 @@ existing GitHub agent config route.
    missing image fails before any network is created. Then create a per-run
    internal bridge network (`vibecode-services-<suffix>`).
 2. Start each service container with `--pull never`, `--ulimit
-   fsize=<SANDBOX_DISK_MB>` (and `--storage-opt size=<SANDBOX_DISK_MB>` when
-   `SANDBOX_DISK_ENFORCE=true`), its env file, healthcheck flags, bounded
+   fsize=<diskBytes>` (and `--storage-opt size=<diskBytes>` when
+   `SANDBOX_DISK_ENFORCE=true`), where `diskBytes` is the byte equivalent of
+   `SANDBOX_DISK_MB`; also its env file, healthcheck flags, bounded
    memory/PIDs/CPU, `no-new-privileges`, `NET_RAW` dropped, 1 MiB/1-file log
    rotation and an owner label.
 3. Wait for Docker health `healthy`; fail fast on `unhealthy`, `exited`, `dead`
@@ -296,7 +297,8 @@ existing GitHub agent config route.
    profile's whole setup/round budget.
 9. Watch the combined service writable-layer size (`docker inspect --size`) at
    `SANDBOX_DISK_CHECK_INTERVAL_SECONDS`; kill the sandbox and remove the
-   services when `SANDBOX_DISK_MB` is exceeded or measurement fails.
+   services when the byte size exceeds `diskBytes` (derived from
+   `SANDBOX_DISK_MB`) or measurement fails.
 
 ### Service trust decisions
 
@@ -306,8 +308,9 @@ existing GitHub agent config route.
   network and no inbound sandbox access.
 - Service writable layers are bounded: each container gets the sandbox
   `fsize` ulimit and, when `SANDBOX_DISK_ENFORCE=true`, a `storage-opt` size
-  quota; a supervisor watchdog also sums `SizeRw` and fails closed at
-  `SANDBOX_DISK_MB`. Logs remain bounded and `NET_RAW` is dropped.
+  quota; a supervisor watchdog also sums `SizeRw` and fails closed when it
+  exceeds `diskBytes` (derived from `SANDBOX_DISK_MB`). Logs remain bounded and
+  `NET_RAW` is dropped.
 - Service images must already exist on the agent host. A preflight `docker
   image inspect` fails closed and `docker run --pull never` prevents a
   daemon-side pull during a run, so the sandbox egress allowlist is not
