@@ -80,4 +80,37 @@ class AgentAppWiringTest {
         assertSame(provider, field(workspace, "tokenSource"),
             "the workspace must hold the provider object");
     }
+
+    @Test
+    void derivesTheFixWorkerRepoNameFromConfigOrUrl() {
+        AgentConfig config = new AgentConfig();
+        config.setRepoCoordinates("owner", "my-repo");
+        assertEquals("my-repo", AgentApp.repoName(config));
+
+        AgentConfig urlOnly = new AgentConfig() {
+            @Override
+            public String getRepoName() {
+                return null;
+            }
+
+            @Override
+            public String getRepoUrl() {
+                return "https://github.com/owner/url-repo.git";
+            }
+        };
+        assertEquals("url-repo", AgentApp.repoName(urlOnly));
+
+        AgentConfig bare = new AgentConfig() {
+            @Override
+            public String getRepoName() {
+                return null;
+            }
+
+            @Override
+            public String getRepoUrl() {
+                return null;
+            }
+        };
+        assertEquals("repo", AgentApp.repoName(bare));
+    }
 }

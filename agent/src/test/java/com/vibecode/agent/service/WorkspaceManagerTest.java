@@ -2118,6 +2118,37 @@ class WorkspaceManagerTest {
             "https://example.test/r.git", "feat/fix", "not-a-sha"));
     }
 
+    @Test
+    void commitStagedCommitsTheGuardedTreeWithoutPushing() throws Exception {
+        FixRepo repo = initWithFixBranch("commit-staged");
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "commit-staged", false, null);
+        wm.cloneExistingBranch(repo.bare().toString(), "vibecode/fix", repo.reviewedSha());
+        Path repoDir = wm.getRepoDir();
+        Files.writeString(repoDir.resolve("fix.txt"), "fixed\n");
+
+        DiffSummary diff = wm.stageFreshDiff();
+        assertFalse(diff.isEmpty(), "the guarded tree must contain the fix");
+
+        String commit = wm.commitStaged("fix: address review findings");
+
+        // Fix mode commits locally; the fast-forward publish owns the push.
+        assertEquals(repo.reviewedSha(),
+            gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"));
+        assertEquals(repo.reviewedSha(), gitOutput(repoDir, "rev-parse", commit + "^"));
+
+        wm.publishFastForward(commit, "vibecode/fix", repo.reviewedSha());
+        assertEquals(commit,
+            gitOutput(repo.bare(), "rev-parse", "refs/heads/vibecode/fix"));
+    }
+
+    @Test
+    void commitStagedRequiresAMessageAndAGuardedTree() throws Exception {
+        WorkspaceManager wm = new WorkspaceManager(tempDir.toString(), "no-tree", false, null);
+        assertThrows(IOException.class, () -> wm.commitStaged(" "));
+        assertThrows(IOException.class, () -> wm.commitStaged("fix: x"));
+    }
+
     private record FixRepo(Path source, Path bare, String reviewedSha) {
     }
 

@@ -144,13 +144,13 @@ public final class FixTicketProcessor {
                 throw new IOException("publish returned no head SHA");
             }
             published = true;
-            String finishError = finishSucceeded(runId);
+            String finishError = finishSucceeded(runId, headSha);
             return Outcome.done(headSha, elapsed(startedAt), finishError);
         } catch (IOException | RuntimeException error) {
             if (published) {
                 // The commit is on the remote: never downgrade it to a failed
                 // run. Retry the success bookkeeping and report DONE.
-                String finishError = finishSucceeded(runId);
+                String finishError = finishSucceeded(runId, headSha);
                 return Outcome.done(headSha, elapsed(startedAt),
                     "published but " + safe(error)
                         + (finishError == null ? "" : "; " + finishError));
@@ -163,13 +163,13 @@ public final class FixTicketProcessor {
      * Mark the run succeeded, retrying once because fg-33 finish is
      * idempotent. Returns null on success or a reason for the caller.
      */
-    private String finishSucceeded(String runId) {
+    private String finishSucceeded(String runId, String headSha) {
         if (runId == null) {
             return "finishRun skipped: no run id";
         }
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
-                journal.finishRun(runId, true, null);
+                journal.finishRun(runId, true, null, headSha);
                 return null;
             } catch (IOException | RuntimeException error) {
                 if (attempt == 2) {
@@ -183,7 +183,7 @@ public final class FixTicketProcessor {
     private Outcome failRun(String runId, String reason, long durationMs) {
         if (runId != null) {
             try {
-                journal.finishRun(runId, false, reason);
+                journal.finishRun(runId, false, reason, null);
             } catch (IOException | RuntimeException finishError) {
                 reason = reason + "; finishRun failed: " + safe(finishError);
             }
@@ -322,6 +322,11 @@ public final class FixTicketProcessor {
 
         String startRun(FixClaim claim) throws IOException;
 
-        void finishRun(String runId, boolean succeeded, String error) throws IOException;
+        /**
+         * @param headSha the published commit on success, so the run row can
+         *     carry publish evidence for recovery; null otherwise
+         */
+        void finishRun(String runId, boolean succeeded, String error, String headSha)
+            throws IOException;
     }
 }

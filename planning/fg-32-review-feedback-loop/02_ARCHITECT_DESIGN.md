@@ -344,6 +344,31 @@ Add to `ApiService`:
 
 Heartbeat steps: `claiming-fix`, `checking-out`, `fixing`, `verifying`, `publishing-fix`; renew the lease before long steps.
 
+### Production wiring (fg-32c2c3b3b)
+
+`FixWorker` polls one due request per cycle for the runtime's project, claims
+it, and runs `FixTicketProcessor` with the production adapters:
+
+- `Workspace` → `WorkspaceManager.cloneExistingBranch(repoUrl, branch,
+  reviewed_sha)`;
+- `Harness` → sandbox + `SandboxBashBridge`, dependency install, then one
+  OpenCode session through `HarnessPromptRunner` (shared with the reviewer);
+  the environment is opened before the prompt because the fix session edits
+  files through the bridge;
+- `Verification` → `VerificationRunner` through the same sandbox, refusing to
+  publish when no command was detected;
+- `Publisher` → `stageFreshDiff`, `PublishingGuard`, `SecretLeakGuard`,
+  `commitStaged` (new: commit without pushing) and `publishFastForward`; one
+  retry resolves a `possibly_published` failure by re-reading the remote;
+- `Journal` → `renewFix`, `startFixHarnessRun` (`purpose=fix`), then
+  `recordHarnessPublish` plus `finishHarnessRun`, carrying the head SHA.
+
+`FIX_WORKER_ENABLED` is only honoured on a worker runtime with
+`SANDBOX_MODE=docker`; otherwise the cycle logs once and does nothing. The
+prompt carries the ticket's acceptance criteria (`GET
+/tickets/:id/acceptance-criteria`) and its planning documents. Completion
+(`fix/complete`), failure/backoff and the round cap stay in fg-32d2.
+
 ### Existing-branch checkout
 
 `WorkspaceManager.cloneRepo()` creates a new branch with `git checkout -b`. Fix mode needs the existing branch:

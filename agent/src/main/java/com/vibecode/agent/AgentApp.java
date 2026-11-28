@@ -2,6 +2,7 @@ package com.vibecode.agent;
 
 import com.vibecode.agent.config.AgentConfig;
 import com.vibecode.agent.config.RepoCoordinates;
+import com.vibecode.agent.harness.FixWorker;
 import com.vibecode.agent.harness.HarnessConfig;
 import com.vibecode.agent.harness.RedactionRegistry;
 import com.vibecode.agent.harness.HarnessTicketProcessor;
@@ -59,6 +60,8 @@ public class AgentApp {
     private final long providerRefreshIntervalMs;
     private final long providerRefreshJitterMs;
     private final ProfileValidationProcessor profileValidationProcessor;
+    /** fg-32c2c3b3b: fix queue polling for a worker runtime; null when disabled. */
+    private FixWorker fixWorker;
     private ScheduledExecutorService heartbeatScheduler;
     private String githubAccessToken;
     private volatile boolean shuttingDown = false;
@@ -112,6 +115,7 @@ public class AgentApp {
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
         this.gitHubService = wiring.gitHubService();
         this.ticketWorker = wiring.ticketWorker();
+        this.fixWorker = createFixWorker(providerSettings);
         if (ticketWorker instanceof HarnessTicketProcessor harnessWorker) {
             this.profileValidationProcessor = new ProfileValidationProcessor(
                 config, apiService, harnessWorker.sandboxConfig(),
@@ -437,6 +441,7 @@ public class AgentApp {
             githubTokenProvider, githubAccessToken, config.getHarnessConfig());
         this.gitHubService = wiring.gitHubService();
         this.ticketWorker = wiring.ticketWorker();
+        this.fixWorker = createFixWorker(next);
         if (supportsLegacyProvider(next)) {
             this.reviewProcessor = new ReviewProcessor(apiService, aiProvider, config.getRuntimeId());
         } else {
@@ -769,9 +774,55 @@ public class AgentApp {
             log.info("Processed {} ticket(s) this cycle", processed);
         }
 
+        if (fixWorker != null) {
+            // One fix request per cycle, isolated from the build loop: a fix
+            // failure must never cost the worker its next build cycle.
+            try {
+                fixWorker.pollOnce();
+            } catch (RuntimeException e) {
+                log.warn("Fix cycle failed: {}", e.getMessage());
+            }
+        }
+
         // Dry runs run after ticket work so a long profile validation cannot
         // starve the build queue in the same poll cycle.
         pollProfileValidation();
+    }
+
+    /**
+     * A fix worker needs the same provider and git credentials as the build
+     * path. Only worker runtimes poll the fix queue; reviewer/planner runtimes
+     * stay single-purpose.
+     */
+    private FixWorker createFixWorker(ProviderSettings settings) {
+        if (!config.isFixWorkerEnabled() || !config.isBuildMode()) {
+            return null;
+        }
+        FixWorker worker = new FixWorker(
+            config, apiService, settings, githubTokenProvider, githubAccessToken,
+            config.getHarnessConfig(), repoName(config));
+        log.info("Fix worker enabled: polling the fix queue for project {}",
+            config.getProjectId());
+        return worker;
+    }
+
+    /** The workspace key: repo name from config, else the clone URL's last segment. */
+    static String repoName(AgentConfig config) {
+        String name = config.getRepoName();
+        if (name != null && !name.isBlank()) {
+            return name;
+        }
+        String url = config.getRepoUrl();
+        if (url == null || url.isBlank()) {
+            return "repo";
+        }
+        String trimmed = url.replaceAll("/+$", "");
+        int slash = trimmed.lastIndexOf('/');
+        String last = slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
+        if (last.endsWith(".git")) {
+            last = last.substring(0, last.length() - 4);
+        }
+        return last.isBlank() ? "repo" : last;
     }
 
     private void pollProfileValidation() {
