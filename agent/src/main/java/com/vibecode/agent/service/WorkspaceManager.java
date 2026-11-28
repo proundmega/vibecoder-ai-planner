@@ -1676,7 +1676,7 @@ public class WorkspaceManager {
      * file URL for filesystem repositories, or the original URL otherwise.
      */
     private String resolveLocalCloneUrl(String repoUrl) throws IOException {
-        boolean fileUrl = repoUrl.startsWith("file://");
+        boolean fileUrl = isFileUrl(repoUrl);
         boolean absolute;
         try {
             absolute = Paths.get(repoUrl).isAbsolute();
@@ -1716,13 +1716,19 @@ public class WorkspaceManager {
         return repo.toUri().toString();
     }
 
+    private static boolean isFileUrl(String repoUrl) {
+        return repoUrl != null && repoUrl.regionMatches(true, 0, "file://", 0, 7);
+    }
+
     private Path localPath(String repoUrl) throws IOException {
-        if (!repoUrl.startsWith("file://")) {
+        if (!isFileUrl(repoUrl)) {
             return Paths.get(repoUrl);
         }
         URI uri;
         try {
-            uri = URI.create(repoUrl);
+            // URI/Path schemes are lowercase; a mixed-case input still points
+            // at the same local path.
+            uri = URI.create("file" + repoUrl.substring("file".length()));
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid local repository URL", e);
         }

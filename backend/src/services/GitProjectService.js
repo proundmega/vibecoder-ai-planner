@@ -1,6 +1,7 @@
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
 const User = require('../models/user');
+const path = require('path');
 const { pool } = require('../db');
 const PermissionService = require('./PermissionService');
 const GitHubAppAuthService = require('./GitHubAppAuthService');
@@ -39,10 +40,16 @@ class GitProjectService {
         + `explicit ${input.authMode} is not supported`
       );
     }
+    const localFilesystem = providerId === 'local'
+      && typeof input.repoUrl === 'string'
+      && (/^file:\/\//i.test(input.repoUrl.trim())
+        || path.isAbsolute(input.repoUrl.trim()));
     const authMode = input.authMode
       || (providerId === 'github'
         ? globalGithubMode
-        : providerId === 'local' ? 'ssh' : 'pat');
+        : providerId === 'local'
+          ? (localFilesystem ? 'none' : 'ssh')
+          : 'pat');
     if (!capabilities.authModes.includes(authMode)) {
       throw new ValidationError(`Unsupported auth mode for ${providerId}: ${authMode}`);
     }

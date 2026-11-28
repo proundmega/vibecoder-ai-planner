@@ -48,6 +48,23 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void acceptsMixedCaseFileUrlsUnderTheRoot() throws Exception {
+        Path source = initRepo("local-case-source");
+        Path bare = initBare("local-case.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+        String mixed = "FILE" + bare.toUri().toString().substring("file".length());
+
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "local-case-ws", false, null);
+        manager.setLocalRepoRoot(tempDir.toString());
+        manager.cloneRepo(mixed, "vibecode/ticket-1");
+
+        assertTrue(Files.isDirectory(manager.getRepoDir().resolve(".git")));
+    }
+
+    @Test
     void rejectsALocalCloneOutsideTheConfiguredRoot() throws Exception {
         Path source = initRepo("local-outside-source");
         Path bare = initBare("local-outside.git");

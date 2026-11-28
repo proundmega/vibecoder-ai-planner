@@ -134,10 +134,6 @@ class LocalGitProvider {
     if (/^ssh:\/\//i.test(raw)) {
       return parseSshUrl(raw);
     }
-    if (/^file:\/\//i.test(raw) || raw.startsWith('/')) {
-      throw new ValidationError(
-        'Local filesystem paths are deferred to fg-57d2; use an SSH URL');
-    }
     const parsed = parseScpLike(raw);
     if (parsed) return parsed;
     throw new ValidationError(
