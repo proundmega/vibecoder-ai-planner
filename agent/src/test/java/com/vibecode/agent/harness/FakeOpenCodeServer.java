@@ -30,6 +30,7 @@ final class FakeOpenCodeServer implements AutoCloseable {
     private final AtomicReference<String> lastPermissionBody = new AtomicReference<>("");
     private final AtomicReference<String> lastQuestionReplyBody = new AtomicReference<>("");
     private final AtomicReference<String> questionReplyResponse = new AtomicReference<>("true");
+    private final AtomicReference<String> questionRejectResponse = new AtomicReference<>("true");
     private final AtomicReference<String> lastAuthorization = new AtomicReference<>();
     private final AtomicReference<List<String>> events = new AtomicReference<>(List.of());
     private volatile boolean closed;
@@ -72,6 +73,10 @@ final class FakeOpenCodeServer implements AutoCloseable {
 
     void setQuestionReplyResponse(String value) {
         questionReplyResponse.set(value);
+    }
+
+    void setQuestionRejectResponse(String value) {
+        questionRejectResponse.set(value);
     }
 
     String lastPrompt() {
@@ -155,7 +160,7 @@ final class FakeOpenCodeServer implements AutoCloseable {
 
             if (path.startsWith("/question/") && path.endsWith("/reject")
                 && "POST".equals(method)) {
-                respond(exchange, 200, "true");
+                respond(exchange, 200, questionRejectResponse.get());
                 return;
             }
 

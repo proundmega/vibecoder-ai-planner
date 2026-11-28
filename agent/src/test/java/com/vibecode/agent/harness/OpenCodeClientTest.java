@@ -143,6 +143,25 @@ class OpenCodeClientTest {
     }
 
     @Test
+    void questionRejectRejectsA200ThatDoesNotConfirmSuccess() throws Exception {
+        try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
+            OpenCodeClient client = new OpenCodeClient(server.url(), "password", tempDir);
+            client.start(tempDir);
+
+            server.setQuestionRejectResponse("{}");
+            IOException notConfirmed = assertThrows(IOException.class,
+                () -> client.rejectQuestion("ses_test", "que_1", "question"));
+            assertTrue(notConfirmed.getMessage().contains("did not confirm"),
+                notConfirmed.getMessage());
+
+            server.setQuestionRejectResponse("<html>spa fallback</html>");
+            assertThrows(IOException.class,
+                () -> client.rejectQuestion("ses_test", "que_1", "question"));
+            client.close();
+        }
+    }
+
+    @Test
     void healthTimeoutThrows() throws Exception {
         try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
             server.setHealthy(false);
