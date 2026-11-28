@@ -134,6 +134,25 @@ final class FakeOpenCodeServer implements AutoCloseable {
                 respond(exchange, 200, "true");
                 return;
             }
+            if ("/question".equals(path) && "GET".equals(method)) {
+                respond(exchange, 200, "[{\"id\":\"que_1\",\"sessionID\":\"ses_test\","
+                    + "\"questions\":[{\"question\":\"Which theme?\","
+                    + "\"options\":[{\"label\":\"System\"}]}]}]");
+                return;
+            }
+
+            if (path.startsWith("/question/") && path.endsWith("/reply")
+                && "POST".equals(method)) {
+                lastQuestionReplyBody.set(readBody(exchange));
+                respond(exchange, 200, "true");
+                return;
+            }
+
+            if (path.startsWith("/question/") && path.endsWith("/reject")
+                && "POST".equals(method)) {
+                respond(exchange, 200, "true");
+                return;
+            }
 
             if (path.startsWith("/session/") && path.endsWith("/reply")
                 && "POST".equals(method)) {

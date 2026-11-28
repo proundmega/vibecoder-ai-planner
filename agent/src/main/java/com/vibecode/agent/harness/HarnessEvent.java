@@ -98,6 +98,16 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         if (value != null) {
             return value;
         }
+        JsonNode questions = properties.path("questions");
+        if (!questions.isArray()) {
+            questions = payload.path("questions");
+        }
+        if (questions.isArray() && questions.size() > 0) {
+            value = firstText(questions.get(0), "question", "text", "message", "header");
+            if (value != null) {
+                return value;
+            }
+        }
         return firstText(properties.path("info"), "prompt", "question", "text", "message", "title");
     }
 
@@ -108,6 +118,11 @@ public record HarnessEvent(String type, JsonNode payload, long timestampMs) {
         JsonNode options = payload.path("options");
         if (options.isMissingNode() || options.isNull()) {
             options = payload.path("properties").path("options");
+        }
+        JsonNode questions = payload.path("properties").path("questions");
+        if ((options.isMissingNode() || options.isNull())
+            && questions.isArray() && questions.size() > 0) {
+            options = questions.get(0).path("options");
         }
         if (options.isMissingNode() || options.isNull()) {
             options = payload.path("properties").path("info").path("options");
