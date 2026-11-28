@@ -31,6 +31,151 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class WorkspaceManagerTest {
 
+    @Test
+    void onlyAuthenticatesAgainstTheConfiguredProviderOrigin() {
+        WorkspaceManager manager = new WorkspaceManager(
+            "/tmp/ws", "repo", false, "token", () -> "token", null,
+            "https://git.example.com");
+
+        assertTrue(manager.shouldAuthenticate("https://git.example.com/group/repo.git"));
+        assertFalse(manager.shouldAuthenticate("https://evil.example.com/group/repo.git"));
+        assertFalse(manager.shouldAuthenticate("http://git.example.com/group/repo.git"));
+        assertFalse(manager.shouldAuthenticate("ssh://git@git.example.com/group/repo.git"));
+    }
+
+    @Test
+    void configuredNonHttpsOriginsFailClosed() {
+        for (String configured : List.of(
+            "http://git.example.com",
+            "ssh://git@git.example.com",
+            "not a url")) {
+            WorkspaceManager manager = new WorkspaceManager(
+                "/tmp/ws", "repo", false, "token", () -> "token", null, configured);
+
+            assertFalse(manager.shouldAuthenticate("https://git.example.com/group/repo.git"),
+                configured + " must not authenticate an https remote");
+            assertFalse(manager.shouldAuthenticate("http://git.example.com/group/repo.git"),
+                configured + " must not authenticate an http remote");
+            assertFalse(manager.shouldAuthenticate("ssh://git@git.example.com/group/repo.git"),
+                configured + " must not authenticate an ssh remote");
+        }
+    }
+
+    @Test
+    void configuredOriginWithoutAReadableRemoteFailsClosed() throws Exception {
+        WorkspaceManager configured = new WorkspaceManager(
+            tempDir.toString(), "repo", false, "token", () -> "token", null,
+            "https://git.example.com");
+        setRepoDir(configured, Files.createDirectories(tempDir.resolve("no-origin-repo")));
+        assertFalse(configured.shouldAuthenticateRemote(),
+            "a configured origin must not authenticate when the remote is unreadable");
+
+        WorkspaceManager legacy = new WorkspaceManager(
+            tempDir.toString(), "legacy-repo", false, "token", () -> "token");
+        setRepoDir(legacy, Files.createDirectories(tempDir.resolve("legacy-no-origin")));
+        assertTrue(legacy.shouldAuthenticateRemote(),
+            "legacy construction keeps the old behaviour");
+    }
+
+    @Test
+    void askPassScriptAllowsOnlyTheExactHttpsAuthority() throws Exception {
+        assumePosix();
+        Path script = writeAskPassScript("git.example.com");
+
+        assertEquals("secret", runAskPass(script, "Password for 'https://git.example.com':"));
+        assertEquals("secret", runAskPass(script, "Password for 'https://git.example.com:443':"));
+        // Git repeats the username in the password prompt after oauth2.
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://oauth2@git.example.com':"));
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://oauth2@git.example.com:443':"));
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://user:pass@git.example.com':"));
+        // Hosts are case-insensitive; the guard normalizes the authority.
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://oauth2@Git.Example.COM':"));
+        assertEquals("secret",
+            runAskPass(script, "Password for 'https://GIT.EXAMPLE.COM:443':"));
+        // URL schemes are case-insensitive too.
+        assertEquals("secret",
+            runAskPass(script, "Password for 'HTTPS://oauth2@git.example.com':"));
+        assertEquals("oauth2", runAskPass(script, "Username for 'Https://git.example.com/':"));
+
+        for (String prompt : List.of(
+            "Password for 'https://git.example.com.evil.com':",
+            "Password for 'https://notgit.example.com':",
+            "Password for 'http://git.example.com':",
+            "Password for 'http://oauth2@git.example.com':",
+            "Password for 'https://git.example.com:444':",
+            "Password for 'https://oauth2@git.example.com:444':",
+            "Password for 'https://oauth2@GIT.EXAMPLE.COM.EVIL.COM':",
+            "Password for 'HTTPS://oauth2@git.example.com.evil.com':",
+            "Password for 'https://evil.com/?next=https://git.example.com':")) {
+            assertNotEquals("secret", runAskPass(script, prompt), prompt);
+        }
+
+        Path portScript = writeAskPassScript("git.example.com:8443");
+        assertEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com:8443/':"));
+        assertEquals("secret",
+            runAskPass(portScript, "Password for 'https://oauth2@git.example.com:8443':"));
+        assertNotEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com':"));
+        assertNotEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com:443':"));
+        assertNotEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com:8443.evil.com':"));
+
+        Path ipv6 = writeAskPassScript("[::1]");
+        assertEquals("secret", runAskPass(ipv6, "Password for 'https://[::1]':"));
+        assertEquals("secret", runAskPass(ipv6, "Password for 'https://[::1]:443':"));
+        assertNotEquals("secret", runAskPass(ipv6, "Password for 'https://[::1]:444':"));
+
+        Path ipv6Port = writeAskPassScript("[::1]:8443");
+        assertEquals("secret", runAskPass(ipv6Port, "Password for 'https://[::1]:8443':"));
+        assertNotEquals("secret", runAskPass(ipv6Port, "Password for 'https://[::1]:443':"));
+    }
+
+    private Path writeAskPassScript(String authority) throws Exception {
+        Path script = Files.createFile(
+            tempDir.resolve("askpass-" + authority.replace(':', '-') + ".sh"));
+        Files.writeString(script, WorkspaceManager.askPassScript("secret", authority));
+        Files.setPosixFilePermissions(script,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        return script;
+    }
+
+    private String runAskPass(Path script, String prompt) throws Exception {
+        Process process = new ProcessBuilder("sh", script.toString(), prompt)
+            .redirectErrorStream(true)
+            .start();
+        String output = new String(
+            process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        int exitCode = process.waitFor();
+        return exitCode == 0 ? output : "";
+    }
+
+    @Test
+    void normalizesTheTokenOrigin() {
+        assertEquals("https://github.com",
+            WorkspaceManager.httpsOrigin("https://GitHub.com/owner/repo.git"));
+        assertEquals("https://github.com",
+            WorkspaceManager.httpsOrigin("https://github.com:443/owner/repo.git"));
+        assertEquals("https://git.example.com:8443",
+            WorkspaceManager.httpsOrigin("https://git.example.com:8443/group/repo.git"));
+        assertNull(WorkspaceManager.httpsOrigin("ssh://git@git.example.com/group/repo.git"));
+        assertNull(WorkspaceManager.httpsOrigin(null));
+    }
+
+    @Test
+    void legacyConstructionWithoutAnOriginKeepsTheOldBehaviour() {
+        WorkspaceManager manager = new WorkspaceManager(
+            "/tmp/ws", "repo", false, "token", () -> "token");
+
+        assertTrue(manager.shouldAuthenticate("https://anything.example.com/repo.git"));
+        assertTrue(manager.shouldAuthenticate("ssh://git@anything.example.com/repo.git"));
+    }
+
     @TempDir
     Path tempDir;
 

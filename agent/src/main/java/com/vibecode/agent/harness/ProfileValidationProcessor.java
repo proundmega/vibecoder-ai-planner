@@ -50,7 +50,8 @@ public class ProfileValidationProcessor {
             sandboxRunner,
             repoName -> new WorkspaceManager(
                 config.getRepoCloneDir(), repoName, config.isDryRun(),
-                githubToken, tokenSource),
+                githubToken, tokenSource, null,
+                HarnessTicketProcessor.tokenOrigin(config)),
             new VerificationRunner()
         );
     }

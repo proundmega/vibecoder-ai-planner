@@ -51,11 +51,13 @@ class AgentAppRepoConfigTest {
         boolean applied = AgentApp.applyRepoCoordinates(config, Map.of(
             "repoUrl", "https://git.example.com/group/repo.git",
             "provider", "Forgejo",
-            "authMode", "PAT"));
+            "authMode", "PAT",
+            "providerBaseUrl", "https://git.example.com"));
 
         assertTrue(applied);
         assertEquals("forgejo", config.getRepoProvider());
         assertEquals("pat", config.getRepoAuthMode());
+        assertEquals("https://git.example.com", config.getRepoBaseUrl());
     }
 
     @Test
@@ -122,6 +124,20 @@ class AgentAppRepoConfigTest {
 
         assertEquals("server-org", config.owner);
         assertEquals("server-repo", config.name);
+    }
+
+    @Test
+    void canonicalizesTheGitHubOwnerRepoShorthand() {
+        AgentConfig config = new AgentConfig();
+        config.setRepoUrl("owner/repo");
+
+        assertEquals("https://github.com/owner/repo.git", config.getRepoUrl());
+
+        config.setRepoUrl("owner/repo.git");
+        assertEquals("https://github.com/owner/repo.git", config.getRepoUrl());
+
+        config.setRepoProvider("forgejo");
+        assertEquals("owner/repo.git", config.getRepoUrl());
     }
 
     static class TokenModeConfig extends AgentConfig {

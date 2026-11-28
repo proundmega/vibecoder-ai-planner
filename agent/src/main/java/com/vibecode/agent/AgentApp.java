@@ -307,6 +307,10 @@ public class AgentApp {
         if (provider instanceof String value && !value.isBlank()) {
             config.setRepoProvider(value);
         }
+        Object baseUrl = repoConfig.get("providerBaseUrl");
+        if (baseUrl instanceof String value && !value.isBlank()) {
+            config.setRepoBaseUrl(value);
+        }
         Object authMode = repoConfig.get("authMode");
         if (authMode instanceof String value && !value.isBlank()) {
             config.setRepoAuthMode(value);

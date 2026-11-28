@@ -61,6 +61,18 @@ import static org.mockito.Mockito.when;
 
 class HarnessTicketProcessorTest {
 
+    @Test
+    void tokenOriginPrefersTheProviderBaseUrl() {
+        AgentConfig tokenConfig = new AgentConfig();
+        tokenConfig.setRepoUrl("https://github.com/owner/repo.git");
+        assertEquals("https://github.com/owner/repo.git",
+            HarnessTicketProcessor.tokenOrigin(tokenConfig));
+
+        tokenConfig.setRepoBaseUrl("https://git.example.com");
+        assertEquals("https://git.example.com",
+            HarnessTicketProcessor.tokenOrigin(tokenConfig));
+    }
+
     @TempDir
     Path tempDir;
 

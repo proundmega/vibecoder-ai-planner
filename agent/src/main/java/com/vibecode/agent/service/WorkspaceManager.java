@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -93,6 +94,8 @@ public class WorkspaceManager {
     private final String repoCloneDir;
     private final Path cloneRoot;
     private final String repoName;
+    private final String allowedTokenOrigin;
+    private final boolean tokenOriginConfigured;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -100,19 +103,44 @@ public class WorkspaceManager {
     private Path askPassDirectory;
     private Path askPassScript;
 
+    /**
+     * Legacy constructors without a token origin. They keep the pre-D16
+     * unrestricted token behaviour and are for tests/direct construction only;
+     * production wiring must use the origin-aware constructor.
+     *
+     * @deprecated use the constructor that takes the provider token origin
+     */
+    @Deprecated
     public WorkspaceManager(String repoCloneDir, String repoName, boolean dryRun, String githubToken) {
-        this(repoCloneDir, repoName, dryRun, githubToken, null);
+        this(repoCloneDir, repoName, dryRun, githubToken, null, null, null);
     }
 
+    /** @deprecated use the constructor that takes the provider token origin */
+    @Deprecated
     public WorkspaceManager(
         String repoCloneDir, String repoName, boolean dryRun,
         String githubToken, GitHubTokenSource tokenSource) {
-        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, null);
+        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, null, null);
     }
 
+    /** @deprecated use the constructor that takes the provider token origin */
+    @Deprecated
     public WorkspaceManager(
         String repoCloneDir, String repoName, boolean dryRun,
         String githubToken, GitHubTokenSource tokenSource, String workspaceKey) {
+        this(repoCloneDir, repoName, dryRun, githubToken, tokenSource, workspaceKey, null);
+    }
+
+    /**
+     * @param tokenOrigin the only https origin allowed to receive the bearer
+     *     token (the configured provider base/repo origin). Null keeps the
+     *     legacy unrestricted behaviour for direct construction; production
+     *     wiring always passes the configured origin.
+     */
+    public WorkspaceManager(
+        String repoCloneDir, String repoName, boolean dryRun,
+        String githubToken, GitHubTokenSource tokenSource, String workspaceKey,
+        String tokenOrigin) {
         this.repoCloneDir = repoCloneDir;
         this.cloneRoot = Paths.get(repoCloneDir).toAbsolutePath().normalize();
         this.repoName = repoName;
@@ -122,6 +150,8 @@ public class WorkspaceManager {
         this.tokenSource = tokenSource != null ? tokenSource : () -> githubToken;
         this.credentialHelperScript = null;
         this.repoDir = null;
+        this.tokenOriginConfigured = tokenOrigin != null && !tokenOrigin.isBlank();
+        this.allowedTokenOrigin = httpsOrigin(tokenOrigin);
     }
 
     /** Set the ticket id (or other key) used for the runtime-scoped layout. */
@@ -450,7 +480,8 @@ public class WorkspaceManager {
         throws IOException {
         String token = currentToken();
         boolean authenticate = token != null && !token.isBlank()
-            && repoUrl.startsWith("https://");
+            && repoUrl.startsWith("https://")
+            && shouldAuthenticate(repoUrl);
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -567,7 +598,8 @@ public class WorkspaceManager {
         // can overwrite a branch only if the remote has not moved.
         String pushTarget = "origin";
         String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank();
+        boolean authenticate = token != null && !token.isBlank()
+            && shouldAuthenticateRemote();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -773,7 +805,8 @@ public class WorkspaceManager {
      */
     private void runWithCredentials(GitOperation operation) throws IOException {
         String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank();
+        boolean authenticate = token != null && !token.isBlank()
+            && shouldAuthenticateRemote();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -1378,12 +1411,7 @@ public class WorkspaceManager {
         cleanupAskPass();
         askPassDirectory = Files.createTempDirectory("vibecode-askpass-");
         askPassScript = askPassDirectory.resolve("askpass.sh");
-        String token = shellSingleQuote(rawToken == null ? "" : rawToken);
-        String script = "#!/bin/sh\n"
-            + "case \"$1\" in\n"
-            + "  *Username*) printf '%s\\n' 'oauth2' ;;\n"
-            + "  *) printf '%s\\n' " + token + " ;;\n"
-            + "esac\n";
+        String script = askPassScript(rawToken, authorityOf(allowedTokenOrigin));
         Files.writeString(askPassScript, script, StandardCharsets.UTF_8);
         if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
             Files.setPosixFilePermissions(
@@ -1412,6 +1440,99 @@ public class WorkspaceManager {
                 // Best effort.
             }
         }
+    }
+
+    /**
+     * Askpass helper. When an origin is configured, the prompt must mention its
+     * host before any credential is returned, so a redirected remote cannot
+     * harvest the token even if git follows it.
+     */
+    static String askPassScript(String rawToken, String allowedAuthority) {
+        String token = shellSingleQuote(rawToken == null ? "" : rawToken);
+        StringBuilder script = new StringBuilder("#!/bin/sh\n");
+        if (allowedAuthority != null && !allowedAuthority.isBlank()) {
+            // Case-insensitive shell patterns, built from character classes so
+            // the helper stays a POSIX-sh script with no external commands.
+            String authorityPattern = caseInsensitivePattern(allowedAuthority);
+            String allowed = authorityPattern;
+            // A colon inside an IPv6 literal is not a port separator.
+            boolean hasPort;
+            if (allowedAuthority.startsWith("[")) {
+                int close = allowedAuthority.indexOf(']');
+                hasPort = close >= 0 && close + 1 < allowedAuthority.length()
+                    && allowedAuthority.charAt(close + 1) == ':';
+            } else {
+                hasPort = allowedAuthority.contains(":");
+            }
+            if (!hasPort) {
+                // Only the default port is additionally valid when none was
+                // configured explicitly.
+                allowed += "|" + authorityPattern + ":443";
+            }
+            script.append("case \"$1\" in\n")
+                .append("  *\"'\"*\"'\"*) url=${1#*\\'}; url=${url%%\\'*} ;;\n")
+                .append("  *) exit 1 ;;\n")
+                .append("esac\n")
+                .append("case \"$url\" in\n")
+                .append("  */) url=${url%/} ;;\n")
+                .append("esac\n")
+                // Git's password prompt repeats the username it just received
+                // (https://oauth2@host). Strip only authority userinfo; a path
+                // or query is not a valid auth prompt and is rejected.
+                .append("case \"$url\" in\n")
+                .append("  [hH][tT][tT][pP][sS]://*/*) exit 1 ;;\n")
+                .append("  [hH][tT][tT][pP][sS]://*)\n")
+                .append("    authority=${url#*://}\n")
+                .append("    authority=${authority##*@}\n")
+                .append("    ;;\n")
+                .append("  *) exit 1 ;;\n")
+                .append("esac\n")
+                .append("case \"$authority\" in\n")
+                .append("  ").append(allowed).append(") ;;\n")
+                .append("  *) exit 1 ;;\n")
+                .append("esac\n");
+        }
+        return script
+            .append("case \"$1\" in\n")
+            .append("  *Username*) printf '%s\\n' 'oauth2' ;;\n")
+            .append("  *) printf '%s\\n' ").append(token).append(" ;;\n")
+            .append("esac\n")
+            .toString();
+    }
+
+    /**
+     * Build a shell case pattern that matches the literal value
+     * case-insensitively: letters become {@code [aA]} classes and every other
+     * run is single-quoted. Uses only POSIX-sh pattern syntax.
+     */
+    static String caseInsensitivePattern(String value) {
+        StringBuilder pattern = new StringBuilder();
+        StringBuilder literal = new StringBuilder();
+        for (char c : value.toCharArray()) {
+            if (c < 128 && Character.isLetter(c)) {
+                if (literal.length() > 0) {
+                    pattern.append(shellSingleQuote(literal.toString()));
+                    literal.setLength(0);
+                }
+                pattern.append('[')
+                    .append(Character.toLowerCase(c))
+                    .append(Character.toUpperCase(c))
+                    .append(']');
+            } else {
+                literal.append(c);
+            }
+        }
+        if (literal.length() > 0) {
+            pattern.append(shellSingleQuote(literal.toString()));
+        }
+        return pattern.toString();
+    }
+
+    private static String authorityOf(String origin) {
+        if (origin == null) {
+            return null;
+        }
+        return origin.startsWith("https://") ? origin.substring("https://".length()) : null;
     }
 
     private static String shellSingleQuote(String value) {
@@ -1494,6 +1615,69 @@ public class WorkspaceManager {
             || lower.contains("invalid username or password")
             || lower.contains("http 401")
             || lower.contains("returned error: 401");
+    }
+
+    /**
+     * Normalize an https URL to {@code scheme://host[:port]}, dropping any
+     * credentials, path and query. Returns null for non-https URLs.
+     */
+    static String httpsOrigin(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(rawUrl.trim());
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null) {
+                return null;
+            }
+            String host = uri.getHost().toLowerCase(Locale.ROOT);
+            int port = uri.getPort();
+            return port == -1 || port == 443
+                ? "https://" + host
+                : "https://" + host + ":" + port;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Only send the bearer token to the configured provider origin. The token
+     * is never sent over http, to an ssh/file remote, or to another host.
+     */
+    boolean shouldAuthenticate(String repoUrl) {
+        if (!tokenOriginConfigured) {
+            return true; // legacy direct construction; production always configures one
+        }
+        // A configured origin that does not normalize to https (http, ssh,
+        // malformed) must fail closed instead of falling into the legacy path.
+        String origin = httpsOrigin(repoUrl);
+        return origin != null && origin.equals(allowedTokenOrigin);
+    }
+
+    /** Read the publishing remote's URL; a failure returns null. */
+    private String remoteOriginUrl() {
+        try {
+            return runGitCommand("remote", "get-url", "origin").trim();
+        } catch (IOException e) {
+            log.debug("Could not read the origin URL: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Decide authentication for the publishing remote. Publishing restores the
+     * clone-time config first, so the remote is the URL the workspace was
+     * cloned from. Direct construction (tests) with no configured origin keeps
+     * the legacy authenticated behaviour.
+     */
+    boolean shouldAuthenticateRemote() {
+        String remote = remoteOriginUrl();
+        if (remote == null || remote.isBlank()) {
+            // No readable remote: legacy direct construction keeps the old
+            // behaviour; any configured origin (https or not) fails closed.
+            return !tokenOriginConfigured;
+        }
+        return shouldAuthenticate(remote);
     }
 
     private String currentToken() throws IOException {

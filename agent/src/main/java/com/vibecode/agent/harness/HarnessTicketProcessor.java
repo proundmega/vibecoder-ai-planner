@@ -179,7 +179,8 @@ public final class HarnessTicketProcessor implements TicketWorker {
             githubToken,
             harnessConfig,
             repoName -> new WorkspaceManager(
-                config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource),
+                config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource,
+                null, tokenOrigin(config)),
             (tempDir, bridge, effectiveConfig) ->
                 new OpenCodeClient(effectiveConfig, provider, tempDir, bridge),
             new PlanningDocFetcher(apiService, config),
@@ -312,6 +313,15 @@ public final class HarnessTicketProcessor implements TicketWorker {
         this.secretLeakGuard = new SecretLeakGuard(knownSecrets(provider, githubToken));
         this.redactor = new SecretRedactor(redactionSecrets(provider, githubToken));
         this.eventSink = new HttpHarnessEventSink(apiService);
+    }
+
+    /**
+     * The only origin allowed to receive the HTTPS bearer token. Self-hosted
+     * providers expose their base URL; GitHub derives it from the clone URL.
+     */
+    static String tokenOrigin(AgentConfig config) {
+        String base = config.getRepoBaseUrl();
+        return base != null && !base.isBlank() ? base : config.getRepoUrl();
     }
 
     private static GitService defaultGitService(AgentConfig config, GitHubService gitHubService) {

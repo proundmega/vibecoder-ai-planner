@@ -76,6 +76,7 @@ public class AgentConfig {
     private final String gitSshKeyFile;
     private final String gitSshKnownHosts;
     private String repoUrl;
+    private String repoBaseUrl;
     private String repoProvider = "github";
     private String repoAuthMode;
     private final boolean allowPat;
@@ -253,7 +254,20 @@ public class AgentConfig {
 
     /** Canonical repository URL from the backend; falls back to GitHub coordinates. */
     public String getRepoUrl() {
-        if (repoUrl != null && !repoUrl.isBlank()) return repoUrl;
+        if (repoUrl != null && !repoUrl.isBlank()) {
+            String value = repoUrl.trim();
+            // GitHub accepts the owner/repo shorthand; the clone needs a URL.
+            if ("github".equals(repoProvider)
+                && value.matches("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) {
+                String slug = value.endsWith(".git")
+                    ? value.substring(0, value.length() - ".git".length())
+                    : value;
+                if (slug.matches("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) {
+                    return "https://github.com/" + slug + ".git";
+                }
+            }
+            return value;
+        }
         if (hasRepoCoordinates()) {
             return "https://github.com/" + repoOwner + "/" + repoName + ".git";
         }
@@ -265,6 +279,15 @@ public class AgentConfig {
     }
 
     public String getRepoProvider() { return repoProvider; }
+
+    /** Provider base URL from the backend (self-hosted hosts); null for GitHub. */
+    public String getRepoBaseUrl() { return repoBaseUrl; }
+
+    public void setRepoBaseUrl(String repoBaseUrl) {
+        this.repoBaseUrl = repoBaseUrl == null || repoBaseUrl.isBlank()
+            ? null
+            : repoBaseUrl.trim();
+    }
 
     public void setRepoProvider(String provider) {
         if (provider != null && !provider.isBlank()) {
