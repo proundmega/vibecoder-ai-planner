@@ -622,8 +622,9 @@ public class ApiService implements QuestionBridge.Transport {
         );
         if (response.hasError()) {
             // CONFLICT: another live lease owns it. NOT_FOUND: the request
-            // completed/requeued or the ticket left in_progress between the
-            // queue list and this claim. Both are a normal skip.
+            // completed/requeued, the ticket left in_progress, or the ticket
+            // was deleted between the queue list and this claim. All are a
+            // normal skip; the backend does not separate the 404 causes.
             if (isErrorCode(response, "CONFLICT") || isErrorCode(response, "NOT_FOUND")) {
                 return null;
             }
@@ -647,8 +648,9 @@ public class ApiService implements QuestionBridge.Transport {
             new TypeReference<ApiResponse<Map<String, Object>>>() {}
         );
         if (response.hasError()) {
-            // CONFLICT or NOT_FOUND both mean the lease is gone; the worker
-            // must stop before publishing rather than retry.
+            // CONFLICT or NOT_FOUND both mean the lease is gone (or the
+            // ticket was deleted); the worker stops before publishing rather
+            // than retrying, which is safe in either case.
             if (isErrorCode(response, "CONFLICT") || isErrorCode(response, "NOT_FOUND")) {
                 return false;
             }

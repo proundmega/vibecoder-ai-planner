@@ -32,7 +32,7 @@ class ApiServiceFixQueueTest {
     private record StubResponse(int status, String body) {}
 
     private record RecordedRequest(
-        String method, String path, String query, String runtime, String body) {}
+        String method, String path, String query, String apiKey, String runtime, String body) {}
 
     private HttpServer server;
     private ApiService api;
@@ -50,6 +50,7 @@ class ApiServiceFixQueueTest {
                 exchange.getRequestMethod(),
                 exchange.getRequestURI().getPath(),
                 exchange.getRequestURI().getQuery(),
+                exchange.getRequestHeaders().getFirst("X-API-Key"),
                 exchange.getRequestHeaders().getFirst("X-Agent-Runtime"),
                 body
             ));
@@ -98,6 +99,18 @@ class ApiServiceFixQueueTest {
         assertEquals("/api/v1/agents/fix-queue", request.path());
         assertEquals("projectId=5&limit=3", request.query());
         assertEquals("3", request.runtime());
+        assertEquals("test-agent-key", request.apiKey());
+    }
+
+    @Test
+    void listFailsOnARealError() {
+        stub("/api/v1/agents/fix-queue", 500,
+            "{\"success\":false,\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}");
+        assertThrows(java.io.IOException.class, () -> api.listFixQueue(5, 0));
+
+        stub("/api/v1/agents/fix-queue", 403,
+            "{\"success\":false,\"error\":{\"code\":\"FORBIDDEN\",\"message\":\"nope\"}}");
+        assertThrows(java.io.IOException.class, () -> api.listFixQueue(5, 0));
     }
 
     @Test
@@ -159,6 +172,7 @@ class ApiServiceFixQueueTest {
         assertEquals("/api/v1/tickets/42/fix/renew", renew.path());
         assertEquals("{\"leaseSeconds\":60}", renew.body());
         assertEquals("3", renew.runtime());
+        assertEquals("test-agent-key", renew.apiKey());
 
         stub("/api/v1/tickets/42/fix/renew", 409,
             "{\"success\":false,\"error\":{\"code\":\"CONFLICT\","
@@ -173,5 +187,16 @@ class ApiServiceFixQueueTest {
         stub("/api/v1/tickets/42/fix/renew", 500,
             "{\"success\":false,\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}");
         assertThrows(java.io.IOException.class, () -> api.renewFix(42, 60));
+    }
+
+    @Test
+    void renewOmitsAQuietLease() throws Exception {
+        stub("/api/v1/tickets/42/fix/renew", 200,
+            "{\"success\":true,\"data\":{\"request\":{\"id\":\"req-1\"}}}");
+
+        assertTrue(api.renewFix(42, null));
+        assertEquals("{}", requests.get(0).body());
+        assertTrue(api.renewFix(42, 0));
+        assertEquals("{}", requests.get(1).body());
     }
 }
