@@ -38,10 +38,10 @@ const PROVIDERS = Object.freeze({
     reviewName: 'merge request',
     authModes: ['pat', 'project_token'],
   }),
-  local: capabilities('local', 'Local bare repository', {
+  local: capabilities('local', 'Local repository', {
     review: false,
     reviewName: 'branch',
-    authModes: ['ssh'],
+    authModes: ['ssh', 'none'],
   }),
 });
 

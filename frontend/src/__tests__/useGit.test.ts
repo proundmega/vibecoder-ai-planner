@@ -107,6 +107,22 @@ describe('useGit', () => {
     expect(git.showConnectForm.value).toBe(false)
   })
 
+  it('connects a local repository without sending a credential', async () => {
+    const git = useGit(1)
+    git.form.provider = 'local'
+    git.form.repoUrl = 'file:///srv/git/repo.git'
+    git.form.authMode = 'none'
+    git.form.token = 'stale-token'
+
+    await git.connect()
+
+    expect(mockPost).toHaveBeenCalledWith('/api/v1/git/1/repo/connect', {
+      provider: 'local',
+      repoUrl: 'file:///srv/git/repo.git',
+      authMode: 'none',
+    })
+  })
+
   it('disconnects the requested provider', async () => {
     const git = useGit(1)
     await git.load()

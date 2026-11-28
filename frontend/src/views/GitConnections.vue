@@ -19,7 +19,7 @@ const reviewDescription = ref('')
 
 const repoPlaceholder = computed(() => {
   if (form.provider === 'github') return 'https://github.com/owner/repo'
-  if (form.provider === 'local') return 'ssh://git@host/path'
+  if (form.provider === 'local') return 'ssh://git@host/path or file:///srv/git/repo.git'
   return 'owner/repo'
 })
 
@@ -107,7 +107,10 @@ onMounted(load)
           </label>
           <small v-else>GitHub auth mode is deployment-wide and chosen by the backend.</small>
 
-          <label v-if="form.authMode !== 'ssh'" class="field">
+          <label
+            v-if="['app', 'pat', 'project_token'].includes(form.authMode)"
+            class="field"
+          >
             <span>Access token</span>
             <input v-model="form.token" type="password" placeholder="Scoped repository token" />
             <small v-if="form.authMode === 'app'">

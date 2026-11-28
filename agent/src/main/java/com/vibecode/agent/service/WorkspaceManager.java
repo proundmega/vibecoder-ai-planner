@@ -96,6 +96,8 @@ public class WorkspaceManager {
     private final String repoName;
     private final String allowedTokenOrigin;
     private final boolean tokenOriginConfigured;
+    private String localRepoRoot;
+    private boolean localRootConfigured;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -152,6 +154,16 @@ public class WorkspaceManager {
         this.repoDir = null;
         this.tokenOriginConfigured = tokenOrigin != null && !tokenOrigin.isBlank();
         this.allowedTokenOrigin = httpsOrigin(tokenOrigin);
+    }
+
+    /**
+     * Confine filesystem clones to this root. Calling this (as production
+     * wiring always does) makes a missing root fail closed; not calling it
+     * keeps the legacy direct-construction behaviour for tests.
+     */
+    public void setLocalRepoRoot(String root) {
+        this.localRootConfigured = true;
+        this.localRepoRoot = root == null || root.isBlank() ? null : root.trim();
     }
 
     /** Set the ticket id (or other key) used for the runtime-scoped layout. */
@@ -360,6 +372,7 @@ public class WorkspaceManager {
         Duration cloneTimeout
     ) throws IOException {
         prepareWorkspace();
+        assertLocalCloneAllowed(repoUrl);
         log.info("Cloning repo from {} to {}", repoUrl, repoDir);
         if (dryRun) {
             log.info("[DRY RUN] Would clone {} to {}", repoUrl, repoDir);
@@ -1652,6 +1665,58 @@ public class WorkspaceManager {
         // malformed) must fail closed instead of falling into the legacy path.
         String origin = httpsOrigin(repoUrl);
         return origin != null && origin.equals(allowedTokenOrigin);
+    }
+
+    /** Local file clones must stay under the configured root in production. */
+    private void assertLocalCloneAllowed(String repoUrl) throws IOException {
+        boolean fileUrl = repoUrl.startsWith("file://");
+        boolean absolute;
+        try {
+            absolute = Paths.get(repoUrl).isAbsolute();
+        } catch (RuntimeException e) {
+            absolute = false;
+        }
+        if (!fileUrl && !absolute) {
+            return;
+        }
+        if (!localRootConfigured) {
+            return; // legacy direct construction/tests
+        }
+        if (localRepoRoot == null) {
+            throw new IOException("Local repositories require GIT_LOCAL_ROOT");
+        }
+        Path root;
+        Path repo;
+        try {
+            root = Paths.get(localRepoRoot).toRealPath();
+            repo = localPath(repoUrl).toRealPath();
+        } catch (IOException e) {
+            throw new IOException("Local repository path does not exist", e);
+        }
+        if (!repo.startsWith(root)) {
+            throw new IOException("Local repository is outside the configured root");
+        }
+    }
+
+    private Path localPath(String repoUrl) throws IOException {
+        if (!repoUrl.startsWith("file://")) {
+            return Paths.get(repoUrl);
+        }
+        URI uri;
+        try {
+            uri = URI.create(repoUrl);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid local repository URL", e);
+        }
+        if (uri.getHost() != null && !uri.getHost().isBlank()
+            && !"localhost".equalsIgnoreCase(uri.getHost())) {
+            throw new IOException("Local file URL must not name a remote host");
+        }
+        try {
+            return Paths.get(uri);
+        } catch (RuntimeException e) {
+            throw new IOException("Invalid local repository URL", e);
+        }
     }
 
     /** Read the publishing remote's URL; a failure returns null. */

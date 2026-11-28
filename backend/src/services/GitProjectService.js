@@ -78,7 +78,10 @@ class GitProjectService {
     }
     // Self-hosted providers expand an `owner/repo` shorthand into a clone URL;
     // store that canonical form so the agent receives a usable remote.
-    const repoUrl = capabilities.requiresBaseUrl && parsedRepo.cloneUrl
+    // Self-hosted providers store their canonical clone URL; local paths are
+    // canonicalized to file:// so the agent and backend agree on the root.
+    const repoUrl = parsedRepo.cloneUrl
+      && (capabilities.requiresBaseUrl || providerId === 'local')
       ? parsedRepo.cloneUrl
       : input.repoUrl;
     const validation = await provider.validateRepoAccess(repoUrl, token || sshKey);

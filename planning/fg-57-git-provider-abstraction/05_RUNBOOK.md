@@ -125,6 +125,32 @@ If GitLab is too heavy for the environment, implement and test against a
 faithful API fake first; keep the real-instance verification as a later
 follow-up.
 
+## Local filesystem repository
+
+1. Create or reuse a git repository under a root you control:
+
+   ```bash
+   git init --bare /srv/git/private-app.git
+   ```
+
+2. Set the **same absolute root** on both sides:
+
+   - backend: `LOCAL_GIT_ROOT=/srv/git`
+   - agent: `GIT_LOCAL_ROOT=/srv/git`
+
+   Host mode shares the filesystem. In Docker sandbox mode, bind the root at the
+   same absolute path inside the sandbox; a path the sandbox cannot see fails
+   the clone.
+
+3. Connect with provider `local`, `file:///srv/git/private-app.git` (or the
+   absolute path) and auth mode `none`. The backend resolves the real path,
+   requires it under `LOCAL_GIT_ROOT`, verifies it is a git repository and
+   records the default branch. No credential is stored.
+4. Run one ticket. The harness clones from the local path, pushes the branch and
+   finishes with branch + SHA; review locally or in the Git UI.
+5. Paths outside the root, symlink escapes, a non-repository path or a missing
+   `LOCAL_GIT_ROOT` are rejected on connect and by the agent.
+
 ## Local bare repository over SSH
 
 1. On a host the agent can reach, create a bare repo:

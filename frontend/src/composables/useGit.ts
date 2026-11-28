@@ -134,7 +134,7 @@ export function useGit(projectId: string | number) {
       if (form.authMode && form.provider !== 'github') input.authMode = form.authMode
       if (form.authMode === 'ssh') {
         if (form.sshKey.trim()) input.sshKey = form.sshKey.trim()
-      } else if (form.token.trim()) {
+      } else if (form.authMode !== 'none' && form.token.trim()) {
         // GitHub App mode still needs a token for the one-time access check;
         // the agent later uses the App installation token instead.
         input.token = form.token.trim()

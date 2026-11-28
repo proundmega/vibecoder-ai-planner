@@ -32,6 +32,48 @@ import static org.junit.jupiter.api.Assertions.*;
 class WorkspaceManagerTest {
 
     @Test
+    void clonesALocalRepositoryUnderTheConfiguredRoot() throws Exception {
+        Path source = initRepo("local-root-source");
+        Path bare = initBare("local-root.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "local-root-ws", false, null);
+        manager.setLocalRepoRoot(tempDir.toString());
+        manager.cloneRepo(bare.toUri().toString(), "vibecode/ticket-1");
+
+        assertTrue(Files.isDirectory(manager.getRepoDir().resolve(".git")));
+    }
+
+    @Test
+    void rejectsALocalCloneOutsideTheConfiguredRoot() throws Exception {
+        Path source = initRepo("local-outside-source");
+        Path bare = initBare("local-outside.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        Path allowed = Files.createDirectories(tempDir.resolve("allowed-root"));
+
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "local-outside-ws", false, null);
+        manager.setLocalRepoRoot(allowed.toString());
+
+        assertThrows(IOException.class,
+            () -> manager.cloneRepo(bare.toUri().toString(), "vibecode/ticket-1"));
+    }
+
+    @Test
+    void rejectsALocalCloneWhenTheRootIsConfiguredButMissing() {
+        WorkspaceManager manager = new WorkspaceManager(
+            tempDir.toString(), "local-no-root", false, null);
+        manager.setLocalRepoRoot(null);
+
+        assertThrows(IOException.class,
+            () -> manager.cloneRepo("file:///tmp/outside.git", "vibecode/ticket-1"));
+    }
+
+    @Test
     void onlyAuthenticatesAgainstTheConfiguredProviderOrigin() {
         WorkspaceManager manager = new WorkspaceManager(
             "/tmp/ws", "repo", false, "token", () -> "token", null,
