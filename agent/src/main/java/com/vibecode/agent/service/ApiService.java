@@ -587,6 +587,72 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
+     * Due fix requests for the runtime's project (fg-32c2c2).
+     *
+     * @param limit 0 uses the backend default
+     */
+    public List<Map<String, Object>> listFixQueue(long projectId, int limit)
+        throws IOException {
+        String path = "/agents/fix-queue?projectId=" + projectId
+            + (limit > 0 ? "&limit=" + limit : "");
+        ApiResponse<List<Map<String, Object>>> response = executeGet(
+            baseUrl + path,
+            new TypeReference<ApiResponse<List<Map<String, Object>>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to list the fix queue: " + response.getError());
+        }
+        return response.getData() != null ? response.getData() : Collections.emptyList();
+    }
+
+    /**
+     * Claim a fix request. A live lease owned by another runtime is a normal
+     * "skip", so a CONFLICT returns null instead of failing the poll.
+     */
+    public Map<String, Object> claimFix(long ticketId, Integer leaseSeconds)
+        throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (leaseSeconds != null && leaseSeconds > 0) {
+            body.put("leaseSeconds", leaseSeconds);
+        }
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/tickets/" + ticketId + "/fix/claim",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            if (isErrorCode(response, "CONFLICT")) {
+                return null;
+            }
+            throw new IOException("Failed to claim the fix request: " + response.getError());
+        }
+        return response.getData();
+    }
+
+    /**
+     * Extend the fix lease. False means the lease is gone (expired or moved),
+     * which the worker treats as "stop before publishing".
+     */
+    public boolean renewFix(long ticketId, Integer leaseSeconds) throws IOException {
+        Map<String, Object> body = new HashMap<>();
+        if (leaseSeconds != null && leaseSeconds > 0) {
+            body.put("leaseSeconds", leaseSeconds);
+        }
+        ApiResponse<Map<String, Object>> response = executePost(
+            baseUrl + "/tickets/" + ticketId + "/fix/renew",
+            body,
+            new TypeReference<ApiResponse<Map<String, Object>>>() {}
+        );
+        if (response.hasError()) {
+            if (isErrorCode(response, "CONFLICT")) {
+                return false;
+            }
+            throw new IOException("Failed to renew the fix lease: " + response.getError());
+        }
+        return response.getData() != null;
+    }
+
+    /**
      * Workspace paths protected by a running run or an unexpired lease.
      * Workspace cleanup must fail closed when this call fails.
      */
