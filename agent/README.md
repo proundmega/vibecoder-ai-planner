@@ -303,6 +303,11 @@ so fresh named volumes are writable; a host bind for `/repos` must be chowned
 
 ## Configuration
 
+The `HARNESS_QUESTION_*` and `HARNESS_DOOM_LOOP_*` values below are forwarded
+by `agent/docker-compose.yml` for a standalone supervisor. Pool-managed agents
+receive their environment from PoolManager instead; that component must
+forward the same question-loop settings for pool runs.
+
 | Variable | Description | Default |
 |---|---|---|
 | `BACKEND_URL` | Backend API base URL | _(required)_ |

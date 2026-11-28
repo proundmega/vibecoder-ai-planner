@@ -1608,6 +1608,17 @@ public final class HarnessTicketProcessor implements TicketWorker {
             return;
         }
         String requestId = event.questionRequestId();
+        if ("question".equals(event.questionKind())
+            && (requestId == null || !requestId.startsWith("que"))) {
+            try {
+                String resolved = harness.findQuestionRequestId(sessionId);
+                if (resolved != null && !resolved.isBlank()) {
+                    requestId = resolved;
+                }
+            } catch (IOException e) {
+                log.warn("Could not resolve the OpenCode question id: {}", e.getMessage());
+            }
+        }
         String dedupe = requestId == null || requestId.isBlank()
             ? "evt-" + UUID.randomUUID()
             : requestId;

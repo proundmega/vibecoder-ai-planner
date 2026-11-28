@@ -113,8 +113,10 @@ class OpenCodeClientTest {
             client.replyToQuestion("ses_test", "perm_1", "permission", "always");
             assertEquals("{\"response\":\"always\"}", server.lastPermissionBody());
 
+            assertEquals("que_1", client.findQuestionRequestId("ses_test"));
             client.replyToQuestion("ses_test", "question_1", "question", "Use the helper.");
-            assertTrue(server.lastQuestionReplyBody().contains("Use the helper."));
+            assertEquals("{\"answers\":[[\"Use the helper.\"]]}",
+                server.lastQuestionReplyBody());
             client.close();
         }
     }
