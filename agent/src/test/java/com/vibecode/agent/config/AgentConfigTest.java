@@ -97,4 +97,13 @@ class AgentConfigTest {
             assertFalse(text.contains(config.getGitHubToken()));
         }
     }
+
+    @Test
+    void fixWorkerDefaultsToDisabledWithBoundedLeaseAndDuration() {
+        AgentConfig config = new AgentConfig();
+
+        assertFalse(config.isFixWorkerEnabled());
+        assertEquals(1800, config.getFixLeaseTtlSeconds());
+        assertEquals(30, config.getFixMaxDurationMinutes());
+    }
 }
