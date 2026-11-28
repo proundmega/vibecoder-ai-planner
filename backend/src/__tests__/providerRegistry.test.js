@@ -2,6 +2,7 @@ jest.mock('../utils/crypto', () => ({
   encrypt: (value) => `enc:${value}`,
   decrypt: (value) => String(value).replace(/^enc:/, ''),
 }));
+const dns = require('dns');
 const { pool } = require('../db');
 const ProviderRegistryService = require('../services/ProviderRegistryService');
 
@@ -150,6 +151,56 @@ describe('ProviderRegistryService (FR5-FR9, FR18, FR19)', () => {
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toBe('https://opencode.ai/inference/go/openai/v1/chat/completions');
     expect(options.headers['x-opencode-session']).toMatch(/^ses_[0-9a-f]{32}$/);
+  });
+
+  it('does not double /v1 when the credential stores the runtime base', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 9, model: 'beam-free', credential_id: 1, owner_id: 7, project_id: null }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          owner_id: 7,
+          provider_type: 'opencode-go',
+          api_key_encrypted: 'enc:sk',
+          base_url: 'https://opencode.ai/inference/go/openai/v1',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: 9, status: 'verified' }] });
+    global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => '{}' });
+
+    await ProviderRegistryService.testModel(user, 9);
+
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://opencode.ai/inference/go/openai/v1/chat/completions');
+  });
+
+  it('keeps query parameters before the appended v1 path', async () => {
+    jest.spyOn(dns.promises, 'lookup')
+      .mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 9, model: 'beam-free', credential_id: 1, owner_id: 7, project_id: null }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          owner_id: 7,
+          provider_type: 'opencode-go',
+          api_key_encrypted: 'enc:sk',
+          base_url: 'https://opencode.ai/inference/go/openai///?api-version=2026-01-01',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: 9, status: 'verified' }] });
+    global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => '{}' });
+
+    await ProviderRegistryService.testModel(user, 9);
+
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toBe(
+      'https://opencode.ai/inference/go/openai/v1/chat/completions?api-version=2026-01-01'
+    );
   });
 
   it('uses the OpenCode endpoint and session header for verification', async () => {

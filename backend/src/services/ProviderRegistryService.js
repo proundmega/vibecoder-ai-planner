@@ -88,9 +88,9 @@ function publicCredential(row) {
   return copy;
 }
 
-// Registry verification uses the inference endpoints. The legacy agent runtime
-// still resolves its own defaults (zen/...) in providerDefaults.js; these
-// converge only when the harness path carries the OpenCode session header.
+// Registry verification and the legacy agent runtime share the inference
+// endpoints. Keep this aligned with providerDefaults.js so a credential without
+// an explicit base cannot verify against a different URL than the agent uses.
 function defaultBase(providerType) {
   switch (providerType) {
     case 'claude':
@@ -99,11 +99,27 @@ function defaultBase(providerType) {
     case 'openai':
       return 'https://api.openai.com';
     case 'opencode':
-      return 'https://opencode.ai/inference/openai';
+      return 'https://opencode.ai/inference/openai/v1';
     case 'opencode-go':
-      return 'https://opencode.ai/inference/go/openai';
+      return 'https://opencode.ai/inference/go/openai/v1';
     default:
       return null;
+  }
+}
+
+function v1Url(base, suffix = '') {
+  const trimmed = String(base || '').trim();
+  if (!trimmed) return trimmed;
+  try {
+    const url = new URL(trimmed);
+    let path = url.pathname.replace(/\/+$/, '');
+    if (!/\/v1$/.test(path)) path = `${path}/v1`;
+    url.pathname = `${path}${suffix}`;
+    return url.toString();
+  } catch {
+    const fallback = trimmed.replace(/\/+$/, '');
+    const withV1 = /\/v1$/.test(fallback) ? fallback : `${fallback}/v1`;
+    return `${withV1}${suffix}`;
   }
 }
 
@@ -406,13 +422,13 @@ class ProviderRegistryService {
     const headers = { 'Content-Type': 'application/json' };
     let url;
     if (credential.provider_type === 'anthropic' || credential.provider_type === 'claude') {
-      url = `${base.replace(/\/$/, '')}/v1/models`;
+      url = v1Url(base, '/models');
       headers['x-api-key'] = key;
       headers['anthropic-version'] = '2023-06-01';
     } else if (credential.provider_type === 'ollama') {
       url = `${base.replace(/\/$/, '')}/api/tags`;
     } else {
-      url = `${base.replace(/\/$/, '')}/v1/models`;
+      url = v1Url(base, '/models');
       headers.Authorization = `Bearer ${key}`;
     }
 
@@ -471,7 +487,7 @@ class ProviderRegistryService {
     let headers = { 'Content-Type': 'application/json' };
     let payload;
     if (credential.provider_type === 'anthropic' || credential.provider_type === 'claude') {
-      url = `${base.replace(/\/$/, '')}/v1/messages`;
+      url = v1Url(base, '/messages');
       headers['x-api-key'] = key;
       headers['anthropic-version'] = '2023-06-01';
       payload = { model: model.model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] };
@@ -479,7 +495,7 @@ class ProviderRegistryService {
       url = `${base.replace(/\/$/, '')}/api/generate`;
       payload = { model: model.model, prompt: 'ping', stream: false, options: { num_predict: 1 } };
     } else {
-      url = `${base.replace(/\/$/, '')}/v1/chat/completions`;
+      url = v1Url(base, '/chat/completions');
       headers.Authorization = `Bearer ${key}`;
       payload = { model: model.model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] };
     }

@@ -17,6 +17,15 @@ services:
       # unless this is explicitly enabled. Use HTTPS in production.
       - ALLOW_INSECURE_AGENT_ENROLLMENT=${ALLOW_INSECURE_AGENT_ENROLLMENT:-0}
       - BACKEND_URL=${BACKEND_URL:-http://api:3001}
+      # Explicit local-development PAT fallback. The backend report's authMode
+      # is not enough on its own: the agent refuses PAT mode unless this flag is
+      # set (see AGENTS.md / fg-35).
+      - GITHUB_AUTH_MODE=${GITHUB_AUTH_MODE:-app}
+      - ALLOW_PAT=${ALLOW_PAT:-false}
+      # Optional documented local fallback when the backend repo credential is
+      # unavailable. The backend PAT is still preferred when both exist.
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GIT_TOKEN=${GIT_TOKEN:-}
       # Per-child heap and the host budget; the supervisor divides the budget
       # across the declared runtime count.
       - AGENT_RUNTIME_HEAP_MB=${AGENT_RUNTIME_HEAP_MB:-768}

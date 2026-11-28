@@ -544,7 +544,7 @@ const authStore = useAuthStore()
 const BASE_PROVIDER_TYPES = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
-  { value: 'opencode', label: 'OpenCode (Zen)' },
+  { value: 'opencode', label: 'OpenCode (Console)' },
   { value: 'opencode-go', label: 'OpenCode Go' },
   { value: 'claude', label: 'Claude' },
   { value: 'ollama', label: 'Ollama' },

@@ -561,6 +561,17 @@ describe('HarnessRunService', () => {
       ]);
     });
 
+    it('accepts the sandbox setup checkpoints', async () => {
+      pool.query.mockResolvedValue({ rows: [{ id: 'cp-1' }] });
+
+      await expect(
+        HarnessRunService.recordCheckpoint(RUN_ID, 'sandbox_ready', { sandbox: 's1' })
+      ).resolves.toBeTruthy();
+      await expect(
+        HarnessRunService.recordCheckpoint(RUN_ID, 'sandbox_bridge_ready')
+      ).resolves.toBeTruthy();
+    });
+
     it('defaults the payload to an empty object', async () => {
       pool.query.mockResolvedValueOnce({ rows: [{ id: 'cp-1' }] });
 

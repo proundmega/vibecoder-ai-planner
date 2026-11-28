@@ -36,9 +36,9 @@ describe('provider endpoint resolution', () => {
 
   it('falls back to the provider default endpoint', () => {
     expect(resolveProviderEndpoint({ providerType: 'opencode' }))
-      .toBe('https://opencode.ai/zen/v1');
+      .toBe('https://opencode.ai/inference/openai/v1');
     expect(resolveProviderEndpoint({ providerType: 'opencode-go', baseUrl: ' ' }))
-      .toBe('https://opencode.ai/zen/go/v1');
+      .toBe('https://opencode.ai/inference/go/openai/v1');
   });
 
   it('returns null when nothing is configured', () => {
@@ -49,14 +49,14 @@ describe('provider endpoint resolution', () => {
     expect(providerCatalog()).toEqual([
       {
         type: 'opencode',
-        label: 'OpenCode (Zen)',
-        endpointUrl: 'https://opencode.ai/zen/v1',
+        label: 'OpenCode (Console)',
+        endpointUrl: 'https://opencode.ai/inference/openai/v1',
         requiresModel: true,
       },
       {
         type: 'opencode-go',
         label: 'OpenCode Go',
-        endpointUrl: 'https://opencode.ai/zen/go/v1',
+        endpointUrl: 'https://opencode.ai/inference/go/openai/v1',
         requiresModel: true,
       },
     ]);

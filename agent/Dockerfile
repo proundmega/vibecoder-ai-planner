@@ -9,21 +9,20 @@ RUN mvn dependency:go-offline -B
 COPY src/ ./src/
 RUN mvn package -DskipTests -B
 
-# Node runtime for the OpenCode harness. Copied into the JRE image so the
-# supervisor and the harness share one container.
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS node
-
-FROM eclipse-temurin:17-jre-alpine@sha256:e2ba4e947bd5e236a9866fbdda03e4936036cb9e9d16ea0d84d103d6634a5c21
+# Node runtime for the OpenCode harness. A glibc image is required: the
+# workspace bridge needs SecureDirectoryStream, which the Alpine/musl JRE does
+# not provide. The supervisor and the harness share one container.
+FROM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338f9941bad1eb6b34530
 
 ARG OPENCODE_VERSION=1.19.5
 
-RUN apk add --no-cache git ripgrep bash curl jq python3 make libstdc++ util-linux docker-cli
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openjdk-17-jre-headless git ripgrep bash curl jq python3 make \
+      libstdc++6 util-linux ca-certificates procps \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
-RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
-    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && npm install -g opencode-ai@${OPENCODE_VERSION} \
+COPY --from=docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c /usr/local/bin/docker /usr/local/bin/docker
+RUN npm install -g opencode-ai@${OPENCODE_VERSION} \
     && chmod -R a+rX /usr/local/lib/node_modules
 
 WORKDIR /app
@@ -31,9 +30,10 @@ WORKDIR /app
 # Copy the shaded JAR from the build stage (maven-shade-plugin creates artifactId-version.jar)
 COPY --from=build /app/target/agent-*.jar agent.jar
 
-# Create a non-root user with a writable home and workspace directories
-RUN addgroup -S agent \
-    && adduser -S -G agent -h /home/agent agent \
+# Create the same non-root identity used by the previous image (100:101) so
+# an existing credentials volume remains readable.
+RUN groupadd --gid 101 agent \
+    && useradd --uid 100 --gid 101 --home-dir /home/agent --create-home --shell /bin/bash agent \
     && mkdir -p /repos /tmp/opencode /home/agent /credentials \
     && chown -R agent:agent /repos /tmp/opencode /home/agent /credentials
 USER agent
