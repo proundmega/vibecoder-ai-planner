@@ -99,6 +99,13 @@ public class WorkspaceManager {
     private String localRepoRoot;
     private boolean localRootConfigured;
     private String localSourcePath;
+    private String sshKeyPem;
+    private String sshKeyFile;
+    private String sshKnownHosts;
+    private boolean sshRemote;
+    private Path sshHelperDir;
+    private Path sshWrapperScript;
+    private Path sshKeyTempFile;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -165,6 +172,16 @@ public class WorkspaceManager {
     public void setLocalRepoRoot(String root) {
         this.localRootConfigured = true;
         this.localRepoRoot = root == null || root.isBlank() ? null : root.trim();
+    }
+
+    /**
+     * SSH credentials for a local/SSH remote: a PEM from the backend and/or a
+     * mounted key file, plus a required known-hosts file.
+     */
+    public void setSshCredentials(String keyPem, String keyFile, String knownHosts) {
+        this.sshKeyPem = keyPem == null || keyPem.isBlank() ? null : keyPem;
+        this.sshKeyFile = keyFile == null || keyFile.isBlank() ? null : keyFile;
+        this.sshKnownHosts = knownHosts == null || knownHosts.isBlank() ? null : knownHosts;
     }
 
     /** Set the ticket id (or other key) used for the runtime-scoped layout. */
@@ -501,6 +518,10 @@ public class WorkspaceManager {
         if (authenticate) {
             ensureAskPass(token);
         }
+        this.sshRemote = isSshUrl(repoUrl);
+        if (sshRemote) {
+            ensureSshHelper();
+        }
         try {
             try {
                 runGitClone(repoUrl, cloneTimeout);
@@ -522,6 +543,9 @@ public class WorkspaceManager {
             }
         } finally {
             cleanupAskPass();
+            if (sshRemote) {
+                cleanupSshHelper();
+            }
         }
     }
 
@@ -621,6 +645,9 @@ public class WorkspaceManager {
         if (authenticate) {
             ensureAskPass(token);
         }
+        if (sshRemote) {
+            ensureSshHelper();
+        }
         try {
             try {
                 pushWithLease(pushTarget, commitSha, branchName);
@@ -635,6 +662,9 @@ public class WorkspaceManager {
             }
         } finally {
             cleanupAskPass();
+            if (sshRemote) {
+                cleanupSshHelper();
+            }
         }
     }
 
@@ -828,6 +858,9 @@ public class WorkspaceManager {
         if (authenticate) {
             ensureAskPass(token);
         }
+        if (sshRemote) {
+            ensureSshHelper();
+        }
         try {
             try {
                 operation.run();
@@ -842,6 +875,9 @@ public class WorkspaceManager {
             }
         } finally {
             cleanupAskPass();
+            if (sshRemote) {
+                cleanupSshHelper();
+            }
         }
     }
 
@@ -1394,6 +1430,9 @@ public class WorkspaceManager {
         environment.put("GIT_NO_REPLACE_OBJECTS", "1");
         environment.put("GIT_ASKPASS",
             askPassScript != null ? askPassScript.toString() : devNull());
+        if (sshWrapperScript != null) {
+            environment.put("GIT_SSH", sshWrapperScript.toString());
+        }
         if (extraEnvironment != null) {
             environment.putAll(extraEnvironment);
         }
@@ -1565,6 +1604,118 @@ public class WorkspaceManager {
             return null;
         }
         return origin.startsWith("https://") ? origin.substring("https://".length()) : null;
+    }
+
+    /** ssh:// or scp-like (git@host:path); https/file are not SSH. */
+    static boolean isSshUrl(String repoUrl) {
+        if (repoUrl == null) {
+            return false;
+        }
+        String value = repoUrl.trim();
+        if (value.regionMatches(true, 0, "ssh://", 0, 6)) {
+            return true;
+        }
+        if (value.contains("://")) {
+            return false;
+        }
+        // Scp-like syntax: [user@]host:path. Reject a bare Windows drive path.
+        return value.matches("^(?:[^@/\\s]+@)?[^:/\\s]+:[^/].*$");
+    }
+
+    /**
+     * Build the transient GIT_SSH wrapper: host-key checking is mandatory and
+     * only the configured known-hosts file is trusted. The key is a 0600 temp
+     * file when it came from the backend.
+     */
+    void ensureSshHelper() throws IOException {
+        if (sshWrapperScript != null && Files.isRegularFile(sshWrapperScript)) {
+            return;
+        }
+        cleanupSshHelper();
+        if (sshKnownHosts == null) {
+            throw new IOException("GIT_SSH_KNOWN_HOSTS is required for SSH remotes");
+        }
+        Path known = Paths.get(sshKnownHosts).toAbsolutePath();
+        if (!Files.isRegularFile(known, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("GIT_SSH_KNOWN_HOSTS does not exist: " + sshKnownHosts);
+        }
+        Path key;
+        sshHelperDir = Files.createTempDirectory("vibecode-ssh-");
+        try {
+            restrictPermissions(sshHelperDir, "rwx------");
+            if (sshKeyPem != null) {
+                sshKeyTempFile = sshHelperDir.resolve("id_key");
+                Files.writeString(sshKeyTempFile, sshKeyPem, StandardCharsets.UTF_8);
+                restrictPermissions(sshKeyTempFile, "rw-------");
+                key = sshKeyTempFile;
+            } else if (sshKeyFile != null) {
+                key = Paths.get(sshKeyFile).toAbsolutePath();
+                if (!Files.isRegularFile(key, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new IOException("GIT_SSH_KEY_FILE does not exist: " + sshKeyFile);
+                }
+            } else {
+                throw new IOException(
+                    "An SSH key is required (project deploy key or GIT_SSH_KEY_FILE)");
+            }
+            sshWrapperScript = sshHelperDir.resolve("ssh.sh");
+            String script = "#!/bin/sh\n"
+                + "exec ssh -i " + shellSingleQuote(key.toString())
+                + " -o IdentitiesOnly=yes"
+                + " -o StrictHostKeyChecking=yes"
+                + " -o UserKnownHostsFile=" + shellSingleQuote(known.toString())
+                + " -o GlobalKnownHostsFile=/dev/null"
+                + " -o BatchMode=yes \"$@\"\n";
+            Files.writeString(sshWrapperScript, script, StandardCharsets.UTF_8);
+            restrictPermissions(sshWrapperScript, "rwx------");
+        } catch (IOException e) {
+            cleanupSshHelper();
+            throw e;
+        }
+    }
+
+    private static void restrictPermissions(Path path, String perms) throws IOException {
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            Files.setPosixFilePermissions(
+                path, PosixFilePermissions.fromString(perms));
+        }
+    }
+
+    void cleanupSshHelper() {
+        Path key = sshKeyTempFile;
+        Path script = sshWrapperScript;
+        Path dir = sshHelperDir;
+        sshKeyTempFile = null;
+        sshWrapperScript = null;
+        sshHelperDir = null;
+        if (key != null) {
+            try {
+                Files.deleteIfExists(key);
+            } catch (IOException ignored) {
+                // Best effort.
+            }
+        }
+        if (script != null) {
+            try {
+                Files.deleteIfExists(script);
+            } catch (IOException ignored) {
+                // Best effort.
+            }
+        }
+        if (dir != null) {
+            try {
+                Files.deleteIfExists(dir);
+            } catch (IOException ignored) {
+                // Best effort.
+            }
+        }
+    }
+
+    Path sshWrapperScriptPath() {
+        return sshWrapperScript;
+    }
+
+    Path sshKeyFilePath() {
+        return sshKeyTempFile;
     }
 
     private static String shellSingleQuote(String value) {

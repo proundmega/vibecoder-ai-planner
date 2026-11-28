@@ -80,6 +80,7 @@ public class AgentConfig {
     private final String localRepoRoot;
     private String repoUrl;
     private String repoBaseUrl;
+    private String gitSshKeyPem;
     private String repoProvider = "github";
     private String repoAuthMode;
     private final boolean allowPat;
@@ -413,6 +414,13 @@ public class AgentConfig {
     public String getGitToken() { return githubToken; }
     public String getGitSshKeyFile() { return gitSshKeyFile; }
     public String getGitSshKnownHosts() { return gitSshKnownHosts; }
+
+    /** Project deploy key from the backend; never logged or persisted by us. */
+    public String getGitSshKeyPem() { return gitSshKeyPem; }
+
+    public void setGitSshKeyPem(String pem) {
+        this.gitSshKeyPem = pem == null || pem.isBlank() ? null : pem;
+    }
 
     /** Root under which local filesystem repositories may be cloned. */
     public String getLocalRepoRoot() { return localRepoRoot; }

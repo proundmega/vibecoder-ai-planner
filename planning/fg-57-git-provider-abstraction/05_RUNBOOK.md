@@ -186,15 +186,22 @@ follow-up.
 
 2. Create a dedicated SSH user/key restricted to that repository. Put the public
    key in `authorized_keys` with a command restriction if possible.
-3. Give the agent the **private key** through the planner credential store, and
-   a verified `known_hosts` entry. Never use `StrictHostKeyChecking=no`.
-4. Connect with provider `local`, the SSH clone URL, auth mode `ssh`.
+3. Connect with provider `local`, the SSH clone URL and auth mode `ssh`; the
+   private key goes through the planner credential store and is handed to the
+   agent as the project deploy key. Give the agent a **verified known-hosts
+   file** (`ssh-keyscan` then verify the fingerprint): set
+   `GIT_SSH_KNOWN_HOSTS=/etc/vibecode/known_hosts` and mount the file read-only
+   into the supervisor. `GIT_SSH_KEY_FILE` is an alternative mounted key.
+   The agent runs SSH with `StrictHostKeyChecking=yes`, `IdentitiesOnly=yes`,
+   `BatchMode=yes`, only the configured `UserKnownHostsFile` and
+   `GlobalKnownHostsFile=/dev/null`; without the known-hosts file it fails
+   closed. Never use `StrictHostKeyChecking=no`.
    The backend resolves the SSH host on connect. A host only the agent can
    resolve is rejected; use a name both sides resolve, or set
    `ALLOW_PRIVATE_HOSTS=1` / `GIT_ALLOW_PRIVATE_HOSTS=1` for a private host.
-5. Run one ticket. The harness pushes the branch and finishes with a branch/SHA,
+4. Run one ticket. The harness pushes the branch and finishes with a branch/SHA,
    no PR URL. Review the diff locally or in the Git UI.
-6. Clean up the branch, deploy key and bare repo.
+5. Clean up the branch, deploy key and bare repo.
 
 ## Verification checklist
 

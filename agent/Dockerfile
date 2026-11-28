@@ -17,7 +17,7 @@ FROM node:24-bookworm-slim@sha256:873f586f3794f52281bd039bf02c048a0be08fde619338
 ARG OPENCODE_VERSION=1.19.5
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      openjdk-17-jre-headless git ripgrep bash curl jq python3 make \
+      openjdk-17-jre-headless git openssh-client ripgrep bash curl jq python3 make \
       libstdc++6 util-linux ca-certificates procps \
     && rm -rf /var/lib/apt/lists/*
 

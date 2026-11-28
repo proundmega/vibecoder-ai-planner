@@ -54,6 +54,10 @@ public class ProfileValidationProcessor {
                     githubToken, tokenSource, null,
                     HarnessTicketProcessor.tokenOrigin(config));
                 manager.setLocalRepoRoot(config.getLocalRepoRoot());
+                manager.setSshCredentials(
+                    config.getGitSshKeyPem(),
+                    config.getGitSshKeyFile(),
+                    config.getGitSshKnownHosts());
                 return manager;
             },
             new VerificationRunner()
