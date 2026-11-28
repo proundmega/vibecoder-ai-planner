@@ -1451,8 +1451,10 @@ public class WorkspaceManager {
         String token = shellSingleQuote(rawToken == null ? "" : rawToken);
         StringBuilder script = new StringBuilder("#!/bin/sh\n");
         if (allowedAuthority != null && !allowedAuthority.isBlank()) {
-            String exact = "https://" + allowedAuthority;
-            String allowed = shellSingleQuote(exact);
+            // Case-insensitive shell patterns, built from character classes so
+            // the helper stays a POSIX-sh script with no external commands.
+            String authorityPattern = caseInsensitivePattern(allowedAuthority);
+            String allowed = authorityPattern;
             // A colon inside an IPv6 literal is not a port separator.
             boolean hasPort;
             if (allowedAuthority.startsWith("[")) {
@@ -1465,7 +1467,7 @@ public class WorkspaceManager {
             if (!hasPort) {
                 // Only the default port is additionally valid when none was
                 // configured explicitly.
-                allowed += "|" + shellSingleQuote(exact + ":443");
+                allowed += "|" + authorityPattern + ":443";
             }
             script.append("case \"$1\" in\n")
                 .append("  *\"'\"*\"'\"*) url=${1#*\\'}; url=${url%%\\'*} ;;\n")
@@ -1478,16 +1480,14 @@ public class WorkspaceManager {
                 // (https://oauth2@host). Strip only authority userinfo; a path
                 // or query is not a valid auth prompt and is rejected.
                 .append("case \"$url\" in\n")
-                .append("  https://*/*) exit 1 ;;\n")
-                .append("  https://*)\n")
-                .append("    authority=${url#https://}\n")
+                .append("  [hH][tT][tT][pP][sS]://*/*) exit 1 ;;\n")
+                .append("  [hH][tT][tT][pP][sS]://*)\n")
+                .append("    authority=${url#*://}\n")
                 .append("    authority=${authority##*@}\n")
-                .append("    authority=$(printf '%s' \"$authority\" | tr 'A-Z' 'a-z')\n")
-                .append("    url=\"https://$authority\"\n")
                 .append("    ;;\n")
                 .append("  *) exit 1 ;;\n")
                 .append("esac\n")
-                .append("case \"$url\" in\n")
+                .append("case \"$authority\" in\n")
                 .append("  ").append(allowed).append(") ;;\n")
                 .append("  *) exit 1 ;;\n")
                 .append("esac\n");
@@ -1498,6 +1498,34 @@ public class WorkspaceManager {
             .append("  *) printf '%s\\n' ").append(token).append(" ;;\n")
             .append("esac\n")
             .toString();
+    }
+
+    /**
+     * Build a shell case pattern that matches the literal value
+     * case-insensitively: letters become {@code [aA]} classes and every other
+     * run is single-quoted. Uses only POSIX-sh pattern syntax.
+     */
+    static String caseInsensitivePattern(String value) {
+        StringBuilder pattern = new StringBuilder();
+        StringBuilder literal = new StringBuilder();
+        for (char c : value.toCharArray()) {
+            if (c < 128 && Character.isLetter(c)) {
+                if (literal.length() > 0) {
+                    pattern.append(shellSingleQuote(literal.toString()));
+                    literal.setLength(0);
+                }
+                pattern.append('[')
+                    .append(Character.toLowerCase(c))
+                    .append(Character.toUpperCase(c))
+                    .append(']');
+            } else {
+                literal.append(c);
+            }
+        }
+        if (literal.length() > 0) {
+            pattern.append(shellSingleQuote(literal.toString()));
+        }
+        return pattern.toString();
     }
 
     private static String authorityOf(String origin) {

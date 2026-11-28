@@ -96,7 +96,10 @@ class WorkspaceManagerTest {
             runAskPass(script, "Password for 'https://oauth2@Git.Example.COM':"));
         assertEquals("secret",
             runAskPass(script, "Password for 'https://GIT.EXAMPLE.COM:443':"));
-        assertEquals("oauth2", runAskPass(script, "Username for 'https://git.example.com/':"));
+        // URL schemes are case-insensitive too.
+        assertEquals("secret",
+            runAskPass(script, "Password for 'HTTPS://oauth2@git.example.com':"));
+        assertEquals("oauth2", runAskPass(script, "Username for 'Https://git.example.com/':"));
 
         for (String prompt : List.of(
             "Password for 'https://git.example.com.evil.com':",
@@ -106,6 +109,7 @@ class WorkspaceManagerTest {
             "Password for 'https://git.example.com:444':",
             "Password for 'https://oauth2@git.example.com:444':",
             "Password for 'https://oauth2@GIT.EXAMPLE.COM.EVIL.COM':",
+            "Password for 'HTTPS://oauth2@git.example.com.evil.com':",
             "Password for 'https://evil.com/?next=https://git.example.com':")) {
             assertNotEquals("secret", runAskPass(script, prompt), prompt);
         }
