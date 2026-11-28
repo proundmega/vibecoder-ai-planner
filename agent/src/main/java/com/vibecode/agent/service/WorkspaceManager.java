@@ -1444,8 +1444,22 @@ public class WorkspaceManager {
         String token = shellSingleQuote(rawToken == null ? "" : rawToken);
         StringBuilder script = new StringBuilder("#!/bin/sh\n");
         if (allowedAuthority != null && !allowedAuthority.isBlank()) {
+            String exact = "https://" + allowedAuthority;
+            String allowed = shellSingleQuote(exact);
+            if (!allowedAuthority.contains(":")) {
+                // Only the default port is additionally valid when none was
+                // configured explicitly.
+                allowed += "|" + shellSingleQuote(exact + ":443");
+            }
             script.append("case \"$1\" in\n")
-                .append("  *").append(shellSingleQuote(allowedAuthority)).append("*) ;;\n")
+                .append("  *\"'\"*\"'\"*) url=${1#*\\'}; url=${url%%\\'*} ;;\n")
+                .append("  *) exit 1 ;;\n")
+                .append("esac\n")
+                .append("case \"$url\" in\n")
+                .append("  */) url=${url%/} ;;\n")
+                .append("esac\n")
+                .append("case \"$url\" in\n")
+                .append("  ").append(allowed).append(") ;;\n")
                 .append("  *) exit 1 ;;\n")
                 .append("esac\n");
         }

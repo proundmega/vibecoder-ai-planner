@@ -133,8 +133,11 @@ class AgentAppRepoConfigTest {
 
         assertEquals("https://github.com/owner/repo.git", config.getRepoUrl());
 
+        config.setRepoUrl("owner/repo.git");
+        assertEquals("https://github.com/owner/repo.git", config.getRepoUrl());
+
         config.setRepoProvider("forgejo");
-        assertEquals("owner/repo", config.getRepoUrl());
+        assertEquals("owner/repo.git", config.getRepoUrl());
     }
 
     static class TokenModeConfig extends AgentConfig {

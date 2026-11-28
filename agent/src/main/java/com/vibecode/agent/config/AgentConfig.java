@@ -259,7 +259,12 @@ public class AgentConfig {
             // GitHub accepts the owner/repo shorthand; the clone needs a URL.
             if ("github".equals(repoProvider)
                 && value.matches("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) {
-                return "https://github.com/" + value + ".git";
+                String slug = value.endsWith(".git")
+                    ? value.substring(0, value.length() - ".git".length())
+                    : value;
+                if (slug.matches("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")) {
+                    return "https://github.com/" + slug + ".git";
+                }
             }
             return value;
         }

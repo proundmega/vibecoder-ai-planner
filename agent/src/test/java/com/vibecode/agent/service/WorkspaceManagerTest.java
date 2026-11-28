@@ -78,14 +78,52 @@ class WorkspaceManagerTest {
     }
 
     @Test
-    void askPassScriptGuardsTheConfiguredHost() {
-        String guarded = WorkspaceManager.askPassScript("secret", "git.example.com");
-        assertTrue(guarded.contains("git.example.com"));
-        assertTrue(guarded.contains("exit 1"));
+    void askPassScriptAllowsOnlyTheExactHttpsAuthority() throws Exception {
+        assumePosix();
+        Path script = writeAskPassScript("git.example.com");
 
-        String legacy = WorkspaceManager.askPassScript("secret", null);
-        assertFalse(legacy.contains("exit 1"));
-        assertTrue(legacy.contains("secret"));
+        assertEquals("secret", runAskPass(script, "Password for 'https://git.example.com':"));
+        assertEquals("secret", runAskPass(script, "Password for 'https://git.example.com:443':"));
+        assertEquals("oauth2", runAskPass(script, "Username for 'https://git.example.com/':"));
+
+        for (String prompt : List.of(
+            "Password for 'https://git.example.com.evil.com':",
+            "Password for 'https://notgit.example.com':",
+            "Password for 'http://git.example.com':",
+            "Password for 'https://git.example.com:444':",
+            "Password for 'https://evil.com/?next=https://git.example.com':",
+            "Password for 'https://user@git.example.com':")) {
+            assertNotEquals("secret", runAskPass(script, prompt), prompt);
+        }
+
+        Path portScript = writeAskPassScript("git.example.com:8443");
+        assertEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com:8443/':"));
+        assertNotEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com':"));
+        assertNotEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com:443':"));
+        assertNotEquals("secret",
+            runAskPass(portScript, "Password for 'https://git.example.com:8443.evil.com':"));
+    }
+
+    private Path writeAskPassScript(String authority) throws Exception {
+        Path script = Files.createFile(
+            tempDir.resolve("askpass-" + authority.replace(':', '-') + ".sh"));
+        Files.writeString(script, WorkspaceManager.askPassScript("secret", authority));
+        Files.setPosixFilePermissions(script,
+            java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        return script;
+    }
+
+    private String runAskPass(Path script, String prompt) throws Exception {
+        Process process = new ProcessBuilder("sh", script.toString(), prompt)
+            .redirectErrorStream(true)
+            .start();
+        String output = new String(
+            process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        int exitCode = process.waitFor();
+        return exitCode == 0 ? output : "";
     }
 
     @Test
