@@ -703,6 +703,34 @@ public class ApiService implements QuestionBridge.Transport {
     }
 
     /**
+     * Acceptance criteria for the fix prompt (fg-32c2c3b3b, FR6).
+     *
+     * <p>The endpoint returns rows; the prompt only needs the text. A failure
+     * is not fatal for the fix: the caller logs it and prompts without
+     * criteria rather than refusing to fix a finding.</p>
+     */
+    public List<String> listAcceptanceCriteria(long ticketId) throws IOException {
+        ApiResponse<List<Map<String, Object>>> response = executeGet(
+            baseUrl + "/tickets/" + ticketId + "/acceptance-criteria",
+            new TypeReference<ApiResponse<List<Map<String, Object>>>>() {}
+        );
+        if (response.hasError()) {
+            throw new IOException("Failed to list acceptance criteria: " + response.getError());
+        }
+        if (response.getData() == null) {
+            return Collections.emptyList();
+        }
+        List<String> criteria = new ArrayList<>();
+        for (Map<String, Object> row : response.getData()) {
+            Object text = row == null ? null : row.get("text");
+            if (text != null && !String.valueOf(text).isBlank()) {
+                criteria.add(String.valueOf(text).trim());
+            }
+        }
+        return criteria;
+    }
+
+    /**
      * Claim a fix request. A live lease owned by another runtime is a normal
      * "skip", so a CONFLICT returns null instead of failing the poll.
      */

@@ -56,6 +56,9 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D7 | Email notifications for fix requests and escalations (no existing email-notification ticket; bp-71 is account lockout) | new | UX | TBD | open |
 | D8 | Explicit shorter fix lease override for faster crash recovery (the lease is derived as budget + 10 min) | fg-32c2c3b review | Ops | fg-32c2c3b | open |
 | D9 | Retry `completeFix` when a fix attempt returns `DONE` with a warning (the publish succeeded but `finishRun(succeeded)` failed twice), so a live commit is not left half-recorded | fg-32c2c3b3a review | Reliability | fg-32d2 | open |
+| D10 | Remove the fix worker's in-process completed-request guard once `fix/complete` exists (fg-32d2); today a restarted worker can re-claim the request after the lease and only the fast-forward publish stops a duplicate | fg-32c2c3b3b | Reliability | fg-32d2 | open |
+| D11 | Feed the previous review attempt's verification output and diff summary into the fix prompt (no agent endpoint exposes them yet; `FixClaim.previousVerification`/`previousDiffSummary` are empty) | fg-32c2c3b3b | Agent / Review | new | open |
+| D12 | Use the repo profile's install/verification commands, environment and timeouts for fix runs, matching the build path instead of `VerificationRunner` autodetection | fg-32c2c3b3b | Reliability | new | open |
 
 ## Relationship to fg-54 (planned)
 

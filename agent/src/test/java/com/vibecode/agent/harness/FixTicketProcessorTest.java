@@ -86,8 +86,9 @@ class FixTicketProcessorTest {
             }
 
             @Override
-            public void finishRun(String runId, boolean succeeded, String error) {
-                events.add("finishRun " + runId + " " + succeeded + " " + error);
+            public void finishRun(String runId, boolean succeeded, String error, String headSha) {
+                events.add("finishRun " + runId + " " + succeeded + " " + error
+                    + (headSha == null ? "" : " " + headSha));
             }
         };
     }
@@ -119,7 +120,7 @@ class FixTicketProcessorTest {
         assertEquals(SHA, outcome.headSha());
         assertEquals(List.of(
             "renew", "startRun", "checkout feat/fix " + SHA, "fix",
-            "renew", "verify", "renew", "publish", "finishRun run-1 true null"
+            "renew", "verify", "renew", "publish", "finishRun run-1 true null " + SHA
         ), events);
     }
 
@@ -175,7 +176,7 @@ class FixTicketProcessorTest {
             }
 
             @Override
-            public void finishRun(String runId, boolean succeeded, String error) {
+            public void finishRun(String runId, boolean succeeded, String error, String headSha) {
                 events.add("finishRun " + succeeded + " " + error);
             }
         };
@@ -371,7 +372,7 @@ class FixTicketProcessorTest {
             }
 
             @Override
-            public void finishRun(String runId, boolean succeeded, String error) {
+            public void finishRun(String runId, boolean succeeded, String error, String headSha) {
                 events.add("finishRun");
             }
         };
@@ -435,7 +436,9 @@ class FixTicketProcessorTest {
             }
 
             @Override
-            public void finishRun(String runId, boolean succeeded, String error) throws IOException {
+            public void finishRun(
+                String runId, boolean succeeded, String error, String headSha
+            ) throws IOException {
                 if (succeeded) {
                     successes[0]++;
                     if (successes[0] == 1) {
@@ -476,7 +479,7 @@ class FixTicketProcessorTest {
             }
 
             @Override
-            public void finishRun(String runId, boolean succeeded, String error) {
+            public void finishRun(String runId, boolean succeeded, String error, String headSha) {
                 events.add("finishRun " + runId);
             }
         };
@@ -526,7 +529,9 @@ class FixTicketProcessorTest {
             }
 
             @Override
-            public void finishRun(String runId, boolean succeeded, String error) throws IOException {
+            public void finishRun(
+                String runId, boolean succeeded, String error, String headSha
+            ) throws IOException {
                 if (!succeeded) {
                     events.add("finishRun failed");
                     return;

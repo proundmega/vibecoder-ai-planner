@@ -560,6 +560,37 @@ public class WorkspaceManager {
         return commitAndPushInternal(message, branchName, false);
     }
 
+    /**
+     * Commit the guarded tree without pushing (fg-32c2c3b3b).
+     *
+     * <p>Fix mode must not use {@link #commitAndPushStaged}: that pushes with a
+     * lease derived from the current remote head, which would overwrite a human
+     * push during the fix. This commits exactly the tree produced by
+     * {@link #stageFreshDiff()} on top of the pinned base and leaves publishing
+     * to {@link #publishFastForward}.</p>
+     *
+     * @return the full commit object id
+     */
+    public String commitStaged(String message) throws IOException {
+        if (message == null || message.isBlank()) {
+            throw new IOException("A commit message is required");
+        }
+        if (dryRun) {
+            log.info("[DRY RUN] Would commit the staged tree: {}", message);
+            return "dry-run-sha";
+        }
+        if (guardedTree == null) {
+            throw new IOException("No guarded tree is staged");
+        }
+        hardenGitRepository();
+        // commit-tree does not read the index, so a leftover agent-controlled
+        // index cannot change what is committed.
+        runGit("config", "user.email", "agent@vibecode.ai");
+        runGit("config", "user.name", "Vibecode Agent");
+        return runGitWithIndex(
+            "commit-tree", guardedTree, "-p", baseCommitOrHead(), "-m", message).strip();
+    }
+
     private String commitAndPushInternal(
         String message,
         String branchName,

@@ -264,4 +264,25 @@ class ApiServiceFixQueueTest {
             "22222222-2222-4222-8222-222222222222", "a".repeat(40),
             "11111111-1111-4111-8111-111111111111", 0));
     }
+
+    @Test
+    void listsAcceptanceCriteriaTextForTheFixPrompt() throws Exception {
+        stub("/api/v1/tickets/42/acceptance-criteria", 200,
+            "{\"success\":true,\"data\":["
+                + "{\"id\":1,\"position\":0,\"text\":\"filter works\"},"
+                + "{\"id\":2,\"position\":1,\"text\":\"  \"}]}");
+
+        List<String> criteria = api.listAcceptanceCriteria(42L);
+
+        assertEquals(List.of("filter works"), criteria);
+        assertEquals("/api/v1/tickets/42/acceptance-criteria", requests.get(0).path());
+        assertEquals("GET", requests.get(0).method());
+    }
+
+    @Test
+    void acceptanceCriteriaFailuresAreVisibleToTheCaller() {
+        stub("/api/v1/tickets/42/acceptance-criteria", 500,
+            "{\"success\":false,\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}");
+        assertThrows(java.io.IOException.class, () -> api.listAcceptanceCriteria(42L));
+    }
 }
