@@ -273,9 +273,12 @@ existing GitHub agent config route.
 1. Require every service image to exist locally (`docker image inspect`); a
    missing image fails before any network is created. Then create a per-run
    internal bridge network (`vibecode-services-<suffix>`).
-2. Start each service container with `--pull never`, its env file, healthcheck
-   flags, bounded memory/PIDs/CPU, `no-new-privileges`, `NET_RAW` dropped,
-   1 MiB/1-file log rotation and an owner label.
+2. Start each service container with `--pull never`, `--ulimit
+   fsize=<diskBytes>` (and `--storage-opt size=<diskBytes>` when
+   `SANDBOX_DISK_ENFORCE=true`), where `diskBytes` is the byte equivalent of
+   `SANDBOX_DISK_MB`; also its env file, healthcheck flags, bounded
+   memory/PIDs/CPU, `no-new-privileges`, `NET_RAW` dropped, 1 MiB/1-file log
+   rotation and an owner label.
 3. Wait for Docker health `healthy`; fail fast on `unhealthy`, `exited`, `dead`
    or timeout.
 4. Read each service IP and add an `/etc/hosts` entry to the sandbox. The
@@ -292,6 +295,10 @@ existing GitHub agent config route.
    resort.
 8. Cap the health wait at 180 seconds so a slow service cannot consume the
    profile's whole setup/round budget.
+9. Watch the combined service writable-layer size (`docker inspect --size`) at
+   `SANDBOX_DISK_CHECK_INTERVAL_SECONDS`; kill the sandbox and remove the
+   services when the byte size exceeds `diskBytes` (derived from
+   `SANDBOX_DISK_MB`) or measurement fails.
 
 ### Service trust decisions
 
@@ -299,14 +306,16 @@ existing GitHub agent config route.
   the sandbox boundary: they run as the image's user (often root) inside their
   own container with no host mounts, bounded resources, an internal-only
   network and no inbound sandbox access.
-- Service disk quota is still not implemented (D12). Logs are bounded,
-  `NET_RAW` is dropped, and a noisy service can still write to its ephemeral
-  container layer.
+- Service writable layers are bounded: each container gets the sandbox
+  `fsize` ulimit and, when `SANDBOX_DISK_ENFORCE=true`, a `storage-opt` size
+  quota; a supervisor watchdog also sums `SizeRw` and fails closed when it
+  exceeds `diskBytes` (derived from `SANDBOX_DISK_MB`). Logs remain bounded and
+  `NET_RAW` is dropped.
 - Service images must already exist on the agent host. A preflight `docker
   image inspect` fails closed and `docker run --pull never` prevents a
   daemon-side pull during a run, so the sandbox egress allowlist is not
   bypassed. Operators pre-pull the approved digest; sandbox/proxy base images
-  remain operator-provisioned. The disk-quota half of D12 remains open.
+  remain operator-provisioned.
 
 ## Slice 5 profile editor
 

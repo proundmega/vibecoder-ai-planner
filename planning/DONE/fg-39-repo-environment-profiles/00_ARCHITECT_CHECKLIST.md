@@ -40,8 +40,8 @@ environment failures, not coding failures.
 | 5 | Project settings profile editor | done (#167) |
 
 All slices are merged, including slice 4b (FR4/D9), which adds persistent
-per-project dependency caches. The remaining follow-ups (D1-D4, D11-D12, D15
-and D18) are tracked in the deferred register below.
+per-project dependency caches. The remaining follow-ups (D1-D4, D11, D15 and
+D18) are tracked in the deferred register below.
 
 ## Status evidence
 
@@ -56,11 +56,11 @@ and D18) are tracked in the deferred register below.
 | D16 image regex | Profile/validator/agent regex aligned with the stack catalog; userinfo and multiple digest separators rejected with regressions | ☑ |
 | D14 pagination | Validation history accepts `limit`/`offset` (max 200), orders by `created_at, id` and the editor loads/dedupes older pages | ☑ |
 | D13 single draft | Migration 065 retires older drafts and adds a partial unique index; create retires the current draft; retired drafts cannot queue validation or activate; previous active versions still roll back | ☑ |
-| D12 service images | `docker image inspect` preflight runs before the service network and fails closed for a missing image; `docker run --pull never` blocks a daemon-side pull for service images; base/proxy images remain operator-provisioned; service disk quota remains open | ☑ |
+| D12 service images and disk | `docker image inspect` preflight runs before the service network and `docker run --pull never` blocks a daemon-side pull; base/proxy images remain operator-provisioned. Service writable layers get the sandbox fsize/storage-opt limits and a `SizeRw` watchdog that fails closed | ☑ |
 | D17 editor rollback | Previously active versions expose **Reactivate** in version history and the historical banner; retired drafts stay actionless; the backend still enforces the exact successful dry run | ☑ |
 | D10 profile events | `repo_profile_events` records created/updated/activated/reactivated/retired with actor and metadata; reads are owner/super-admin only. Best-effort operational log, not authoritative (D18) | ☑ |
 | Verification results | `03` → Results | ☑ |
-| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D11-D12, D15 and D18 remain open | ☑ |
+| Remaining slices | None; FR3 (D7) and FR4 (D9) are done, follow-ups D1-D4, D11, D15 and D18 remain open | ☑ |
 
 ## Deferred register (canonical)
 
@@ -79,8 +79,8 @@ deferred scope are owned by this document; `01`–`04` link here.
 | D8 | Project settings profile editor (slice 5) | fg-39 FR2 | UX | fg-39 slice 5 | merged (#167) |
 | D9 | Persistent dependency caches: size quota/watchdog, volume GC, lockfile-keyed generations and sanitized cache writes | fg-39 FR4 | Security | fg-39 slice 4b | done (#237, `607ebf1`) |
 | D10 | Profile change event log beyond version rows/`created_by` timestamps | fg-39 safety | Audit | fg-41 | done (#260, `efd0765`); best-effort operational event log, not an authoritative audit trail |
-| D11 | Real-Docker/real-repo profile dry-run e2e, including npm install, mvn test and go test (cache real-Docker package-manager coverage is now in `smoke-sandbox-caches.sh`) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | partial: cache smoke done; profile dry-run e2e open |
-| D12 | Service container disk quota and egress-governed image pulls; service images now require a local pre-pull and `--pull never`, while the service writable-layer quota remains open | fg-39 slice 2 review | Security | fg-39 slice 4 | partial: local-only service images done (#255, `1579036`); disk quota open |
+| D11 | Real-Docker/real-repo profile dry-run e2e, including npm install, mvn test and go test (cache real-Docker package-manager coverage is now in `smoke-sandbox-caches.sh`) | fg-39 slice 1 review | Testing | bt-60 / fg-39 slice 4 | partial: cache smoke done; profile dry-run e2e open, blocked on pilot credentials |
+| D12 | Service container disk quota and egress-governed image pulls; service images require a local pre-pull and `--pull never`, and service writable layers are bounded by fsize/storage-opt plus a `SizeRw` watchdog | fg-39 slice 2 review | Security | fg-39 slice 4 | done (#264, `18c504b`) |
 | D13 | Enforce one current draft per project (partial unique index) or explicit multi-draft UI | fg-39 slice 5 review | Data | fg-39 slice 5 follow-up | done (#251, `92e3c0e`); retired drafts are inert, previously active versions still roll back |
 | D14 | Dry-run history pagination beyond the latest 200 rows | fg-39 slice 5 review | UX | fg-39 follow-up | done (#248, `1b77d96`) |
 | D15 | One-time storage scrub/migration for legacy literal credentials in profile and validation rows (read-time redaction is in place) | fg-39 review | Security | fg-39 follow-up | open |
