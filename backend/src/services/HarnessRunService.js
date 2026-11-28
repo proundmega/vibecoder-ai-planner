@@ -34,6 +34,8 @@ const TERMINAL_RUN_STATUSES = Object.freeze(
 const HARNESS_STEPS = Object.freeze([
   'created',
   'cloned',
+  'sandbox_ready',
+  'sandbox_bridge_ready',
   'session_ready',
   'prompting',
   'verifying',

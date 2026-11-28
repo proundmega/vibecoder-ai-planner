@@ -152,6 +152,29 @@ describe('ProviderRegistryService (FR5-FR9, FR18, FR19)', () => {
     expect(options.headers['x-opencode-session']).toMatch(/^ses_[0-9a-f]{32}$/);
   });
 
+  it('does not double /v1 when the credential stores the runtime base', async () => {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [{ id: 9, model: 'beam-free', credential_id: 1, owner_id: 7, project_id: null }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          owner_id: 7,
+          provider_type: 'opencode-go',
+          api_key_encrypted: 'enc:sk',
+          base_url: 'https://opencode.ai/inference/go/openai/v1',
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [{ id: 9, status: 'verified' }] });
+    global.fetch.mockResolvedValue({ ok: true, status: 200, text: async () => '{}' });
+
+    await ProviderRegistryService.testModel(user, 9);
+
+    const [url] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://opencode.ai/inference/go/openai/v1/chat/completions');
+  });
+
   it('uses the OpenCode endpoint and session header for verification', async () => {
     pool.query
       .mockResolvedValueOnce({

@@ -107,6 +107,11 @@ function defaultBase(providerType) {
   }
 }
 
+function v1Base(base) {
+  const trimmed = String(base || '').replace(/\/$/, '');
+  return /\/v1$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
 function withOpencodeSession(providerType, headers) {
   if (providerType !== 'opencode' && providerType !== 'opencode-go') {
     return headers;
@@ -406,13 +411,13 @@ class ProviderRegistryService {
     const headers = { 'Content-Type': 'application/json' };
     let url;
     if (credential.provider_type === 'anthropic' || credential.provider_type === 'claude') {
-      url = `${base.replace(/\/$/, '')}/v1/models`;
+      url = `${v1Base(base)}/models`;
       headers['x-api-key'] = key;
       headers['anthropic-version'] = '2023-06-01';
     } else if (credential.provider_type === 'ollama') {
       url = `${base.replace(/\/$/, '')}/api/tags`;
     } else {
-      url = `${base.replace(/\/$/, '')}/v1/models`;
+      url = `${v1Base(base)}/models`;
       headers.Authorization = `Bearer ${key}`;
     }
 
@@ -471,7 +476,7 @@ class ProviderRegistryService {
     let headers = { 'Content-Type': 'application/json' };
     let payload;
     if (credential.provider_type === 'anthropic' || credential.provider_type === 'claude') {
-      url = `${base.replace(/\/$/, '')}/v1/messages`;
+      url = `${v1Base(base)}/messages`;
       headers['x-api-key'] = key;
       headers['anthropic-version'] = '2023-06-01';
       payload = { model: model.model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] };
@@ -479,7 +484,7 @@ class ProviderRegistryService {
       url = `${base.replace(/\/$/, '')}/api/generate`;
       payload = { model: model.model, prompt: 'ping', stream: false, options: { num_predict: 1 } };
     } else {
-      url = `${base.replace(/\/$/, '')}/v1/chat/completions`;
+      url = `${v1Base(base)}/chat/completions`;
       headers.Authorization = `Bearer ${key}`;
       payload = { model: model.model, max_tokens: 1, messages: [{ role: 'user', content: 'ping' }] };
     }
