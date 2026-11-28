@@ -121,9 +121,14 @@ if you already operate it.
 4. Run one ticket and verify the merge request, branch and cleanup.
 5. Revoke the project token and delete the test project.
 
-If GitLab is too heavy for the environment, implement and test against a
-faithful API fake first; keep the real-instance verification as a later
-follow-up.
+Provider `gitlab` supports subgroups (`group/sub/project`), a relative URL
+root, and project access tokens (`PRIVATE-TOKEN`). The API is derived from the
+base URL (`/api/v4`) and project paths are URL-encoded. Unit tests exercise
+connect, branch create/delete/list, MR create/reuse, review diff and review-head
+reads against a faithful API fake.
+
+If GitLab is too heavy for the environment, keep this smoke as a later
+follow-up; the fake covers the request/response contract in the meantime.
 
 ## Local filesystem repository
 

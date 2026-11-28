@@ -393,6 +393,7 @@ the feature added no new tests; its acceptance review is still open.
 | 2026-11-27 | `fg-57d2a` | 8 files / 400 lines | Operator accepted the file overage for the D16 token-origin pinning PR (provider base URL plumbing, WorkspaceManager origin checks, harness/profile wiring, tests and docs). Final diff: 12 files, 418 additions / 18 deletions (file and line overage accepted). |
 | 2026-11-28 | `fg-57d2b1` | 8 files / 400 lines | Operator accepted the overage for the D13 local-root PR (backend local path root/validation, agent file-root boundary, UI auth-mode fix, unit + real-git integration tests, docs). Final diff: 26 files, 833 additions / 71 deletions. |
 | 2026-11-28 | `fg-57d2b` | 8 files / 400 lines | Operator accepted the file overage for the D21 SSH clone/push PR (strict transient GIT_SSH wrapper, deploy-key/known-hosts handling, agent image/compose, tests and docs). Review nits added `ProxyCommand=none`, regular-file/symlink checks, doc qualification and fixed the `openssh-client` GID collision in the image. Final diff: 19 files, 398 additions / 23 deletions. |
+| 2026-11-28 | `fg-57g` | 8 files / 400 lines | Operator accepted the file and line overage for the optional GitLab self-hosted merge-request provider (new provider, subgroup/URL parsing, branch/MR/diff/review operations, service MR-number extraction, tests and docs). Final diff: 11 files, 730 additions / 16 deletions. |
 
 The limits below still apply to later slices; this row is a one-off operator
 waiver, not a new default.

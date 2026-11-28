@@ -209,12 +209,13 @@ The test skips unless all three `FORGEJO_*` variables are set. Set
 | 2026-11-27 | `925ea2e` (PR #263) | Agent 1180 tests; backend 173 suites / 2150 tests; contract 39 | `fg-57d2a` (D16): the agent only sends the HTTPS token to the configured provider origin on clone, push and fast-forward. A configured http/ssh/invalid origin fails closed (never the legacy path), an unreadable remote fails closed, and the askpass helper returns the credential only for the exact `https://host[:port]` authority, matching scheme/host case-insensitively via POSIX-sh patterns (IPv6 and Git's `oauth2@` userinfo included). Local filesystem/SSH work follows as `fg-57d2b`. |
 | 2026-11-28 | `bf88242` (PR #271) | Backend 174 suites / 2163 tests; agent 1196 tests; frontend 71 files / 621 tests; contract 39 | `fg-57d2b1` (D13): local `file://`/absolute repositories are accepted only under `LOCAL_GIT_ROOT` on the backend and `GIT_LOCAL_ROOT` on the agent, with realpath containment, symlink-escape rejection, git-root/default-branch validation and auth mode `none`. Both clone paths share the check and file/SSH remotes never fetch a token. Docker mode mounts the root in the API and supervisor, the API trusts the resolved repo with `safe.directory`, and the source is writable by the agent user for pushes. SSH clone/push remains `fg-57d2b` (D21). |
 | 2026-11-28 | `efff4c3` (PR #275) | Agent 1205 tests; backend 174 suites / 2166 tests; frontend 71 files / 621 tests; contract 39; agent image build | `fg-57d2b` (D21): SSH/scp remotes (including absolute paths and single-segment repos) clone and push through a transient `GIT_SSH` wrapper with `ssh -F /dev/null`, strict known-hosts checking and `ProxyCommand=none`; the project deploy key or a mounted regular-file key is used, missing/symlinked known-hosts or keys fail closed, stale temp keys are swept, and SSH remotes never fetch an HTTPS token. The image keeps the 100:101 identity using the `_ssh` GID created by `openssh-client`. |
+| 2026-11-28 | `744d23d` (PR #279) | Backend 174 suites / 2175 tests; frontend 71 files / 621 tests; contract 39 | `fg-57g` (D1): GitLab self-hosted repositories (HTTPS/SSH, subgroups, relative URL roots) connect with a project access token; branch create/delete/list, merge-request create/reuse, review diff/head and raw file reads use the GitLab v4 API with URL-encoded project paths and `PRIVATE-TOKEN`; the generic service extracts `/-/merge_requests/<iid>` numbers. Unit-tested against a GitLab API fake; a real disposable instance remains the optional smoke. |
 
 | Field | Value |
 |---|---|
 | Residual provider rows | none (verify) |
 | Forgejo/Gitea evidence | — |
-| GitLab evidence | — |
+| GitLab evidence | Unit fake (`gitProviders`); real instance optional |
 | Local/SSH evidence | — |
 
 ## Deferred scope

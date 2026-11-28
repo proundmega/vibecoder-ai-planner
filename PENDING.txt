@@ -246,7 +246,7 @@ Also indexed in `planning/HARNESS_ROADMAP.md` (fg-45 in Phase C, fg-46 deferred 
 
 | ID | Directory | Priority | Depends on | Description |
 |----|-----------|----------|------------|-------------|
-| **fg-57** | `fg-57-git-provider-abstraction` | P1 | fg-35, fg-54 | **Plan merged (#206); implementation post-pilot** — Provider-neutral Git publishing: Forgejo/Gitea self-hosted first, local bare/SSH branch-only fallback, and GitLab self-hosted as a later slice. Keeps GitHub working through generic `/git` routes and branch/SHA publish evidence; no private code is forced onto a foreign Git host. See `05_RUNBOOK.md` for the lightweight Forgejo/Gitea recommendation versus the heavier GitLab option. |
+| **fg-57** | `fg-57-git-provider-abstraction` | P1 | fg-35, fg-54 | **In review (#279)** — Provider-neutral Git publishing. GitHub, Forgejo/Gitea and local/SSH branch-only publishing are merged; the GitLab self-hosted merge-request slice is in review. The generic `/git` routes keep GitHub compatible; the real Forgejo/Gitea/GitLab smoke remains manual. See `05_RUNBOOK.md` for the provider setup and cleanup. |
 
 ## Other (pa-*)
 
