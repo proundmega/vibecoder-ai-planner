@@ -138,9 +138,10 @@ follow-up.
    - backend: `LOCAL_GIT_ROOT=/srv/git`
    - agent: `GIT_LOCAL_ROOT=/srv/git`
 
-   Host mode shares the filesystem. In Docker sandbox mode, bind the root at the
-   same absolute path inside the sandbox; a path the sandbox cannot see fails
-   the clone.
+   Host mode shares the filesystem. Bind the root at the same absolute path
+   into the API container and, in Docker sandbox mode, into the sandbox; a path
+   either side cannot see fails the clone. The backend image includes `git` for
+   the connect-time repository check.
 
 3. Connect with provider `local`, `file:///srv/git/private-app.git` (or the
    absolute path) and auth mode `none` (omitting auth mode for a file path
