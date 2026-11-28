@@ -153,10 +153,15 @@ follow-up.
    connect-time repository check. The Docker smoke is:
 
    ```bash
-   docker compose exec api git -C /srv/git/private-app.git rev-parse --is-bare-repository
+   docker compose exec api git -C /srv/git/private-app.git \
+     -c safe.directory=/srv/git/private-app.git rev-parse --is-bare-repository
    docker compose -f agent/docker-compose.yml exec supervisor \
      git -C /srv/git/private-app.git rev-parse --is-bare-repository
    ```
+
+   The API needs the explicit `safe.directory` (it runs as `node` while the
+   source is owned by uid 100); the agent owned the source, so its check
+   passes without it.
 
    A path either side cannot see fails the clone.
 
