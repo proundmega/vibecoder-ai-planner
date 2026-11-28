@@ -106,4 +106,22 @@ class AgentConfigTest {
         assertEquals(1800, config.getFixLeaseTtlSeconds());
         assertEquals(30, config.getFixMaxDurationMinutes());
     }
+
+    @Test
+    void fixWorkerIsOnlyAllowedOnAWorker() {
+        assertFalse(AgentConfig.fixWorkerAllowed(false, false));
+        assertTrue(AgentConfig.fixWorkerAllowed(true, false));
+        assertFalse(AgentConfig.fixWorkerAllowed(true, true));
+        assertFalse(AgentConfig.fixWorkerAllowed(false, true));
+    }
+
+    @Test
+    void fixWorkerSettingsAreClampedToTheirFloors() {
+        assertEquals(60, AgentConfig.boundedInt(0, 60, 86_400));
+        assertEquals(60, AgentConfig.boundedInt(-5, 60, 86_400));
+        assertEquals(86_400, AgentConfig.boundedInt(999_999, 60, 86_400));
+        assertEquals(1, AgentConfig.boundedInt(0, 1, 24 * 60));
+        assertEquals(1, AgentConfig.boundedInt(-1, 1, 24 * 60));
+        assertEquals(1800, AgentConfig.boundedInt(1800, 60, 86_400));
+    }
 }

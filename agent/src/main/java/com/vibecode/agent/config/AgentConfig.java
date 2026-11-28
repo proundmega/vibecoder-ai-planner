@@ -136,8 +136,10 @@ public class AgentConfig {
         // fg-32c2c3b: one worker runtime can also drain the fix queue. The flag
         // is worker-local so the runtime role and DB grants stay unchanged.
         this.fixWorkerEnabled = "true".equalsIgnoreCase(getEnv("FIX_WORKER_ENABLED", "false"));
-        this.fixLeaseTtlSeconds = Math.max(60, getIntEnv("FIX_LEASE_TTL_SECONDS", 1800));
-        this.fixMaxDurationMinutes = Math.max(1, getIntEnv("FIX_MAX_DURATION_MINUTES", 30));
+        this.fixLeaseTtlSeconds = boundedInt(
+            getIntEnv("FIX_LEASE_TTL_SECONDS", 1800), 60, 86_400);
+        this.fixMaxDurationMinutes = boundedInt(
+            getIntEnv("FIX_MAX_DURATION_MINUTES", 30), 1, 24 * 60);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
         this.harnessConfig = HarnessConfig.fromEnvironment();
         this.sandboxConfig = SandboxConfig.fromEnvironment();
@@ -381,7 +383,17 @@ public class AgentConfig {
 
     /** A worker that also drains the fix queue; never enabled on reviewers. */
     public boolean isFixWorkerEnabled() {
-        return fixWorkerEnabled && !isReviewMode();
+        return fixWorkerAllowed(fixWorkerEnabled, isReviewMode());
+    }
+
+    /** Reviewers and planners never drain the fix queue, whatever the flag. */
+    static boolean fixWorkerAllowed(boolean enabled, boolean reviewMode) {
+        return enabled && !reviewMode;
+    }
+
+    /** Clamp an env value into its supported range (floors also cap growth). */
+    static int boundedInt(int value, int floor, int ceiling) {
+        return Math.min(ceiling, Math.max(floor, value));
     }
     public int getFixLeaseTtlSeconds() { return fixLeaseTtlSeconds; }
     public int getFixMaxDurationMinutes() { return fixMaxDurationMinutes; }
