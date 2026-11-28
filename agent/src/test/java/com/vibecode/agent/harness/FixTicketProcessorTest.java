@@ -461,4 +461,95 @@ class FixTicketProcessorTest {
         assertTrue(events.contains("finishRun succeeded"));
         assertFalse(events.contains("finishRun failed"), "a published run is never failed");
     }
+
+    @Test
+    void rejectsARunStartWithoutARunId() {
+        FixTicketProcessor.Journal noRunId = new FixTicketProcessor.Journal() {
+            @Override
+            public boolean renew() {
+                return true;
+            }
+
+            @Override
+            public String startRun(FixTicketProcessor.FixClaim claim) {
+                return "  ";
+            }
+
+            @Override
+            public void finishRun(String runId, boolean succeeded, String error) {
+                events.add("finishRun " + runId);
+            }
+        };
+
+        FixTicketProcessor.Outcome outcome = processor(
+            (workspace, title, prompt) -> events.add("fix"),
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            noRunId,
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+
+        assertEquals(FixTicketProcessor.Status.FAILED, outcome.status());
+        assertTrue(outcome.reason().contains("no run id"), outcome.reason());
+        assertTrue(events.isEmpty(), "no workspace or finish call without a run id");
+    }
+
+    @Test
+    void failsWhenThePublisherReturnsABlankSha() {
+        FixTicketProcessor.Outcome outcome = processor(
+            (workspace, title, prompt) -> events.add("fix"),
+            (workspace, timeout) -> true,
+            (message, claim) -> " ",
+            journal(true),
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+
+        assertEquals(FixTicketProcessor.Status.FAILED, outcome.status());
+        assertTrue(outcome.reason().contains("no head SHA"), outcome.reason());
+        assertTrue(events.contains("finishRun run-1 false fix run failed: publish returned no head SHA"));
+        assertFalse(events.stream().anyMatch(event -> event.endsWith("true null")),
+            "a blank SHA is not a publication, so no success finish");
+    }
+
+    @Test
+    void reportsDoneWithAWarningWhenBothFinishAttemptsFail() {
+        int[] attempts = {0};
+        FixTicketProcessor.Journal alwaysFails = new FixTicketProcessor.Journal() {
+            @Override
+            public boolean renew() {
+                return true;
+            }
+
+            @Override
+            public String startRun(FixTicketProcessor.FixClaim claim) {
+                return "run-1";
+            }
+
+            @Override
+            public void finishRun(String runId, boolean succeeded, String error) throws IOException {
+                if (!succeeded) {
+                    events.add("finishRun failed");
+                    return;
+                }
+                attempts[0]++;
+                throw new IOException("backend down");
+            }
+        };
+
+        FixTicketProcessor.Outcome outcome = processor(
+            (workspace, title, prompt) -> { },
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            alwaysFails,
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+
+        assertEquals(FixTicketProcessor.Status.DONE, outcome.status());
+        assertEquals(SHA, outcome.headSha());
+        assertEquals(2, attempts[0]);
+        assertTrue(outcome.reason().contains("finishRun(succeeded) failed"),
+            outcome.reason());
+        assertFalse(events.contains("finishRun failed"),
+            "a published run is never failed, even when bookkeeping fails twice");
+    }
 }

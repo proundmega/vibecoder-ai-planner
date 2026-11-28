@@ -95,7 +95,11 @@ public final class FixTicketProcessor {
             if (!journal.renew()) {
                 return Outcome.skipped("fix_lease_lost before start", elapsed(startedAt));
             }
-            runId = journal.startRun(claim);
+            String startedRunId = journal.startRun(claim);
+            if (isBlank(startedRunId)) {
+                throw new IOException("fix run start returned no run id");
+            }
+            runId = startedRunId;
             Instant deadline = clock.instant().plus(budget);
 
             workspace.checkout(claim.branch(), claim.reviewedSha());
@@ -134,10 +138,12 @@ public final class FixTicketProcessor {
             // Once publishing starts the deadline is ignored: interrupting a
             // push would leave the remote ambiguous.
             headSha = publisher.publish(commitMessage(ticket, claim), claim);
-            published = true;
             if (isBlank(headSha)) {
+                // The publisher contract is "a throw means not published", so
+                // a blank SHA is not a publication either.
                 throw new IOException("publish returned no head SHA");
             }
+            published = true;
             String finishError = finishSucceeded(runId);
             return Outcome.done(headSha, elapsed(startedAt), finishError);
         } catch (IOException | RuntimeException error) {
@@ -253,6 +259,17 @@ public final class FixTicketProcessor {
         FAILED
     }
 
+    /**
+     * Result of one fix attempt.
+     *
+     * <p>Consumers must key off {@link #status()}: for {@link Status#DONE}
+     * {@link #reason()} carries a <em>warning</em> (the published commit is
+     * fine, but bookkeeping needs a retry), while for
+     * {@link Status#FAILED}/{@link Status#SKIPPED} it carries the failure or
+     * skip cause. A non-null reason on {@code DONE} means the next slice must
+     * retry the completion call ({@code completeFix}) even though the run is
+     * already successful.</p>
+     */
     public record Outcome(Status status, String reason, String headSha, long durationMs) {
         static Outcome done(String headSha, long durationMs, String warning) {
             return new Outcome(Status.DONE, warning, headSha, durationMs);
@@ -286,7 +303,16 @@ public final class FixTicketProcessor {
 
     @FunctionalInterface
     public interface Publisher {
-        /** Stage, commit and fast-forward publish; returns the published SHA. */
+        /**
+         * Stage, commit and fast-forward publish; returns the published SHA,
+         * which must be non-blank.
+         *
+         * <p>Contract: <strong>a throw means "not published"</strong>. An
+         * implementation that cannot tell whether the push landed must check
+         * the remote and return the SHA when it did, so the processor never
+         * reports a live commit as a failed run. A blank return is treated as
+         * not published.</p>
+         */
         String publish(String commitMessage, FixClaim claim) throws IOException;
     }
 
