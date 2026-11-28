@@ -71,7 +71,6 @@ public class AgentConfig {
     private final boolean dryRun;
     private final int maxTicketsPerCycle;
     private final boolean fixWorkerEnabled;
-    private final int fixLeaseTtlSeconds;
     private final int fixMaxDurationMinutes;
     private final String repoCloneDir;
     private final String githubToken;
@@ -136,10 +135,10 @@ public class AgentConfig {
         // fg-32c2c3b: one worker runtime can also drain the fix queue. The flag
         // is worker-local so the runtime role and DB grants stay unchanged.
         this.fixWorkerEnabled = "true".equalsIgnoreCase(getEnv("FIX_WORKER_ENABLED", "false"));
-        this.fixLeaseTtlSeconds = boundedInt(
-            getIntEnv("FIX_LEASE_TTL_SECONDS", 1800), 60, 86_400);
+        // One knob: the fix budget. The claim lease is derived so it can never
+        // expire before the publish step of a fix that uses its whole budget.
         this.fixMaxDurationMinutes = boundedInt(
-            getIntEnv("FIX_MAX_DURATION_MINUTES", 30), 1, 24 * 60);
+            getIntEnv("FIX_MAX_DURATION_MINUTES", 30), 1, 60);
         this.repoCloneDir = getEnv("REPO_CLONE_DIR", "/tmp/repos");
         this.harnessConfig = HarnessConfig.fromEnvironment();
         this.sandboxConfig = SandboxConfig.fromEnvironment();
@@ -395,8 +394,12 @@ public class AgentConfig {
     static int boundedInt(int value, int floor, int ceiling) {
         return Math.min(ceiling, Math.max(floor, value));
     }
-    public int getFixLeaseTtlSeconds() { return fixLeaseTtlSeconds; }
     public int getFixMaxDurationMinutes() { return fixMaxDurationMinutes; }
+
+    /** Claim lease: the fix budget plus ten minutes of publish headroom. */
+    public int getFixLeaseSeconds() {
+        return Math.min(86_400, (fixMaxDurationMinutes + 10) * 60);
+    }
     public String getRepoCloneDir() { return repoCloneDir; }
     public String getGitHubToken() { return githubToken; }
     public String getGitHubAuthMode() { return githubAuthMode; }

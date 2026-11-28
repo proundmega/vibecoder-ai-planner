@@ -282,6 +282,15 @@ like a build run; the fixer-only allowance covers only the PR/head guard.
   The trade-off is that one runtime does build and fix sequentially; a
   dedicated fixer runtime (and its claim-based authorisation) is deferred until
   fix throughput needs it.
+- Deadline and lease: `FIX_MAX_DURATION_MINUTES` is the only knob. The
+  deadline is checked before clone/session/verify and ignored once the
+  `publishing` checkpoint exists; the lease is derived as budget + 10 min so a
+  full-budget fix still has a live lease when it publishes. Renewal happens
+  before each long phase.
+- Future exploration: a crashed fixer holds its request until the derived
+  lease expires (40 min at the default). If faster recovery is ever needed,
+  reintroduce an explicit shorter lease override — tracked in the suite's
+  deferred register.
 - `AgentApp` constructs `FixTicketProcessor implements TicketWorker` when the
   flag is set; it drains at most one due request per cycle. A supervisor
   poison pill (`AGENT_RUNTIME_STOP_FILE`) may stop a stuck fixer once its
@@ -300,8 +309,7 @@ Add these to `AgentConfig` and to the existing `backend/src/services/PoolManager
 | `FIX_LOOP_MODE` | `off` | dispatch default; `projects.fix_loop_mode` overrides |
 | `FIX_MAX_ROUNDS` | `2` | fix rounds after round 0 |
 | `FIX_MAX_ATTEMPTS` | `3` | fixer attempts per request before escalation |
-| `FIX_LEASE_TTL_SECONDS` | `1800` | claim lease (floor 60, cap 24h); renewed via `fix/renew` |
-| `FIX_MAX_DURATION_MINUTES` | `30` | wall-clock hard stop (floor 1) |
+| `FIX_MAX_DURATION_MINUTES` | `30` | fix budget (floor 1, cap 60). The claim lease is derived as budget + 10 min (capped 24 h), so no separate lease flag exists. |
 
 Mirror them in `agent/.env.example` and the README agent env table, and document that `FIX_LOOP_MODE` is dispatch-only while `AGENT_MODE=fix` selects the worker.
 

@@ -103,8 +103,8 @@ class AgentConfigTest {
         AgentConfig config = new AgentConfig();
 
         assertFalse(config.isFixWorkerEnabled());
-        assertEquals(1800, config.getFixLeaseTtlSeconds());
         assertEquals(30, config.getFixMaxDurationMinutes());
+        assertEquals(2400, config.getFixLeaseSeconds());
     }
 
     @Test
