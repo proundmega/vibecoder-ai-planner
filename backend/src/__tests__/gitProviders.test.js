@@ -924,7 +924,7 @@ describe('GitLab provider', () => {
         filename: 'dir/a b.js', status: 'modified', additions: 2, deletions: 2,
       });
       expect(diff.files[4].patch).toContain(
-        'diff --git a/"dir/a b.js" b/"dir/a b.js"');
+        'diff --git "a/dir/a b.js" "b/dir/a b.js"');
 
       await expect(provider().getReviewRequest(repo, 7)).resolves.toEqual({
         number: 7,

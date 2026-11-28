@@ -173,7 +173,9 @@ function parseChanges(data) {
       additions,
       deletions,
       changes: additions + deletions,
-      patch: diff ? `diff --git a/${quoteGitPath(oldPath)} b/${quoteGitPath(newPath)}\n${diff}` : '',
+      patch: diff
+        ? `diff --git ${quoteGitPath(`a/${oldPath}`)} ${quoteGitPath(`b/${newPath}`)}\n${diff}`
+        : '',
     };
   });
 }
