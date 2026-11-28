@@ -1,6 +1,7 @@
 const Project = require('../models/project');
 const Ticket = require('../models/ticket');
 const User = require('../models/user');
+const path = require('path');
 const { pool } = require('../db');
 const PermissionService = require('./PermissionService');
 const GitHubAppAuthService = require('./GitHubAppAuthService');
@@ -39,10 +40,16 @@ class GitProjectService {
         + `explicit ${input.authMode} is not supported`
       );
     }
+    const localFilesystem = providerId === 'local'
+      && typeof input.repoUrl === 'string'
+      && (/^file:\/\//i.test(input.repoUrl.trim())
+        || path.isAbsolute(input.repoUrl.trim()));
     const authMode = input.authMode
       || (providerId === 'github'
         ? globalGithubMode
-        : providerId === 'local' ? 'ssh' : 'pat');
+        : providerId === 'local'
+          ? (localFilesystem ? 'none' : 'ssh')
+          : 'pat');
     if (!capabilities.authModes.includes(authMode)) {
       throw new ValidationError(`Unsupported auth mode for ${providerId}: ${authMode}`);
     }
@@ -78,7 +85,10 @@ class GitProjectService {
     }
     // Self-hosted providers expand an `owner/repo` shorthand into a clone URL;
     // store that canonical form so the agent receives a usable remote.
-    const repoUrl = capabilities.requiresBaseUrl && parsedRepo.cloneUrl
+    // Self-hosted providers store their canonical clone URL; local paths are
+    // canonicalized to file:// so the agent and backend agree on the root.
+    const repoUrl = parsedRepo.cloneUrl
+      && (capabilities.requiresBaseUrl || providerId === 'local')
       ? parsedRepo.cloneUrl
       : input.repoUrl;
     const validation = await provider.validateRepoAccess(repoUrl, token || sshKey);

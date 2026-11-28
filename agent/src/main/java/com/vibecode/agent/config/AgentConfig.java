@@ -77,6 +77,7 @@ public class AgentConfig {
     private final String githubAuthMode;
     private final String gitSshKeyFile;
     private final String gitSshKnownHosts;
+    private final String localRepoRoot;
     private String repoUrl;
     private String repoBaseUrl;
     private String repoProvider = "github";
@@ -124,6 +125,7 @@ public class AgentConfig {
             getEnv("GITHUB_AUTH_MODE", "app")).toLowerCase();
         this.gitSshKeyFile = getEnv("GIT_SSH_KEY_FILE", null);
         this.gitSshKnownHosts = getEnv("GIT_SSH_KNOWN_HOSTS", null);
+        this.localRepoRoot = getEnv("GIT_LOCAL_ROOT", getEnv("LOCAL_GIT_ROOT", null));
         if (!"app".equals(this.githubAuthMode) && !"pat".equals(this.githubAuthMode)) {
             throw new IllegalStateException(
                 "GITHUB_AUTH_MODE/GIT_AUTH_MODE must be 'app' or 'pat' (got '"
@@ -411,6 +413,9 @@ public class AgentConfig {
     public String getGitToken() { return githubToken; }
     public String getGitSshKeyFile() { return gitSshKeyFile; }
     public String getGitSshKnownHosts() { return gitSshKnownHosts; }
+
+    /** Root under which local filesystem repositories may be cloned. */
+    public String getLocalRepoRoot() { return localRepoRoot; }
     public boolean isAllowPat() { return allowPat; }
 
     public HarnessConfig getHarnessConfig() { return harnessConfig; }

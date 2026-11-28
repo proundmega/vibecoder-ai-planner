@@ -125,6 +125,57 @@ If GitLab is too heavy for the environment, implement and test against a
 faithful API fake first; keep the real-instance verification as a later
 follow-up.
 
+## Local filesystem repository
+
+1. Create or reuse a git repository under a root you control:
+
+   ```bash
+   git init --bare /srv/git/private-app.git
+   ```
+
+2. Set the **same absolute root** on both sides:
+
+   - backend: `LOCAL_GIT_ROOT=/srv/git`
+   - agent: `GIT_LOCAL_ROOT=/srv/git`
+   - Compose: `GIT_LOCAL_ROOT_HOST_PATH=/srv/vibecode-local-git` and
+     `GIT_LOCAL_ROOT=/srv/git`. Both `docker-compose.yml` (API) and
+     `agent/docker-compose.yml` (supervisor) mount that host path at the same
+     target; the Docker sandbox sees the workspace bind, not the source root.
+
+   The API runs as `node` (uid 1000) and the agent as `agent` (uid 100). Make
+   the source root writable by the agent user for pushes
+   (`chown -R 100:101 /srv/vibecode-local-git`); the API only reads it and
+   trusts the exact repository path with `safe.directory`, so a different
+   owner is still readable. A cross-owned source is cloneable but a push fails
+   in `receive-pack`, hence the agent ownership requirement.
+
+   Host mode shares the filesystem. The backend image includes `git` for the
+   connect-time repository check. The Docker smoke is:
+
+   ```bash
+   docker compose exec api git -C /srv/git/private-app.git \
+     -c safe.directory=/srv/git/private-app.git rev-parse --is-bare-repository
+   docker compose -f agent/docker-compose.yml exec supervisor \
+     git -C /srv/git/private-app.git rev-parse --is-bare-repository
+   ```
+
+   The API needs the explicit `safe.directory` (it runs as `node` while the
+   source is owned by uid 100); the agent owned the source, so its check
+   passes without it.
+
+   A path either side cannot see fails the clone.
+
+3. Connect with provider `local`, `file:///srv/git/private-app.git` (or the
+   absolute path) and auth mode `none` (omitting auth mode for a file path
+   now defaults to `none`; SSH URLs still default to `ssh`). The backend
+   resolves the real path,
+   requires it under `LOCAL_GIT_ROOT`, verifies it is a git repository and
+   records the default branch. No credential is stored.
+4. Run one ticket. The harness clones from the local path, pushes the branch and
+   finishes with branch + SHA; review locally or in the Git UI.
+5. Paths outside the root, symlink escapes, a non-repository path or a missing
+   `LOCAL_GIT_ROOT` are rejected on connect and by the agent.
+
 ## Local bare repository over SSH
 
 1. On a host the agent can reach, create a bare repo:

@@ -178,9 +178,13 @@ public final class HarnessTicketProcessor implements TicketWorker {
             gitHubService,
             githubToken,
             harnessConfig,
-            repoName -> new WorkspaceManager(
-                config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken, tokenSource,
-                null, tokenOrigin(config)),
+            repoName -> {
+                WorkspaceManager manager = new WorkspaceManager(
+                    config.getRepoCloneDir(), repoName, config.isDryRun(), githubToken,
+                    tokenSource, null, tokenOrigin(config));
+                manager.setLocalRepoRoot(config.getLocalRepoRoot());
+                return manager;
+            },
             (tempDir, bridge, effectiveConfig) ->
                 new OpenCodeClient(effectiveConfig, provider, tempDir, bridge),
             new PlanningDocFetcher(apiService, config),

@@ -290,12 +290,80 @@ describe('GitProjectService', () => {
       expect(pool.query.mock.calls[0][1][8]).toBe('enc:key');
     });
 
-    it('rejects the removed local none auth mode', async () => {
-      await expect(GitProjectService.connect(1, {
+    it('defaults a local filesystem path to auth mode none', async () => {
+      const provider = fakeProvider({
+        parseRepoUrl: jest.fn().mockReturnValue({
+          protocol: 'file',
+          path: '/srv/git/repo.git',
+          cloneUrl: 'file:///srv/git/repo.git',
+        }),
+        validateRepoAccess: jest.fn().mockResolvedValue({
+          accessible: true,
+          defaultBranch: 'main',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'local',
+          repo_url: 'file:///srv/git/repo.git',
+          default_branch: 'main',
+          is_active: true,
+          auth_mode: 'none',
+        }],
+      });
+
+      await GitProjectService.connect(1, {
         provider: 'local',
-        repoUrl: 'ssh://git@203.0.113.10/group/repo.git',
+        repoUrl: 'file:///srv/git/repo.git',
+      }, 100);
+
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('local', {
+        credential: null,
+        baseUrl: null,
         authMode: 'none',
-      }, 100)).rejects.toThrow('Unsupported auth mode for local: none');
+      });
+    });
+
+    it('accepts the local none auth mode for a filesystem repository', async () => {
+      const provider = fakeProvider({
+        parseRepoUrl: jest.fn().mockReturnValue({
+          protocol: 'file',
+          path: '/srv/git/repo.git',
+          cloneUrl: 'file:///srv/git/repo.git',
+        }),
+        validateRepoAccess: jest.fn().mockResolvedValue({
+          accessible: true,
+          defaultBranch: 'main',
+        }),
+      });
+      jest.spyOn(gitProviders.registry, 'get').mockReturnValue(provider);
+      pool.query.mockResolvedValue({
+        rows: [{
+          id: 1,
+          project_id: 1,
+          provider: 'local',
+          repo_url: 'file:///srv/git/repo.git',
+          default_branch: 'main',
+          is_active: true,
+          auth_mode: 'none',
+        }],
+      });
+
+      await GitProjectService.connect(1, {
+        provider: 'local',
+        repoUrl: 'file:///srv/git/repo.git',
+        authMode: 'none',
+      }, 100);
+
+      expect(gitProviders.registry.get).toHaveBeenCalledWith('local', {
+        credential: null,
+        baseUrl: null,
+        authMode: 'none',
+      });
+      expect(pool.query.mock.calls[0][1][2]).toBe('file:///srv/git/repo.git');
     });
 
     it('requires a base URL for self-hosted providers', async () => {

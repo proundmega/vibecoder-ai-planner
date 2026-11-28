@@ -42,7 +42,7 @@ describe('Git provider contract', () => {
       reviewRequestName: 'branch',
       requiresBaseUrl: false,
     });
-    expect(getCapabilities('local').authModes).toEqual(['ssh']);
+    expect(getCapabilities('local').authModes).toEqual(['ssh', 'none']);
   });
 
   it('normalises ids and rejects unknown providers', () => {
@@ -210,9 +210,9 @@ describe('Local provider', () => {
       'user%3Apass@git.example.com:group/repo.git'))
       .toThrow('must not contain a password');
     expect(() => provider.parseRepoUrl('/srv/git/private-app.git'))
-      .toThrow('deferred to fg-57d2');
+      .toThrow('require LOCAL_GIT_ROOT');
     expect(() => provider.parseRepoUrl('file:///srv/git/private-app.git'))
-      .toThrow('deferred to fg-57d2');
+      .toThrow('require LOCAL_GIT_ROOT');
     expect(() => provider.parseRepoUrl('ssh://git@git.example.com/'))
       .toThrow('must include a repository path');
   });

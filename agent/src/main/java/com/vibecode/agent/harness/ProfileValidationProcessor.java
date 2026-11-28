@@ -48,10 +48,14 @@ public class ProfileValidationProcessor {
             apiService,
             sandboxConfig,
             sandboxRunner,
-            repoName -> new WorkspaceManager(
-                config.getRepoCloneDir(), repoName, config.isDryRun(),
-                githubToken, tokenSource, null,
-                HarnessTicketProcessor.tokenOrigin(config)),
+            repoName -> {
+                WorkspaceManager manager = new WorkspaceManager(
+                    config.getRepoCloneDir(), repoName, config.isDryRun(),
+                    githubToken, tokenSource, null,
+                    HarnessTicketProcessor.tokenOrigin(config));
+                manager.setLocalRepoRoot(config.getLocalRepoRoot());
+                return manager;
+            },
             new VerificationRunner()
         );
     }

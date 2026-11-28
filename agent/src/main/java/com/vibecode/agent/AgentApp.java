@@ -96,8 +96,16 @@ public class AgentApp {
             providerSettings.apiKey(), System.getenv("GITHUB_TOKEN"));
         AiProvider aiProvider = createAiProvider(providerSettings);
         this.githubTokenProvider = createGitHubTokenProvider();
-        this.githubAccessToken = fetchGitHubToken(githubTokenProvider);
-        RedactionRegistry.register(githubAccessToken);
+        // Local/SSH repositories have no bearer credential; do not call the
+        // token route just to log a 400 at startup.
+        boolean credentiallessRepo = "none".equals(config.getRepoAuthMode())
+            || "ssh".equals(config.getRepoAuthMode());
+        this.githubAccessToken = credentiallessRepo
+            ? null
+            : fetchGitHubToken(githubTokenProvider);
+        if (githubAccessToken != null) {
+            RedactionRegistry.register(githubAccessToken);
+        }
         RedactionRegistry.register(githubTokenProvider.knownTokens());
         GitHubWiring wiring = createGitHubWiring(
             config, apiService, providerSettings,

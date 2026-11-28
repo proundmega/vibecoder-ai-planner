@@ -222,6 +222,14 @@ stops the session with run
 status `budget_exceeded`, never publishes, and releases the ticket; the global
 or project kill switch blocks new runs and withdraws leases from active ones.
 `harness_events` is append-only; only the retention purge may delete rows.
+Local filesystem repositories require the same absolute root on the backend
+(`LOCAL_GIT_ROOT`) and the agent (`GIT_LOCAL_ROOT`); the backend rejects paths
+outside it, symlink escapes and non-repositories, and the agent re-checks the
+root before cloning. Both Compose files mount `GIT_LOCAL_ROOT_HOST_PATH` at the
+same target; the source must be writable by the agent user (uid 100) for
+publishing, while the API trusts the exact path with `safe.directory`. The
+sandbox sees the workspace bind, not the source root.
+
 Sandbox: `SANDBOX_MODE` (`host` legacy, `docker` sandboxes install/verification
 and model-driven shell commands), `SANDBOX_IMAGE`, `SANDBOX_PROXY_IMAGE`,
 `SANDBOX_REQUIRE`, `SANDBOX_CPUS`,

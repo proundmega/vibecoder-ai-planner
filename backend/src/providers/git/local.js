@@ -1,5 +1,9 @@
 const dns = require('dns');
+const fs = require('fs');
 const net = require('net');
+const path = require('path');
+const { execFileSync } = require('child_process');
+const { fileURLToPath, pathToFileURL } = require('url');
 const { ValidationError } = require('../../errors/HttpError');
 const { getCapabilities, isPrivateHostname } = require('./GitProvider');
 
@@ -44,13 +48,79 @@ function privateHostsAllowed() {
     || process.env.GIT_ALLOW_PRIVATE_HOSTS === '1';
 }
 
+function localGitRoot() {
+  const root = process.env.LOCAL_GIT_ROOT || process.env.GIT_LOCAL_ROOT;
+  if (!root || !String(root).trim()) return null;
+  const value = String(root).trim();
+  return path.isAbsolute(value) ? value : null;
+}
+
+/**
+ * Resolve a filesystem repository path under the configured root. Symlinks
+ * are resolved before the containment check, so a link inside the root cannot
+ * point at `/etc` or another repository tree.
+ */
+function parseFilePath(raw) {
+  let candidate;
+  if (/^file:\/\//i.test(raw)) {
+    try {
+      candidate = fileURLToPath(raw);
+    } catch {
+      throw new ValidationError('Invalid local repository URL');
+    }
+  } else if (path.isAbsolute(raw)) {
+    candidate = raw;
+  } else {
+    return null;
+  }
+
+  const root = localGitRoot();
+  if (!root) {
+    throw new ValidationError(
+      'Local filesystem repositories require LOCAL_GIT_ROOT on the backend');
+  }
+
+  let rootReal;
+  let repoReal;
+  try {
+    rootReal = fs.realpathSync(root);
+    repoReal = fs.realpathSync(candidate);
+  } catch {
+    throw new ValidationError('Local repository path does not exist');
+  }
+  const relative = path.relative(rootReal, repoReal);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new ValidationError('Local repository path is outside LOCAL_GIT_ROOT');
+  }
+  return {
+    host: 'local',
+    protocol: 'file',
+    path: repoReal,
+    cloneUrl: pathToFileURL(repoReal).toString(),
+  };
+}
+
+/**
+ * The API and agent often run as different users (1000 vs 100), so a local
+ * repository owned by the agent is "dubious" to the API. Trust exactly this
+ * resolved path for the connect-time read; it is already under the root.
+ */
+function gitArgs(repoPath, args) {
+  return ['-C', repoPath, '-c', `safe.directory=${repoPath}`, ...args];
+}
+
+function gitOutput(repoPath, args) {
+  return execFileSync('git', gitArgs(repoPath, args), {
+    encoding: 'utf8',
+    timeout: 10000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+}
+
 /**
  * Local bare/SSH provider. There is no review API: the agent pushes a branch
- * and records the SHA; the backend only stores the SSH credential and serves
- * it to the agent.
- *
- * Filesystem paths are intentionally deferred to fg-57d2, where the agent-side
- * repository-root boundary exists; this slice accepts SSH URLs only.
+ * and records the SHA. SSH URLs carry a deploy key; filesystem paths are
+ * accepted only under LOCAL_GIT_ROOT and need no credential.
  */
 class LocalGitProvider {
   constructor(config) {
@@ -63,16 +133,15 @@ class LocalGitProvider {
   parseRepoUrl(repoUrl) {
     const raw = String(repoUrl || '').trim();
     if (!raw) throw new ValidationError('Repository URL is required');
+    if (/^file:\/\//i.test(raw) || path.isAbsolute(raw)) {
+      return parseFilePath(raw);
+    }
     if (/^https?:\/\//i.test(raw)) {
       throw new ValidationError(
         'Local repositories must use an SSH URL');
     }
     if (/^ssh:\/\//i.test(raw)) {
       return parseSshUrl(raw);
-    }
-    if (/^file:\/\//i.test(raw) || raw.startsWith('/')) {
-      throw new ValidationError(
-        'Local filesystem paths are deferred to fg-57d2; use an SSH URL');
     }
     const parsed = parseScpLike(raw);
     if (parsed) return parsed;
@@ -82,6 +151,45 @@ class LocalGitProvider {
 
   async validateRepoAccess(repoUrl, credential = this.config.credential) {
     const parsed = this.parseRepoUrl(repoUrl);
+    if (parsed.protocol === 'file') {
+      try {
+        const isBare = gitOutput(parsed.path, ['rev-parse', '--is-bare-repository']) === 'true';
+        if (!isBare) {
+          const top = gitOutput(parsed.path, ['rev-parse', '--show-toplevel']);
+          if (fs.realpathSync(top) !== parsed.path) {
+            return {
+              accessible: false,
+              defaultBranch: null,
+              error: 'Path must be the repository root',
+            };
+          }
+        }
+        let defaultBranch = '';
+        try {
+          defaultBranch = gitOutput(parsed.path, ['symbolic-ref', '--short', 'HEAD']);
+        } catch {
+          // Detached or non-bare HEAD; fall through to the abbreviated name.
+        }
+        if (!defaultBranch || defaultBranch === 'HEAD') {
+          try {
+            defaultBranch = gitOutput(parsed.path, ['rev-parse', '--abbrev-ref', 'HEAD']);
+          } catch {
+            defaultBranch = '';
+          }
+        }
+        return {
+          accessible: true,
+          defaultBranch: defaultBranch && defaultBranch !== 'HEAD' ? defaultBranch : null,
+          error: null,
+        };
+      } catch {
+        return {
+          accessible: false,
+          defaultBranch: null,
+          error: 'Path is not a git repository',
+        };
+      }
+    }
     if (!(credential && String(credential).trim())) {
       return {
         accessible: false,
@@ -129,6 +237,9 @@ class LocalGitProvider {
   }
 
   async validateCredential(credential = this.config.credential) {
+    if (this.config.authMode === 'none') {
+      return { valid: true };
+    }
     if (this.config.authMode === 'ssh') {
       return { valid: Boolean(credential && String(credential).trim()) };
     }
@@ -178,4 +289,4 @@ function createProvider(config) {
   return new LocalGitProvider(config);
 }
 
-module.exports = { LocalGitProvider, createProvider };
+module.exports = { LocalGitProvider, createProvider, gitArgs };

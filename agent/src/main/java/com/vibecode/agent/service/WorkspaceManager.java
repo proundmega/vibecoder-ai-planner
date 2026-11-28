@@ -96,6 +96,9 @@ public class WorkspaceManager {
     private final String repoName;
     private final String allowedTokenOrigin;
     private final boolean tokenOriginConfigured;
+    private String localRepoRoot;
+    private boolean localRootConfigured;
+    private String localSourcePath;
     private String trustedGitConfig;
     private String baseCommit;
     private String guardedTree;
@@ -152,6 +155,16 @@ public class WorkspaceManager {
         this.repoDir = null;
         this.tokenOriginConfigured = tokenOrigin != null && !tokenOrigin.isBlank();
         this.allowedTokenOrigin = httpsOrigin(tokenOrigin);
+    }
+
+    /**
+     * Confine filesystem clones to this root. Calling this (as production
+     * wiring always does) makes a missing root fail closed; not calling it
+     * keeps the legacy direct-construction behaviour for tests.
+     */
+    public void setLocalRepoRoot(String root) {
+        this.localRootConfigured = true;
+        this.localRepoRoot = root == null || root.isBlank() ? null : root.trim();
     }
 
     /** Set the ticket id (or other key) used for the runtime-scoped layout. */
@@ -360,6 +373,7 @@ public class WorkspaceManager {
         Duration cloneTimeout
     ) throws IOException {
         prepareWorkspace();
+        repoUrl = resolveLocalCloneUrl(repoUrl);
         log.info("Cloning repo from {} to {}", repoUrl, repoDir);
         if (dryRun) {
             log.info("[DRY RUN] Would clone {} to {}", repoUrl, repoDir);
@@ -403,6 +417,7 @@ public class WorkspaceManager {
         String branch = validateBranch(branchName);
         String expected = validateCommitSha(reviewedSha, "reviewed");
         prepareWorkspace();
+        repoUrl = resolveLocalCloneUrl(repoUrl);
         log.info("Cloning repo from {} to {} on existing branch {}",
             repoUrl, repoDir, branch);
         if (dryRun) {
@@ -478,10 +493,11 @@ public class WorkspaceManager {
      */
     private void cloneWithCredentials(String repoUrl, Duration cloneTimeout)
         throws IOException {
-        String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank()
-            && repoUrl.startsWith("https://")
-            && shouldAuthenticate(repoUrl);
+        // Only HTTPS remotes can use the bearer token; file/absolute/SSH
+        // repositories must not trigger a token fetch at all.
+        boolean eligible = repoUrl.startsWith("https://") && shouldAuthenticate(repoUrl);
+        String token = eligible ? currentToken() : null;
+        boolean authenticate = token != null && !token.isBlank();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -556,10 +572,6 @@ public class WorkspaceManager {
 
         hardenGitRepository();
 
-        // Configure git identity if not already set (after restoring config).
-        runGit("config", "user.email", "agent@vibecode.ai");
-        runGit("config", "user.name", "Vibecode Agent");
-
         boolean stagedHere = false;
         try {
             if (guardedTree == null && stageFirst) {
@@ -569,6 +581,12 @@ public class WorkspaceManager {
                 stagedHere = true;
                 stageFreshDiff();
             }
+
+            // Configure git identity after hardening/staging (both restore the
+            // clone-time config, which must not carry an agent identity).
+            runGit("config", "user.email", "agent@vibecode.ai");
+            runGit("config", "user.name", "Vibecode Agent");
+
             String commitSha;
             if (guardedTree != null) {
                 // Publish the exact tree that was guarded. It is pinned at
@@ -597,9 +615,9 @@ public class WorkspaceManager {
         // remote-tracking ref, but an explicit lease is still used so a retry
         // can overwrite a branch only if the remote has not moved.
         String pushTarget = "origin";
-        String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank()
-            && shouldAuthenticateRemote();
+        boolean eligible = httpsPublishingRemote();
+        String token = eligible ? currentToken() : null;
+        boolean authenticate = token != null && !token.isBlank();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -804,9 +822,9 @@ public class WorkspaceManager {
      * {@code GIT_ASKPASS=/dev/null} and fails on a private remote.
      */
     private void runWithCredentials(GitOperation operation) throws IOException {
-        String token = currentToken();
-        boolean authenticate = token != null && !token.isBlank()
-            && shouldAuthenticateRemote();
+        boolean eligible = httpsPublishingRemote();
+        String token = eligible ? currentToken() : null;
+        boolean authenticate = token != null && !token.isBlank();
         if (authenticate) {
             ensureAskPass(token);
         }
@@ -1353,7 +1371,7 @@ public class WorkspaceManager {
     ) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(gitBinary);
-        command.addAll(SAFE_GIT_OPTIONS);
+        command.addAll(gitOptions(localSourcePath));
         command.addAll(List.of(args));
 
         ProcessBuilder pb = new ProcessBuilder(command);
@@ -1388,6 +1406,20 @@ public class WorkspaceManager {
             log.warn("HARNESS_FSCK=false/0: skipping git object-integrity checks for {}; "
                 + "use only for trusted, very large repositories", repoDir);
         }
+    }
+
+    /**
+     * Supervisor git options. A local source owned by another user (the API)
+     * is trusted for this workspace only; the path was already confined to
+     * the configured root.
+     */
+    static List<String> gitOptions(String localSourcePath) {
+        List<String> options = new ArrayList<>(SAFE_GIT_OPTIONS);
+        if (localSourcePath != null && !localSourcePath.isBlank()) {
+            options.add("-c");
+            options.add("safe.directory=" + localSourcePath);
+        }
+        return options;
     }
 
     static boolean fsckEnabled(String value) {
@@ -1654,6 +1686,80 @@ public class WorkspaceManager {
         return origin != null && origin.equals(allowedTokenOrigin);
     }
 
+    /**
+     * Validate a local source and return the URL actually cloned: the resolved
+     * file URL for filesystem repositories, or the original URL otherwise.
+     */
+    private String resolveLocalCloneUrl(String repoUrl) throws IOException {
+        boolean fileUrl = isFileUrl(repoUrl);
+        boolean absolute;
+        try {
+            absolute = Paths.get(repoUrl).isAbsolute();
+        } catch (RuntimeException e) {
+            absolute = false;
+        }
+        if (!fileUrl && !absolute) {
+            return repoUrl;
+        }
+        if (!localRootConfigured) {
+            return repoUrl; // legacy direct construction/tests
+        }
+        if (localRepoRoot == null) {
+            throw new IOException("Local repositories require GIT_LOCAL_ROOT");
+        }
+        Path root;
+        try {
+            root = Paths.get(localRepoRoot);
+        } catch (RuntimeException e) {
+            throw new IOException("GIT_LOCAL_ROOT is not a valid path", e);
+        }
+        if (!root.isAbsolute()) {
+            throw new IOException("GIT_LOCAL_ROOT must be an absolute path");
+        }
+        Path repo;
+        try {
+            root = root.toRealPath();
+            repo = localPath(repoUrl).toRealPath();
+        } catch (IOException e) {
+            throw new IOException("Local repository path does not exist", e);
+        }
+        if (!repo.startsWith(root)) {
+            throw new IOException("Local repository is outside the configured root");
+        }
+        // Clone the resolved path so a symlink swap after the check is less
+        // likely to redirect the clone. Remember it for safe.directory: the
+        // source is often owned by the API user, not the agent user.
+        this.localSourcePath = repo.toString();
+        return repo.toUri().toString();
+    }
+
+    private static boolean isFileUrl(String repoUrl) {
+        return repoUrl != null && repoUrl.regionMatches(true, 0, "file://", 0, 7);
+    }
+
+    private Path localPath(String repoUrl) throws IOException {
+        if (!isFileUrl(repoUrl)) {
+            return Paths.get(repoUrl);
+        }
+        URI uri;
+        try {
+            // URI/Path schemes are lowercase; a mixed-case input still points
+            // at the same local path.
+            uri = URI.create("file" + repoUrl.substring("file".length()));
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid local repository URL", e);
+        }
+        if (uri.getHost() != null && !uri.getHost().isBlank()
+            && !"localhost".equalsIgnoreCase(uri.getHost())) {
+            throw new IOException("Local file URL must not name a remote host");
+        }
+        try {
+            return Paths.get(uri);
+        } catch (RuntimeException e) {
+            throw new IOException("Invalid local repository URL", e);
+        }
+    }
+
     /** Read the publishing remote's URL; a failure returns null. */
     private String remoteOriginUrl() {
         try {
@@ -1665,19 +1771,13 @@ public class WorkspaceManager {
     }
 
     /**
-     * Decide authentication for the publishing remote. Publishing restores the
-     * clone-time config first, so the remote is the URL the workspace was
-     * cloned from. Direct construction (tests) with no configured origin keeps
-     * the legacy authenticated behaviour.
+     * True only when the publishing remote is HTTPS and allowed to receive the
+     * token. A file/ssh remote (or an unreadable one) never triggers a token
+     * fetch.
      */
-    boolean shouldAuthenticateRemote() {
+    boolean httpsPublishingRemote() {
         String remote = remoteOriginUrl();
-        if (remote == null || remote.isBlank()) {
-            // No readable remote: legacy direct construction keeps the old
-            // behaviour; any configured origin (https or not) fails closed.
-            return !tokenOriginConfigured;
-        }
-        return shouldAuthenticate(remote);
+        return remote != null && remote.startsWith("https://") && shouldAuthenticate(remote);
     }
 
     private String currentToken() throws IOException {
