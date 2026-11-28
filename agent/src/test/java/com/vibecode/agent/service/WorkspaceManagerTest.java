@@ -1782,6 +1782,62 @@ class WorkspaceManagerTest {
             gitOutput(bare, "rev-parse", "refs/heads/vibecode/fix"));
     }
 
+    @Test
+    void cloneExistingBranchChecksOutTheReviewedCommit() throws Exception {
+        FixRepo repo = initWithFixBranch("existing-branch");
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "existing-branch", false, null);
+
+        wm.cloneExistingBranch(repo.bare().toString(), "vibecode/fix", repo.reviewedSha());
+
+        Path repoDir = wm.getRepoDir();
+        assertEquals(repo.reviewedSha(), gitOutput(repoDir, "rev-parse", "HEAD"));
+        assertEquals("vibecode/fix",
+            gitOutput(repoDir, "rev-parse", "--abbrev-ref", "HEAD"));
+        assertEquals("origin/vibecode/fix",
+            gitOutput(repoDir, "rev-parse", "--abbrev-ref", "vibecode/fix@{upstream}"));
+        assertEquals(repo.reviewedSha(), wm.getBaseCommit());
+    }
+
+    @Test
+    void cloneExistingBranchReportsAMissingRemoteBranch() throws Exception {
+        FixRepo repo = initWithFixBranch("existing-missing");
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "existing-missing", false, null);
+
+        IOException error = assertThrows(IOException.class, () -> wm.cloneExistingBranch(
+            repo.bare().toString(), "vibecode/missing", repo.reviewedSha()));
+        assertTrue(error.getMessage().contains("reviewed_sha_mismatch"), error.getMessage());
+    }
+
+    @Test
+    void cloneExistingBranchRejectsAMovedHead() throws Exception {
+        FixRepo repo = initWithFixBranch("existing-moved");
+        Files.writeString(repo.source().resolve("after.txt"), "later\n");
+        runGit(repo.source(), "add", ".");
+        runGit(repo.source(), "commit", "-m", "human push after review");
+        runGit(repo.source(), "push", "origin", "HEAD:refs/heads/vibecode/fix");
+
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "existing-moved", false, null);
+
+        IOException error = assertThrows(IOException.class, () -> wm.cloneExistingBranch(
+            repo.bare().toString(), "vibecode/fix", repo.reviewedSha()));
+        assertTrue(error.getMessage().contains("reviewed_sha_mismatch"));
+    }
+
+    @Test
+    void cloneExistingBranchRejectsInvalidInputs() {
+        WorkspaceManager wm = new WorkspaceManager(
+            tempDir.toString(), "existing-invalid", false, null);
+        String sha = "a".repeat(40);
+
+        assertThrows(IOException.class, () -> wm.cloneExistingBranch(
+            "https://example.test/r.git", "-evil", sha));
+        assertThrows(IOException.class, () -> wm.cloneExistingBranch(
+            "https://example.test/r.git", "feat/fix", "not-a-sha"));
+    }
+
     private record FixRepo(Path source, Path bare, String reviewedSha) {
     }
 

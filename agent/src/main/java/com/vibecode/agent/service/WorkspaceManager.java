@@ -329,10 +329,95 @@ public class WorkspaceManager {
         String baseBranch,
         Duration cloneTimeout
     ) throws IOException {
-        this.repoDir = generateRepoDir();
+        prepareWorkspace();
         log.info("Cloning repo from {} to {}", repoUrl, repoDir);
         if (dryRun) {
             log.info("[DRY RUN] Would clone {} to {}", repoUrl, repoDir);
+            return;
+        }
+        cloneWithCredentials(repoUrl, cloneTimeout);
+        createTicketBranch(branchName, baseBranch);
+
+        // Pin the clone-time base commit before the harness starts. Every
+        // subsequent read-tree/diff/tree/commit must use this SHA explicitly;
+        // local HEAD, refs and replacement refs are agent-writable.
+        this.baseCommit = runGitCommand("rev-parse", "HEAD");
+
+        // Snapshot the supervisor-owned git config. The harness can modify
+        // .git/config with bash, so publishing restores this snapshot first.
+        captureTrustedGitConfig();
+
+        log.info("Successfully cloned repo to {} and created branch {}", repoDir, branchName);
+    }
+
+    /**
+     * Clone the repository and check out the existing PR branch pinned at
+     * {@code reviewedSha} (fg-32c2c, FR5). No local branch is created for the
+     * fix; the fast-forward publish later writes the same remote branch.
+     *
+     * <p>If the remote branch has moved past the reviewed commit the clone
+     * fails with {@code reviewed_sha_mismatch} instead of fixing a stale base.
+     * </p>
+     */
+    public void cloneExistingBranch(String repoUrl, String branchName, String reviewedSha)
+        throws IOException {
+        cloneExistingBranch(repoUrl, branchName, reviewedSha, null);
+    }
+
+    public void cloneExistingBranch(
+        String repoUrl,
+        String branchName,
+        String reviewedSha,
+        Duration cloneTimeout
+    ) throws IOException {
+        String branch = validateBranch(branchName);
+        String expected = validateCommitSha(reviewedSha, "reviewed");
+        prepareWorkspace();
+        log.info("Cloning repo from {} to {} on existing branch {}",
+            repoUrl, repoDir, branch);
+        if (dryRun) {
+            log.info("[DRY RUN] Would clone {} and check out {}", repoUrl, branch);
+            return;
+        }
+
+        cloneWithCredentials(repoUrl, cloneTimeout);
+
+        // --quiet answers 1 for an absent ref while any other git failure is
+        // thrown by runGitStatus, so "not present" is not blamed on corruption.
+        String remoteRef = "refs/remotes/origin/" + branch;
+        if (runGitStatus("rev-parse", "--verify", "--quiet", remoteRef) != 0) {
+            throw new IOException(
+                "reviewed_sha_mismatch: branch " + branch
+                    + " is not present in the clone, reviewed " + expected);
+        }
+        String remoteSha = runGitCommand("rev-parse", "--verify", remoteRef).trim();
+        if (!expected.equalsIgnoreCase(remoteSha)) {
+            throw new IOException(
+                "reviewed_sha_mismatch: " + branch + " is at " + remoteSha
+                    + ", reviewed " + expected);
+        }
+        // Track the existing remote branch (no new branch is forked), then
+        // pin HEAD to the exact reviewed commit.
+        runGit("checkout", "-B", branch, "--track", "origin/" + branch);
+        String head = runGitCommand("rev-parse", "HEAD").trim();
+        if (!expected.equalsIgnoreCase(head)) {
+            throw new IOException(
+                "reviewed_sha_mismatch: HEAD is " + head + ", reviewed " + expected);
+        }
+
+        // The fix commit's parent and diff base is the reviewed SHA.
+        this.baseCommit = expected;
+
+        // Snapshot the supervisor-owned git config. The harness can modify
+        // .git/config with bash, so publishing restores this snapshot first.
+        captureTrustedGitConfig();
+        log.info("Checked out existing branch {} at {}", branch, expected);
+    }
+
+    /** Create the workspace directory and clear a leftover from a failed run. */
+    private void prepareWorkspace() throws IOException {
+        this.repoDir = generateRepoDir();
+        if (dryRun) {
             return;
         }
         Files.createDirectories(repoDir.getParent().resolve("tmp"));
@@ -340,7 +425,6 @@ public class WorkspaceManager {
         Files.createDirectories(getCacheDir());
         assertSafeToDelete(repoDir);
 
-        // Remove existing directory if present (from failed previous attempt)
         if (Files.exists(repoDir, LinkOption.NOFOLLOW_LINKS)) {
             log.info("Removing existing directory: {}", repoDir);
             try {
@@ -354,13 +438,16 @@ public class WorkspaceManager {
                 throw new IOException("Failed to remove existing directory: " + repoDir);
             }
         }
-
-        // Create parent directory if needed
         Files.createDirectories(repoDir.getParent());
+    }
 
-        // Clone without authentication first (works for public repos) or with
-        // a transient askpass helper for private repos. The token never appears
-        // in a command line or in .git/config.
+    /**
+     * Clone without authentication first (works for public repos) or with a
+     * transient askpass helper for private repos. The token never appears in a
+     * command line or in .git/config.
+     */
+    private void cloneWithCredentials(String repoUrl, Duration cloneTimeout)
+        throws IOException {
         String token = currentToken();
         boolean authenticate = token != null && !token.isBlank()
             && repoUrl.startsWith("https://");
@@ -389,10 +476,14 @@ public class WorkspaceManager {
         } finally {
             cleanupAskPass();
         }
+    }
 
-        // Create and checkout the target branch. An explicit profile base
-        // branch must resolve as a remote-tracking ref; failing closed is safer
-        // than silently branching from the clone default.
+    /**
+     * Create the ticket branch for a build run. An explicit profile base branch
+     * must resolve as a remote-tracking ref; failing closed is safer than
+     * silently branching from the clone default.
+     */
+    private void createTicketBranch(String branchName, String baseBranch) throws IOException {
         String checkoutBase = baseBranch == null ? null : baseBranch.trim();
         if (checkoutBase != null && !checkoutBase.isEmpty()) {
             if (checkoutBase.startsWith("-") || checkoutBase.contains("..")) {
@@ -403,17 +494,6 @@ public class WorkspaceManager {
         } else {
             runGit("checkout", "-b", branchName);
         }
-
-        // Pin the clone-time base commit before the harness starts. Every
-        // subsequent read-tree/diff/tree/commit must use this SHA explicitly;
-        // local HEAD, refs and replacement refs are agent-writable.
-        this.baseCommit = runGitCommand("rev-parse", "HEAD");
-
-        // Snapshot the supervisor-owned git config. The harness can modify
-        // .git/config with bash, so publishing restores this snapshot first.
-        captureTrustedGitConfig();
-
-        log.info("Successfully cloned repo to {} and created branch {}", repoDir, branchName);
     }
 
     /**
