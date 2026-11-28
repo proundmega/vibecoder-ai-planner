@@ -294,6 +294,43 @@ public class ApiService implements QuestionBridge.Transport {
             "fix", fixRequestId, baseSha);
     }
 
+    /**
+     * Fixer run with a repo profile, for parity with the build path: the
+     * profile drives dependency install and verification. Without one the
+     * harness autodetects, as it does for a build run.
+     */
+    public Map<String, Object> startFixHarnessRun(
+        Long ticketId,
+        String branch,
+        String workspacePath,
+        String provider,
+        String model,
+        int attempt,
+        String fixRequestId,
+        String baseSha,
+        String repoProfileId,
+        Integer repoProfileVersion
+    ) throws IOException {
+        if (repoProfileId == null || repoProfileId.isBlank()) {
+            return startFixHarnessRun(ticketId, branch, workspacePath, provider, model,
+                attempt, fixRequestId, baseSha);
+        }
+        if (repoProfileVersion == null) {
+            throw new IllegalArgumentException(
+                "repoProfileVersion is required with repoProfileId");
+        }
+        if (fixRequestId == null || fixRequestId.isBlank()) {
+            throw new IllegalArgumentException("fixRequestId is required for a fix run");
+        }
+        if (baseSha == null || baseSha.isBlank()) {
+            throw new IllegalArgumentException("baseSha is required for a fix run");
+        }
+        return startHarnessRun(
+            ticketId, branch, workspacePath, provider, model, attempt,
+            repoProfileId, repoProfileVersion, providerBaseUrlContext, providerRegionContext,
+            "fix", fixRequestId, baseSha);
+    }
+
     public Map<String, Object> startHarnessRun(
         Long ticketId,
         String branch,
