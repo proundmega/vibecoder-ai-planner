@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -30,7 +31,8 @@ class ApiServiceFixQueueTest {
 
     private record StubResponse(int status, String body) {}
 
-    private record RecordedRequest(String method, String path, String query, String body) {}
+    private record RecordedRequest(
+        String method, String path, String query, String runtime, String body) {}
 
     private HttpServer server;
     private ApiService api;
@@ -48,6 +50,7 @@ class ApiServiceFixQueueTest {
                 exchange.getRequestMethod(),
                 exchange.getRequestURI().getPath(),
                 exchange.getRequestURI().getQuery(),
+                exchange.getRequestHeaders().getFirst("X-Agent-Runtime"),
                 body
             ));
             StubResponse response = responses.getOrDefault(
@@ -66,6 +69,7 @@ class ApiServiceFixQueueTest {
         AgentConfig config = mock(AgentConfig.class);
         when(config.getApiUrl())
             .thenReturn("http://127.0.0.1:" + server.getAddress().getPort() + "/api/v1");
+        when(config.getRuntimeId()).thenReturn("3");
         AgentAuthManager authManager = mock(AgentAuthManager.class);
         when(authManager.ensureValidAccessToken()).thenReturn("test-agent-key");
         api = new ApiService(config, authManager);
@@ -93,10 +97,19 @@ class ApiServiceFixQueueTest {
         assertEquals("GET", request.method());
         assertEquals("/api/v1/agents/fix-queue", request.path());
         assertEquals("projectId=5&limit=3", request.query());
+        assertEquals("3", request.runtime());
     }
 
     @Test
-    void claimsAFixRequestAndTreatsAConflictAsSkip() throws Exception {
+    void listsWithoutALimitWhenItIsNotPositive() throws Exception {
+        stub("/api/v1/agents/fix-queue", 200, "{\"success\":true,\"data\":[]}");
+
+        assertTrue(api.listFixQueue(5, 0).isEmpty());
+        assertEquals("projectId=5", requests.get(0).query());
+    }
+
+    @Test
+    void claimsAFixRequestAndTreatsContentionAsSkip() throws Exception {
         stub("/api/v1/tickets/42/fix/claim", 200,
             "{\"success\":true,\"data\":{\"claimed\":true,\"request\":{\"id\":\"req-1\"}}}");
 
@@ -105,11 +118,34 @@ class ApiServiceFixQueueTest {
         assertNotNull(claimed);
         assertEquals(true, claimed.get("claimed"));
         assertEquals("{\"leaseSeconds\":120}", requests.get(0).body());
+        assertEquals("3", requests.get(0).runtime());
 
         stub("/api/v1/tickets/42/fix/claim", 409,
             "{\"success\":false,\"error\":{\"code\":\"CONFLICT\","
                 + "\"message\":\"Fix request is claimed by another agent\"}}");
         assertNull(api.claimFix(42, 120));
+
+        stub("/api/v1/tickets/42/fix/claim", 404,
+            "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\","
+                + "\"message\":\"No active fix request for this ticket\"}}");
+        assertNull(api.claimFix(42, 120));
+    }
+
+    @Test
+    void claimOmitsAQuietLeaseAndFailsOnRealErrors() throws Exception {
+        stub("/api/v1/tickets/42/fix/claim", 200,
+            "{\"success\":true,\"data\":{\"claimed\":true}}");
+        assertNotNull(api.claimFix(42, null));
+        assertEquals("{}", requests.get(0).body());
+
+        stub("/api/v1/tickets/42/fix/claim", 200,
+            "{\"success\":true,\"data\":{\"claimed\":true}}");
+        assertNotNull(api.claimFix(42, 0));
+        assertEquals("{}", requests.get(1).body());
+
+        stub("/api/v1/tickets/42/fix/claim", 500,
+            "{\"success\":false,\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}");
+        assertThrows(java.io.IOException.class, () -> api.claimFix(42, 120));
     }
 
     @Test
@@ -118,12 +154,24 @@ class ApiServiceFixQueueTest {
             "{\"success\":true,\"data\":{\"request\":{\"id\":\"req-1\"}}}");
 
         assertTrue(api.renewFix(42, 60));
-        assertEquals("POST", requests.get(0).method());
-        assertEquals("/api/v1/tickets/42/fix/renew", requests.get(0).path());
+        RecordedRequest renew = requests.get(0);
+        assertEquals("POST", renew.method());
+        assertEquals("/api/v1/tickets/42/fix/renew", renew.path());
+        assertEquals("{\"leaseSeconds\":60}", renew.body());
+        assertEquals("3", renew.runtime());
 
         stub("/api/v1/tickets/42/fix/renew", 409,
             "{\"success\":false,\"error\":{\"code\":\"CONFLICT\","
                 + "\"message\":\"Fix lease has expired; reclaim the request\"}}");
         assertFalse(api.renewFix(42, 60));
+
+        stub("/api/v1/tickets/42/fix/renew", 404,
+            "{\"success\":false,\"error\":{\"code\":\"NOT_FOUND\","
+                + "\"message\":\"No claimed fix request for this ticket\"}}");
+        assertFalse(api.renewFix(42, 60));
+
+        stub("/api/v1/tickets/42/fix/renew", 500,
+            "{\"success\":false,\"error\":{\"code\":\"INTERNAL\",\"message\":\"boom\"}}");
+        assertThrows(java.io.IOException.class, () -> api.renewFix(42, 60));
     }
 }

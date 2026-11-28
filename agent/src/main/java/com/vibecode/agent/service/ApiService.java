@@ -621,7 +621,10 @@ public class ApiService implements QuestionBridge.Transport {
             new TypeReference<ApiResponse<Map<String, Object>>>() {}
         );
         if (response.hasError()) {
-            if (isErrorCode(response, "CONFLICT")) {
+            // CONFLICT: another live lease owns it. NOT_FOUND: the request
+            // completed/requeued or the ticket left in_progress between the
+            // queue list and this claim. Both are a normal skip.
+            if (isErrorCode(response, "CONFLICT") || isErrorCode(response, "NOT_FOUND")) {
                 return null;
             }
             throw new IOException("Failed to claim the fix request: " + response.getError());
@@ -644,7 +647,9 @@ public class ApiService implements QuestionBridge.Transport {
             new TypeReference<ApiResponse<Map<String, Object>>>() {}
         );
         if (response.hasError()) {
-            if (isErrorCode(response, "CONFLICT")) {
+            // CONFLICT or NOT_FOUND both mean the lease is gone; the worker
+            // must stop before publishing rather than retry.
+            if (isErrorCode(response, "CONFLICT") || isErrorCode(response, "NOT_FOUND")) {
                 return false;
             }
             throw new IOException("Failed to renew the fix lease: " + response.getError());
