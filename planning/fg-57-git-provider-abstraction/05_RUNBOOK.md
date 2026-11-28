@@ -143,7 +143,9 @@ follow-up.
    the clone.
 
 3. Connect with provider `local`, `file:///srv/git/private-app.git` (or the
-   absolute path) and auth mode `none`. The backend resolves the real path,
+   absolute path) and auth mode `none` (omitting auth mode for a file path
+   now defaults to `none`; SSH URLs still default to `ssh`). The backend
+   resolves the real path,
    requires it under `LOCAL_GIT_ROOT`, verifies it is a git repository and
    records the default branch. No credential is stored.
 4. Run one ticket. The harness clones from the local path, pushes the branch and
