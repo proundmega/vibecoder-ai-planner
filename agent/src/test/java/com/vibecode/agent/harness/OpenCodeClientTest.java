@@ -122,6 +122,27 @@ class OpenCodeClientTest {
     }
 
     @Test
+    void questionReplyRejectsA200ThatDoesNotConfirmSuccess() throws Exception {
+        try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
+            OpenCodeClient client = new OpenCodeClient(server.url(), "password", tempDir);
+            client.start(tempDir);
+
+            server.setQuestionReplyResponse("{}");
+            IOException notConfirmed = assertThrows(IOException.class,
+                () -> client.replyToQuestion("ses_test", "que_1", "question", "Use it."));
+            assertTrue(notConfirmed.getMessage().contains("did not confirm"),
+                notConfirmed.getMessage());
+
+            // An unknown route falls back to the SPA's 200 HTML; that must fail
+            // closed instead of looking like a resumed session.
+            server.setQuestionReplyResponse("<html>spa fallback</html>");
+            assertThrows(IOException.class,
+                () -> client.replyToQuestion("ses_test", "que_1", "question", "Use it."));
+            client.close();
+        }
+    }
+
+    @Test
     void healthTimeoutThrows() throws Exception {
         try (FakeOpenCodeServer server = new FakeOpenCodeServer()) {
             server.setHealthy(false);

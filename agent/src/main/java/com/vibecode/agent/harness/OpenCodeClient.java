@@ -269,7 +269,7 @@ public final class OpenCodeClient implements HarnessClient {
                 Map.of("response", permissionResponse(answer)));
             return;
         }
-        postJson("/question/" + requestId + "/reply",
+        postJsonExpectingTrue("/question/" + requestId + "/reply",
             Map.of("answers", List.of(List.of(answer == null ? "" : answer))));
     }
 
@@ -301,7 +301,7 @@ public final class OpenCodeClient implements HarnessClient {
                 Map.of("response", "reject"));
             return;
         }
-        postJson("/question/" + requestId + "/reject",
+        postJsonExpectingTrue("/question/" + requestId + "/reject",
             Map.of());
     }
 
@@ -589,6 +589,20 @@ public final class OpenCodeClient implements HarnessClient {
                 );
             }
             return text.isBlank() ? objectMapper.createObjectNode() : objectMapper.readTree(text);
+        }
+    }
+
+    /**
+     * The pinned question routes answer with the JSON literal `true`. Require
+     * that confirmation so an unknown route that falls back to the SPA's 200
+     * HTML (or any empty success body) cannot be mistaken for a resumed session.
+     */
+    private void postJsonExpectingTrue(String path, Object body) throws IOException {
+        JsonNode root = postJson(path, body);
+        if (!root.isBoolean() || !root.asBoolean()) {
+            throw new IOException(
+                "OpenCode did not confirm the question request: " + redact(truncate(root.toString()))
+            );
         }
     }
 
