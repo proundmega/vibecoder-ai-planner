@@ -101,6 +101,9 @@ public class WorkspaceManager {
     private String localSourcePath;
     private String trustedGitConfig;
     private String baseCommit;
+    /** The committer identity the supervisor writes; only these commits are replaceable. */
+    static final String AGENT_COMMIT_EMAIL = "agent@vibecode.ai";
+
     private String guardedTree;
     private Path supervisorIndex;
     private Path askPassDirectory;
@@ -545,7 +548,8 @@ public class WorkspaceManager {
 
     /**
      * Stage every change, commit and push. Publishing always restores the
-     * trusted git config and runs git with hooks disabled.
+     * trusted git config and runs git with hooks disabled, and never discards
+     * a commit the agent did not author (see {@link #publishBuildCommit}).
      */
     public String commitAndPush(String message, String branchName) throws IOException {
         return commitAndPushInternal(message, branchName, true);
@@ -585,7 +589,7 @@ public class WorkspaceManager {
         hardenGitRepository();
         // commit-tree does not read the index, so a leftover agent-controlled
         // index cannot change what is committed.
-        runGit("config", "user.email", "agent@vibecode.ai");
+        runGit("config", "user.email", AGENT_COMMIT_EMAIL);
         runGit("config", "user.name", "Vibecode Agent");
         return runGitWithIndex(
             "commit-tree", guardedTree, "-p", baseCommitOrHead(), "-m", message).strip();
@@ -615,7 +619,7 @@ public class WorkspaceManager {
 
             // Configure git identity after hardening/staging (both restore the
             // clone-time config, which must not carry an agent identity).
-            runGit("config", "user.email", "agent@vibecode.ai");
+            runGit("config", "user.email", AGENT_COMMIT_EMAIL);
             runGit("config", "user.name", "Vibecode Agent");
 
             String commitSha;
@@ -642,10 +646,6 @@ public class WorkspaceManager {
     }
 
     private void pushCommit(String commitSha, String branchName) throws IOException {
-        // Pushing to origin (with a transient askpass helper) gives git a
-        // remote-tracking ref, but an explicit lease is still used so a retry
-        // can overwrite a branch only if the remote has not moved.
-        String pushTarget = "origin";
         boolean eligible = httpsPublishingRemote();
         String token = eligible ? currentToken() : null;
         boolean authenticate = token != null && !token.isBlank();
@@ -654,7 +654,7 @@ public class WorkspaceManager {
         }
         try {
             try {
-                pushWithLease(pushTarget, commitSha, branchName);
+                publishBuildCommit(commitSha, branchName);
             } catch (IOException first) {
                 if (!authenticate || !isAuthenticationFailure(first.getMessage())) {
                     throw first;
@@ -662,11 +662,77 @@ public class WorkspaceManager {
                 String refreshed = refreshToken(first);
                 cleanupAskPass();
                 ensureAskPass(refreshed);
-                pushWithLease(pushTarget, commitSha, branchName);
+                publishBuildCommit(commitSha, branchName);
             }
         } finally {
             cleanupAskPass();
         }
+    }
+
+    /**
+     * Publish a build commit with fast-forward semantics (fg-32c2c3c).
+     *
+     * <p>A new branch is created without force. An existing branch is only
+     * fast-forwarded, except when every commit it has on top of our base was
+     * authored and committed by this agent: that is a previous attempt of ours,
+     * which a retry may replace with a lease pinned to the head we just read.
+     * A human commit in that range aborts with {@code remote_head_moved} — the
+     * fresh lease read used before this change would have overwritten it.</p>
+     */
+    private void publishBuildCommit(String commitSha, String branchName) throws IOException {
+        String advertised = remoteBranchSha("origin", branchName);
+        if (advertised == null) {
+            // The push itself creates the branch; never force a creation.
+            pushFastForwardOnce(commitSha, branchName);
+            return;
+        }
+        fetchRemoteBranch(branchName);
+        String remote = remoteBranchRef(branchName);
+        if (commitSha.equalsIgnoreCase(remote)) {
+            return;
+        }
+        if (isAncestor(remote, commitSha)) {
+            pushFastForwardOnce(commitSha, branchName);
+            return;
+        }
+        if (!isAgentOwnedSince(remote)) {
+            throw new IOException(
+                "remote_head_moved: " + branchName + " is at " + remote
+                    + " and contains commits this agent did not author; "
+                    + "refusing to overwrite them");
+        }
+        pushWithLease(commitSha, branchName, remote);
+    }
+
+    private boolean isAncestor(String ancestor, String commitSha) throws IOException {
+        return runGitStatus("merge-base", "--is-ancestor", ancestor, commitSha) == 0;
+    }
+
+    /**
+     * True when every commit the remote has above our base carries the agent
+     * identity as author and committer. Ownership is a heuristic, not a
+     * security boundary: it only decides whether a retry may replace the
+     * branch or a human wins.
+     */
+    private boolean isAgentOwnedSince(String remoteSha) throws IOException {
+        String output;
+        try {
+            // Author and committer on separate lines; a human editing the
+            // branch changes at least one of them.
+            output = runGitCommand(
+                "log", "--format=%ae%n%ce", baseCommitOrHead() + ".." + remoteSha).strip();
+        } catch (IOException error) {
+            return false;
+        }
+        if (output.isBlank()) {
+            return false;
+        }
+        for (String line : output.split("\\R")) {
+            if (!line.isBlank() && !AGENT_COMMIT_EMAIL.equalsIgnoreCase(line.trim())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -790,8 +856,7 @@ public class WorkspaceManager {
     private void requireFastForward(String reviewedSha, String commitSha) throws IOException {
         // merge-base answers "no" with exit 1; any other non-zero code is a
         // real failure, not a verdict about ancestry.
-        int exitCode = runGitStatus("merge-base", "--is-ancestor", reviewedSha, commitSha);
-        if (exitCode == 1) {
+        if (!isAncestor(reviewedSha, commitSha)) {
             throw new IOException(
                 "not_fast_forward: " + commitSha + " does not descend from reviewed "
                     + reviewedSha);
@@ -1644,11 +1709,9 @@ public class WorkspaceManager {
     }
 
     private void pushWithLease(
-        String pushTarget, String commitSha, String branchName) throws IOException {
-        String remoteSha = remoteBranchSha(pushTarget, branchName);
-        String lease = "--force-with-lease=refs/heads/" + branchName + ":"
-            + (remoteSha == null ? "" : remoteSha);
-        runGit("push", "--no-verify", pushTarget,
+        String commitSha, String branchName, String expectedSha) throws IOException {
+        String lease = "--force-with-lease=refs/heads/" + branchName + ":" + expectedSha;
+        runGit("push", "--no-verify", "origin",
             commitSha + ":refs/heads/" + branchName, lease);
     }
 

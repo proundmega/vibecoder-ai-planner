@@ -1171,6 +1171,71 @@ class WorkspaceManagerTest {
     }
 
     @Test
+    void buildPublishReplacesAPreviousAgentAttempt() throws Exception {
+        Path source = initRepo("retry-agent-source");
+        Path bare = initBare("retry-agent.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager first = new WorkspaceManager(
+            tempDir.toString(), "retry-agent-1", false, null);
+        first.cloneRepo(bare.toString(), "vibecode/ticket-1");
+        Files.writeString(first.getRepoDir().resolve("attempt.txt"), "first\n");
+        String firstSha = first.commitAndPush("first attempt", "vibecode/retry");
+
+        // A retry clones the base again: its commit is a sibling of the first
+        // attempt, not a descendant, so only the ownership check allows it.
+        WorkspaceManager second = new WorkspaceManager(
+            tempDir.toString(), "retry-agent-2", false, null);
+        second.cloneRepo(bare.toString(), "vibecode/ticket-1");
+        Files.writeString(second.getRepoDir().resolve("attempt.txt"), "second\n");
+        String secondSha = second.commitAndPush("second attempt", "vibecode/retry");
+
+        assertNotEquals(firstSha, secondSha);
+        assertEquals(secondSha,
+            gitOutput(bare, "rev-parse", "refs/heads/vibecode/retry"));
+    }
+
+    @Test
+    void buildPublishRefusesToOverwriteAHumanCommit() throws Exception {
+        Path source = initRepo("retry-human-source");
+        Path bare = initBare("retry-human.git");
+        runGit(source, "remote", "add", "origin", bare.toString());
+        runGit(source, "push", "origin", "HEAD:refs/heads/main");
+        runGit(bare, "symbolic-ref", "HEAD", "refs/heads/main");
+
+        WorkspaceManager first = new WorkspaceManager(
+            tempDir.toString(), "retry-human-1", false, null);
+        first.cloneRepo(bare.toString(), "vibecode/ticket-1");
+        Files.writeString(first.getRepoDir().resolve("attempt.txt"), "first\n");
+        first.commitAndPush("first attempt", "vibecode/retry");
+
+        runGit(tempDir, "clone", bare.toString(), "human-clone");
+        Path human = tempDir.resolve("human-clone");
+        runGit(human, "checkout", "vibecode/retry");
+        runGit(human, "config", "user.email", "human@example.com");
+        runGit(human, "config", "user.name", "Human");
+        Files.writeString(human.resolve("human.txt"), "human\n");
+        runGit(human, "add", ".");
+        runGit(human, "commit", "-m", "human change");
+        runGit(human, "push", "origin", "HEAD:refs/heads/vibecode/retry");
+        String humanSha = gitOutput(human, "rev-parse", "HEAD");
+
+        WorkspaceManager second = new WorkspaceManager(
+            tempDir.toString(), "retry-human-2", false, null);
+        second.cloneRepo(bare.toString(), "vibecode/ticket-1");
+        Files.writeString(second.getRepoDir().resolve("attempt.txt"), "second\n");
+
+        IOException error = assertThrows(IOException.class,
+            () -> second.commitAndPush("retry", "vibecode/retry"));
+
+        assertTrue(error.getMessage().contains("remote_head_moved"), error.getMessage());
+        assertEquals(humanSha,
+            gitOutput(bare, "rev-parse", "refs/heads/vibecode/retry"));
+    }
+
+    @Test
     void commitAndPushCanUpdateAPreExistingRemoteBranch() throws Exception {
         Path repoDir = initRepo("existing-branch");
         Path bare = initBare("existing-branch.git");
