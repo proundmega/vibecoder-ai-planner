@@ -73,22 +73,27 @@ public final class FixTicketProcessor {
     }
 
     public Outcome process(Ticket ticket, FixClaim claim) {
-        long startedAt = System.currentTimeMillis();
+        long startedAt = clock.millis();
         if (ticket == null || claim == null) {
-            return Outcome.failed("fix job and claim are required", startedAt);
+            return Outcome.failed("fix job and claim are required", elapsed(startedAt));
         }
         if (isBlank(claim.requestId()) || claim.ticketId() != ticket.getId()) {
-            return Outcome.failed("fix claim does not belong to this ticket", startedAt);
+            return Outcome.failed("fix claim does not belong to this ticket", elapsed(startedAt));
         }
         if (isBlank(claim.branch()) || isBlank(claim.reviewedSha())) {
-            return Outcome.failed("fix claim has no branch or reviewed SHA", startedAt);
+            return Outcome.failed("fix claim has no branch or reviewed SHA", elapsed(startedAt));
+        }
+        if (!claim.reviewedSha().matches("^[0-9a-f]{40}([0-9a-f]{24})?$")) {
+            return Outcome.failed("fix claim has an invalid reviewed SHA", elapsed(startedAt));
         }
 
         String runId = null;
+        boolean published = false;
+        String headSha = null;
         try {
             // A claim can expire between claimFix and the first step.
             if (!journal.renew()) {
-                return Outcome.skipped("fix_lease_lost before start", startedAt);
+                return Outcome.skipped("fix_lease_lost before start", elapsed(startedAt));
             }
             runId = journal.startRun(claim);
             Instant deadline = clock.instant().plus(budget);
@@ -97,8 +102,8 @@ public final class FixTicketProcessor {
 
             String prompt = prompts.buildFix(new PromptBuilder.FixContext(
                 ticket,
-                List.of(),
-                List.of(),
+                claim.acceptanceCriteria(),
+                claim.planningDocs(),
                 claim.round(),
                 claim.reviewedSha(),
                 claim.findings(),
@@ -109,34 +114,67 @@ public final class FixTicketProcessor {
             ));
 
             if (expired(deadline)) {
-                return failRun(runId, "fix_timeout before prompting", startedAt);
+                return failRun(runId, "fix_timeout before prompting", elapsed(startedAt));
             }
             harness.fix(workspace.root(), sessionTitle(ticket, claim), prompt);
 
             if (!journal.renew()) {
-                return failRun(runId, "fix_lease_lost before verification", startedAt);
+                return failRun(runId, "fix_lease_lost before verification", elapsed(startedAt));
             }
             if (expired(deadline)) {
-                return failRun(runId, "fix_timeout before verification", startedAt);
+                return failRun(runId, "fix_timeout before verification", elapsed(startedAt));
             }
             if (!verification.verify(workspace.root(), remaining(deadline))) {
-                return failRun(runId, "verification failed", startedAt);
+                return failRun(runId, "verification failed", elapsed(startedAt));
             }
 
             if (!journal.renew()) {
-                return failRun(runId, "fix_lease_lost before publishing", startedAt);
+                return failRun(runId, "fix_lease_lost before publishing", elapsed(startedAt));
             }
             // Once publishing starts the deadline is ignored: interrupting a
             // push would leave the remote ambiguous.
-            String headSha = publisher.publish(commitMessage(ticket, claim), claim);
-            journal.finishRun(runId, true, null);
-            return Outcome.done(headSha, elapsed(startedAt));
+            headSha = publisher.publish(commitMessage(ticket, claim), claim);
+            published = true;
+            if (isBlank(headSha)) {
+                throw new IOException("publish returned no head SHA");
+            }
+            String finishError = finishSucceeded(runId);
+            return Outcome.done(headSha, elapsed(startedAt), finishError);
         } catch (IOException | RuntimeException error) {
-            return failRun(runId, "fix run failed: " + safe(error), startedAt);
+            if (published) {
+                // The commit is on the remote: never downgrade it to a failed
+                // run. Retry the success bookkeeping and report DONE.
+                String finishError = finishSucceeded(runId);
+                return Outcome.done(headSha, elapsed(startedAt),
+                    "published but " + safe(error)
+                        + (finishError == null ? "" : "; " + finishError));
+            }
+            return failRun(runId, "fix run failed: " + safe(error), elapsed(startedAt));
         }
     }
 
-    private Outcome failRun(String runId, String reason, long startedAt) {
+    /**
+     * Mark the run succeeded, retrying once because fg-33 finish is
+     * idempotent. Returns null on success or a reason for the caller.
+     */
+    private String finishSucceeded(String runId) {
+        if (runId == null) {
+            return "finishRun skipped: no run id";
+        }
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                journal.finishRun(runId, true, null);
+                return null;
+            } catch (IOException | RuntimeException error) {
+                if (attempt == 2) {
+                    return "finishRun(succeeded) failed: " + safe(error);
+                }
+            }
+        }
+        return null;
+    }
+
+    private Outcome failRun(String runId, String reason, long durationMs) {
         if (runId != null) {
             try {
                 journal.finishRun(runId, false, reason);
@@ -144,7 +182,7 @@ public final class FixTicketProcessor {
                 reason = reason + "; finishRun failed: " + safe(finishError);
             }
         }
-        return Outcome.failed(reason, elapsed(startedAt));
+        return Outcome.failed(reason, durationMs);
     }
 
     private boolean expired(Instant deadline) {
@@ -157,7 +195,8 @@ public final class FixTicketProcessor {
     }
 
     private String sessionTitle(Ticket ticket, FixClaim claim) {
-        return "fix-" + ticket.getId() + "-" + claim.reviewedSha().substring(0, 7);
+        String sha = claim.reviewedSha();
+        return "fix-" + ticket.getId() + "-" + sha.substring(0, Math.min(7, sha.length()));
     }
 
     private String commitMessage(Ticket ticket, FixClaim claim) {
@@ -177,8 +216,8 @@ public final class FixTicketProcessor {
         return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
     }
 
-    private static long elapsed(long startedAt) {
-        return Math.max(0, System.currentTimeMillis() - startedAt);
+    private long elapsed(long startedAt) {
+        return Math.max(0, clock.millis() - startedAt);
     }
 
     /** The claimed fix request, as returned by the backend queue. */
@@ -192,10 +231,15 @@ public final class FixTicketProcessor {
         String feedback,
         List<String> verificationCommands,
         List<String> previousVerification,
-        String previousDiffSummary
+        String previousDiffSummary,
+        List<String> acceptanceCriteria,
+        List<String> planningDocs
     ) {
         public FixClaim {
             findings = findings == null ? List.of() : List.copyOf(findings);
+            acceptanceCriteria = acceptanceCriteria == null
+                ? List.of() : List.copyOf(acceptanceCriteria);
+            planningDocs = planningDocs == null ? List.of() : List.copyOf(planningDocs);
             verificationCommands = verificationCommands == null
                 ? List.of() : List.copyOf(verificationCommands);
             previousVerification = previousVerification == null
@@ -210,16 +254,16 @@ public final class FixTicketProcessor {
     }
 
     public record Outcome(Status status, String reason, String headSha, long durationMs) {
-        static Outcome done(String headSha, long durationMs) {
-            return new Outcome(Status.DONE, null, headSha, durationMs);
+        static Outcome done(String headSha, long durationMs, String warning) {
+            return new Outcome(Status.DONE, warning, headSha, durationMs);
         }
 
-        static Outcome skipped(String reason, long startedAt) {
-            return new Outcome(Status.SKIPPED, reason, null, elapsed(startedAt));
+        static Outcome skipped(String reason, long durationMs) {
+            return new Outcome(Status.SKIPPED, reason, null, durationMs);
         }
 
-        static Outcome failed(String reason, long startedAt) {
-            return new Outcome(Status.FAILED, reason, null, elapsed(startedAt));
+        static Outcome failed(String reason, long durationMs) {
+            return new Outcome(Status.FAILED, reason, null, durationMs);
         }
     }
 

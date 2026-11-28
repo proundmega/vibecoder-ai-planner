@@ -38,7 +38,9 @@ class FixTicketProcessorTest {
             "please fix",
             List.of("npm test"),
             List.of("npm test failed"),
-            "1 file changed");
+            "1 file changed",
+            List.of("filter works"),
+            List.of("planning: filter scope"));
     }
 
     private FixTicketProcessor processor(
@@ -97,6 +99,8 @@ class FixTicketProcessorTest {
                 events.add("fix");
                 assertTrue(prompt.contains("id=F1"), prompt);
                 assertTrue(prompt.contains("please fix"), prompt);
+                assertTrue(prompt.contains("filter works"), prompt);
+                assertTrue(prompt.contains("planning: filter scope"), prompt);
             },
             (workspace, timeout) -> {
                 events.add("verify");
@@ -122,7 +126,8 @@ class FixTicketProcessorTest {
     @Test
     void rejectsAClaimForAnotherTicket() {
         FixTicketProcessor.FixClaim other = new FixTicketProcessor.FixClaim(
-            "req-2", 99L, "feat/fix", SHA, 0, List.of(), null, List.of(), List.of(), null);
+            "req-2", 99L, "feat/fix", SHA, 0, List.of(), null, List.of(), List.of(), null,
+            List.of(), List.of());
 
         FixTicketProcessor.Outcome outcome = processor(
             (workspace, title, prompt) -> events.add("fix"),
@@ -256,6 +261,25 @@ class FixTicketProcessorTest {
         assertTrue(events.contains("publish"));
     }
 
+    private FixTicketProcessor.Workspace workspace(FixCheckout checkout) {
+        return new FixTicketProcessor.Workspace() {
+            @Override
+            public Path root() {
+                return Path.of("/tmp/fix-workspace");
+            }
+
+            @Override
+            public void checkout(String branch, String reviewedSha) throws IOException {
+                checkout.run();
+            }
+        };
+    }
+
+    @FunctionalInterface
+    private interface FixCheckout {
+        void run() throws IOException;
+    }
+
     private static final class MutableClock extends Clock {
         private Instant now;
 
@@ -281,5 +305,160 @@ class FixTicketProcessorTest {
         public Instant instant() {
             return now;
         }
+    }
+
+    @Test
+    void rejectsAMissingClaimAndAnInvalidSha() {
+        FixTicketProcessor processor = processor(
+            (workspace, title, prompt) -> events.add("fix"),
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            journal(true),
+            Duration.ofMinutes(30));
+
+        assertEquals(FixTicketProcessor.Status.FAILED,
+            processor.process(ticket(), null).status());
+
+        FixTicketProcessor.FixClaim shortSha = new FixTicketProcessor.FixClaim(
+            "req-3", 42L, "feat/fix", "abc", 0, List.of(), null,
+            List.of(), List.of(), null, List.of(), List.of());
+        FixTicketProcessor.Outcome outcome = processor.process(ticket(), shortSha);
+        assertEquals(FixTicketProcessor.Status.FAILED, outcome.status());
+        assertTrue(outcome.reason().contains("invalid reviewed SHA"));
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    void failsTheRunWhenTheWorkspaceOrHarnessFails() {
+        FixTicketProcessor.Workspace failingCheckout = workspace(
+            () -> { throw new IOException("clone failed"); });
+        FixTicketProcessor.Outcome checkoutFailure = new FixTicketProcessor(
+            failingCheckout,
+            (workspace, title, prompt) -> events.add("fix"),
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            journal(true),
+            clock,
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+        assertEquals(FixTicketProcessor.Status.FAILED, checkoutFailure.status());
+        assertTrue(checkoutFailure.reason().contains("clone failed"));
+        assertTrue(events.contains("finishRun run-1 false fix run failed: clone failed"));
+
+        events.clear();
+        FixTicketProcessor.Outcome harnessFailure = processor(
+            (workspace, title, prompt) -> { throw new IOException("model down"); },
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            journal(true),
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+        assertEquals(FixTicketProcessor.Status.FAILED, harnessFailure.status());
+        assertTrue(harnessFailure.reason().contains("model down"));
+    }
+
+    @Test
+    void failsWhenTheRunCannotStart() {
+        FixTicketProcessor.Journal broken = new FixTicketProcessor.Journal() {
+            @Override
+            public boolean renew() {
+                return true;
+            }
+
+            @Override
+            public String startRun(FixTicketProcessor.FixClaim claim) throws IOException {
+                throw new IOException("run rejected");
+            }
+
+            @Override
+            public void finishRun(String runId, boolean succeeded, String error) {
+                events.add("finishRun");
+            }
+        };
+
+        FixTicketProcessor.Outcome outcome = processor(
+            (workspace, title, prompt) -> events.add("fix"),
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            broken,
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+
+        assertEquals(FixTicketProcessor.Status.FAILED, outcome.status());
+        assertTrue(outcome.reason().contains("run rejected"));
+        assertFalse(events.contains("finishRun"), "no run id means no finish call");
+    }
+
+    @Test
+    void stopsAtTheDeadlineBeforePromptingOrVerifying() {
+        FixTicketProcessor.Outcome beforePrompt = new FixTicketProcessor(
+            workspace(() -> clock.advance(Duration.ofMinutes(31))),
+            (workspace, title, prompt) -> events.add("fix"),
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            journal(true),
+            clock,
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+        assertEquals(FixTicketProcessor.Status.FAILED, beforePrompt.status());
+        assertTrue(beforePrompt.reason().contains("before prompting"));
+        assertFalse(events.contains("fix"));
+
+        events.clear();
+        FixTicketProcessor.Outcome beforeVerify = processor(
+            (workspace, title, prompt) -> clock.advance(Duration.ofMinutes(31)),
+            (workspace, timeout) -> {
+                events.add("verify");
+                return true;
+            },
+            (message, claim) -> SHA,
+            journal(true),
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+        assertEquals(FixTicketProcessor.Status.FAILED, beforeVerify.status());
+        assertTrue(beforeVerify.reason().contains("before verification"));
+        assertFalse(events.contains("verify"));
+    }
+
+    @Test
+    void doesNotDowngradeAPublishedRunWhenBookkeepingFails() {
+        int[] successes = {0};
+        FixTicketProcessor.Journal flaky = new FixTicketProcessor.Journal() {
+            @Override
+            public boolean renew() {
+                return true;
+            }
+
+            @Override
+            public String startRun(FixTicketProcessor.FixClaim claim) {
+                return "run-1";
+            }
+
+            @Override
+            public void finishRun(String runId, boolean succeeded, String error) throws IOException {
+                if (succeeded) {
+                    successes[0]++;
+                    if (successes[0] == 1) {
+                        throw new IOException("backend hiccup");
+                    }
+                    events.add("finishRun succeeded");
+                    return;
+                }
+                events.add("finishRun failed");
+            }
+        };
+
+        FixTicketProcessor.Outcome outcome = processor(
+            (workspace, title, prompt) -> { },
+            (workspace, timeout) -> true,
+            (message, claim) -> SHA,
+            flaky,
+            Duration.ofMinutes(30)
+        ).process(ticket(), claim());
+
+        assertEquals(FixTicketProcessor.Status.DONE, outcome.status());
+        assertEquals(2, successes[0], "the success finish is retried once");
+        assertTrue(events.contains("finishRun succeeded"));
+        assertFalse(events.contains("finishRun failed"), "a published run is never failed");
     }
 }
