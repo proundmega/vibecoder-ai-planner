@@ -398,7 +398,11 @@ public class AgentConfig {
 
     /** Claim lease: the fix budget plus ten minutes of publish headroom. */
     public int getFixLeaseSeconds() {
-        return Math.min(86_400, (fixMaxDurationMinutes + 10) * 60);
+        return fixLeaseSeconds(fixMaxDurationMinutes);
+    }
+
+    static int fixLeaseSeconds(int budgetMinutes) {
+        return Math.min(86_400, (budgetMinutes + 10) * 60);
     }
     public String getRepoCloneDir() { return repoCloneDir; }
     public String getGitHubToken() { return githubToken; }

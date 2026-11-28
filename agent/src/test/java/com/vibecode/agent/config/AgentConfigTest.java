@@ -116,6 +116,15 @@ class AgentConfigTest {
     }
 
     @Test
+    void theFixBudgetCapsAndLeaseFollowIt() {
+        assertEquals(60, AgentConfig.boundedInt(120, 1, 60));
+        assertEquals(4200, AgentConfig.fixLeaseSeconds(60));
+        assertEquals(1, AgentConfig.boundedInt(0, 1, 60));
+        assertEquals(660, AgentConfig.fixLeaseSeconds(1));
+        assertEquals(86_400, AgentConfig.fixLeaseSeconds(10_000));
+    }
+
+    @Test
     void fixWorkerSettingsAreClampedToTheirFloors() {
         assertEquals(60, AgentConfig.boundedInt(0, 60, 86_400));
         assertEquals(60, AgentConfig.boundedInt(-5, 60, 86_400));
